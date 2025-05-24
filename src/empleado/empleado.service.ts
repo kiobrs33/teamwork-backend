@@ -1,6 +1,7 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -9,6 +10,9 @@ import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 
 @Injectable()
 export class EmpleadoService {
+  // Logger de NestJS configurado con el nombre del servicio para registrar eventos y errores del EmpleadoService
+  private readonly logger = new Logger(EmpleadoService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async create(user: any, dto: CreateEmpleadoDto) {
@@ -48,30 +52,51 @@ export class EmpleadoService {
     }
   }
 
+  // async findOne(id: number) {
+  //   try {
+  //     console.log('ID', id);
+  //     const empleado = await this.prisma.empleado.findUnique({
+  //       where: { idEmpleado: id },
+  //       include: {
+  //         empresaEmpleadora: true,
+  //         equipoEmpleadora: true,
+  //         puestoEmpleadora: true,
+  //         unidadEmpleadora: true,
+  //         usuario: true,
+  //         objetivo: true,
+  //       },
+  //     });
+
+  //     if (!empleado || !empleado.estado) {
+  //       throw new NotFoundException('Empleado no encontrado');
+  //     }
+
+  //     return empleado;
+  //   } catch (error) {
+  //     console.error('Error al obtener al empleado:', error);
+  //     throw new InternalServerErrorException('No se pudo obtener al empleado.');
+  //   }
+  // }
+
   async findOne(id: number) {
-    try {
-      console.log('ID', id);
-      const empleado = await this.prisma.empleado.findUnique({
-        where: { idEmpleado: id },
-        include: {
-          empresaEmpleadora: true,
-          equipoEmpleadora: true,
-          puestoEmpleadora: true,
-          unidadEmpleadora: true,
-          usuario: true,
-          objetivo: true,
-        },
-      });
+    const empleado = await this.prisma.empleado.findUnique({
+      where: { idEmpleado: id, estado: true },
+      include: {
+        empresaEmpleadora: true,
+        equipoEmpleadora: true,
+        puestoEmpleadora: true,
+        unidadEmpleadora: true,
+        usuario: true,
+        objetivo: true,
+      },
+    });
 
-      if (!empleado || !empleado.estado) {
-        throw new NotFoundException('Empleado no encontrado');
-      }
-
-      return empleado;
-    } catch (error) {
-      console.error('Error al obtener al empleado:', error);
-      throw new InternalServerErrorException('No se pudo obtener al empleado.');
+    if (!empleado) {
+      this.logger.error(`Empleado no encontrado con ID: ${id}`);
+      throw new NotFoundException('Empleado no encontrado');
     }
+
+    return empleado;
   }
 
   async update(user: any, id: number, dto: UpdateEmpleadoDto) {

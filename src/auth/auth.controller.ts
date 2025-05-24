@@ -11,7 +11,7 @@ export class AuthController {
 
   @Post('login')
   @ApiBody({ type: LoginAuthDto })
-  @ApiResponse({ status: 201, description: 'Login exitoso.' })
+  @ApiResponse({ status: 200, description: 'Login exitoso.' })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
   async login(@Body() body: LoginAuthDto) {
     const usuario = await this.authService.login(body);
