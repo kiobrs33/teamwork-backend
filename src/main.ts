@@ -9,6 +9,10 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: '*', // Permitir todas las solicitudes CORS
+  });
+
   const config = new DocumentBuilder()
     .setTitle('API Documentation')
     .setDescription('API description for your project')
@@ -27,12 +31,14 @@ async function bootstrap() {
       // transform: true, // convierte los tipos
     }),
   );
+
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT ?? 3000;
   await app.listen(port);
 
-  console.log(`App TEAM WORK corriendo en http://localhost:${port}`);
+  console.log(`🚀 Servidor escuchando en http://localhost:${port}`);
+  console.log(`📘 Documentación Swagger: http://localhost:${port}/api`);
 }
 bootstrap();
