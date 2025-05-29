@@ -77,7 +77,7 @@ export class UnidadEmpleadoraService {
         data: {
           ...dto,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {
@@ -103,7 +103,7 @@ export class UnidadEmpleadoraService {
         data: {
           estado: false,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {

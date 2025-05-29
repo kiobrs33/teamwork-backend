@@ -27,7 +27,7 @@ export class EmpleadoService {
       });
       return empleado;
     } catch (error) {
-      console.error('Error al crear empleado:', error);
+      this.logger.error('Error al crear empleado:', error);
       throw new InternalServerErrorException('No se pudo crear al empleado.');
     }
   }
@@ -46,7 +46,7 @@ export class EmpleadoService {
       });
       return empleados;
     } catch (error) {
-      console.error('Error al obtener los empleados:', error);
+      this.logger.error('Error al obtener los empleados:', error);
       throw new InternalServerErrorException(
         'No se pudieron obtener los empleados.',
       );
@@ -75,31 +75,10 @@ export class EmpleadoService {
       if (error instanceof HttpException) {
         throw error;
       }
-      console.error('Error al obtener al empleado:', error);
+      this.logger.error('Error al obtener al empleado:', error);
       throw new InternalServerErrorException('No se pudo obtener al empleado.');
     }
   }
-
-  // async findOne(id: number) {
-  //   const empleado = await this.prisma.empleado.findUnique({
-  //     where: { idEmpleado: id, estado: true },
-  //     include: {
-  //       empresaEmpleadora: true,
-  //       equipoEmpleadora: true,
-  //       puestoEmpleadora: true,
-  //       unidadEmpleadora: true,
-  //       usuario: true,
-  //       objetivo: true,
-  //     },
-  //   });
-
-  //   if (!empleado) {
-  //     this.logger.error(`Empleado no encontrado con ID: ${id}`);
-  //     throw new NotFoundException('Empleado no encontrado');
-  //   }
-
-  //   return empleado;
-  // }
 
   async update(user: any, id: number, dto: UpdateEmpleadoDto) {
     try {
@@ -117,13 +96,16 @@ export class EmpleadoService {
         data: {
           ...dto,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
 
       return updated;
     } catch (error) {
-      console.error('Error al actualizar al empleado:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('Error al actualizar al empleado:', error);
       throw new InternalServerErrorException(
         'No se pudo actualizar al empleado.',
       );
@@ -134,9 +116,10 @@ export class EmpleadoService {
     try {
       const existEmpleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id },
+        select: { idEmpleado: true },
       });
 
-      if (!existEmpleado || !existEmpleado.estado) {
+      if (!existEmpleado) {
         throw new NotFoundException('Empleado no encontrado');
       }
 
@@ -145,13 +128,16 @@ export class EmpleadoService {
         data: {
           estado: false,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
 
       return removed;
     } catch (error) {
-      console.error('Error al eliminar al empleado:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('Error al eliminar al empleado:', error);
       throw new InternalServerErrorException(
         'No se pudo eliminar al empleado.',
       );

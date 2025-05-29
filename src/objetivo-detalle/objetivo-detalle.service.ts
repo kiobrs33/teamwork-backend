@@ -20,7 +20,7 @@ export class ObjetivoDetalleService {
       const objetivoDetalle = await this.prisma.objetivoDetalle.create({
         data: {
           ...dto,
-          creadoPorId: user.id,
+          creadoPorId: user.idUsuario,
           fechaCreacion: new Date(),
           estado: true,
         },
@@ -89,7 +89,7 @@ export class ObjetivoDetalleService {
         where: { idObjetivoDetalle: id },
         data: {
           ...dto,
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
         },
       });
@@ -121,7 +121,7 @@ export class ObjetivoDetalleService {
         where: { idObjetivoDetalle: id },
         data: {
           estado: false,
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
         },
       });

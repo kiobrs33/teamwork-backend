@@ -67,7 +67,7 @@ export class PuestoEmpleadoraService {
         data: {
           ...dto,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {
@@ -93,7 +93,7 @@ export class PuestoEmpleadoraService {
         data: {
           estado: false,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {

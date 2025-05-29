@@ -82,7 +82,7 @@ export class EmpresaEmpleadoraService {
         data: {
           ...dto,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
 
@@ -110,7 +110,7 @@ export class EmpresaEmpleadoraService {
         data: {
           estado: false,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
 

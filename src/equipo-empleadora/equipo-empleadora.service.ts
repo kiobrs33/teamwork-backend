@@ -73,7 +73,7 @@ export class EquipoEmpleadoraService {
         data: {
           ...dto,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {
@@ -99,7 +99,7 @@ export class EquipoEmpleadoraService {
         data: {
           estado: false,
           fechaModificacion: new Date(),
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {

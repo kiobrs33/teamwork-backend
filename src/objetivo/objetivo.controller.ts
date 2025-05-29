@@ -23,6 +23,7 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
+import { AddDetallesAObjetivoDto } from './dto/add-detalles-a-objetivo.dto';
 
 @ApiTags('Objetivo')
 @ApiBearerAuth()
@@ -98,6 +99,7 @@ export class ObjetivoController {
       data: { objetivo },
     };
   }
+
   @Post('con-detalles')
   @ApiOperation({ summary: 'Crear objetivo con detalles asociados' })
   @ApiResponse({
@@ -111,6 +113,28 @@ export class ObjetivoController {
     const result = await this.objetivoService.createConDetalles(user, dto);
     return {
       message: 'Objetivo y detalles creados exitosamente.',
+      data: result,
+    };
+  }
+
+  @Post(':idObjetivo/agregar-detalles')
+  @ApiOperation({ summary: 'Agregar 1 o 2 detalles a un objetivo existente' })
+  @ApiResponse({
+    status: 201,
+    description: 'Detalles agregados correctamente.',
+  })
+  async agregarDetalles(
+    @User() user: any,
+    @Param('idObjetivo', ParseIntPipe) idObjetivo: number,
+    @Body() body: AddDetallesAObjetivoDto,
+  ) {
+    const result = await this.objetivoService.agregarDetalles(
+      user,
+      idObjetivo,
+      body.detalles,
+    );
+    return {
+      message: 'Detalles agregados correctamente.',
       data: result,
     };
   }

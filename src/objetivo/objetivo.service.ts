@@ -10,6 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateObjetivoDto } from './dto/create-objetivo.dto';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
+import { NuevoDetalleDto } from './dto/add-detalles-a-objetivo.dto';
 
 @Injectable()
 export class ObjetivoService {
@@ -187,6 +188,54 @@ export class ObjetivoService {
       this.logger.error('Error creando objetivo con detalles:', error);
       throw new InternalServerErrorException(
         'No se pudo crear el objetivo con sus detalles.',
+      );
+    }
+  }
+
+  /**
+   * Agrega entre 1 y 2 detalles adicionales a un objetivo existente
+   */
+  async agregarDetalles(
+    user: any,
+    idObjetivo: number,
+    nuevosDetalles: NuevoDetalleDto[],
+  ) {
+    if (nuevosDetalles.length < 1 || nuevosDetalles.length > 2) {
+      throw new BadRequestException('Debe agregar entre 1 y 2 detalles.');
+    }
+
+    const detallesExistentes = await this.prisma.objetivoDetalle.count({
+      where: { idObjetivo },
+    });
+
+    if (detallesExistentes + nuevosDetalles.length > 4) {
+      throw new BadRequestException(
+        'El objetivo no puede tener más de 4 detalles en total.',
+      );
+    }
+    try {
+      const detallesCreados = await Promise.all(
+        nuevosDetalles.map((detalle) =>
+          this.prisma.objetivoDetalle.create({
+            data: {
+              idObjetivo,
+              secuencial: detalle.secuencial,
+              descripcion: detalle.descripcion ?? null,
+              descripcionIniciativa: detalle.descripcionIniciativa ?? null,
+              unidadMedida: detalle.unidadMedida ?? null,
+              pesoEspecifico: detalle.pesoEspecifico ?? null,
+              estado: true,
+              creadoPorId: user.idUsuario,
+            },
+          }),
+        ),
+      );
+
+      return detallesCreados;
+    } catch (error) {
+      this.logger.error('Error al agregar detalles al objetivo', error);
+      throw new InternalServerErrorException(
+        'No se pudieron agregar los detalles.',
       );
     }
   }
