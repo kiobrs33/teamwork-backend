@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -43,16 +44,19 @@ export class UnidadEmpleadoraService {
   async findOne(id: number) {
     try {
       const unidad = await this.prisma.unidadEmpleadora.findUnique({
-        where: { idUnidadEmpleadora: id },
+        where: { idUnidadEmpleadora: id, estado: true },
         include: { empresaEmpleadora: true },
       });
 
-      if (!unidad || !unidad.estado) {
+      if (!unidad) {
         throw new NotFoundException('Unidad no encontrada');
       }
 
       return unidad;
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       console.error('Error al obtener la unidad:', error);
       throw new InternalServerErrorException('No se pudo obtener la unidad.');
     }

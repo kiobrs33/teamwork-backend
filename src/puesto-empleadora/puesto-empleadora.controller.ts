@@ -6,42 +6,100 @@ import {
   Patch,
   Param,
   Delete,
-  Req,
+  ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { PuestoEmpleadoraService } from './puesto-empleadora.service';
 import { CreatePuestoEmpleadoraDto } from './dto/create-puesto-empleadora.dto';
 import { UpdatePuestoEmpleadoraDto } from './dto/update-puesto-empleadora.dto';
 
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/auth/jwt.guard';
+import { User } from 'src/auth/auth.decorator';
+
+@ApiTags('Puesto Empleadora')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('puesto-empleadora')
 export class PuestoEmpleadoraController {
-  constructor(private readonly service: PuestoEmpleadoraService) {}
+  constructor(
+    private readonly puestoEmpleadoraService: PuestoEmpleadoraService,
+  ) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreatePuestoEmpleadoraDto) {
-    return this.service.create(req.user, dto);
+  @ApiOperation({ summary: 'Crear un nuevo puesto empleadora' })
+  @ApiResponse({
+    status: 201,
+    description: 'Puesto empleadora creado exitosamente.',
+  })
+  async create(@User() user: any, @Body() dto: CreatePuestoEmpleadoraDto) {
+    const puesto = await this.puestoEmpleadoraService.create(user, dto);
+    return {
+      message: 'Puesto empleadora creado exitosamente.',
+      data: { puesto },
+    };
   }
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  @ApiOperation({ summary: 'Listar todos los puestos empleadora' })
+  @ApiResponse({ status: 200, description: 'Lista de puestos empleadora.' })
+  async findAll() {
+    const puestos = await this.puestoEmpleadoraService.findAll();
+    return {
+      message: 'Lista de puestos empleadora.',
+      data: { puestos },
+    };
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(+id);
+  @ApiOperation({ summary: 'Obtener puesto empleadora por ID' })
+  @ApiParam({ name: 'id', description: 'ID del puesto empleadora' })
+  @ApiResponse({ status: 200, description: 'Puesto empleadora encontrado.' })
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const puesto = await this.puestoEmpleadoraService.findOne(id);
+    return {
+      message: 'Puesto empleadora encontrado.',
+      data: { puesto },
+    };
   }
 
   @Patch(':id')
-  update(
-    @Req() req: any,
-    @Param('id') id: string,
+  @ApiOperation({ summary: 'Actualizar puesto empleadora' })
+  @ApiParam({ name: 'id', description: 'ID del puesto empleadora' })
+  @ApiResponse({
+    status: 200,
+    description: 'Puesto empleadora actualizado correctamente.',
+  })
+  async update(
+    @User() user: any,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePuestoEmpleadoraDto,
   ) {
-    return this.service.update(req.user, +id, dto);
+    const puesto = await this.puestoEmpleadoraService.update(user, id, dto);
+    return {
+      message: `Puesto empleadora con ID ${id} actualizado correctamente.`,
+      data: { puesto },
+    };
   }
 
   @Delete(':id')
-  remove(@Req() req: any, @Param('id') id: string) {
-    return this.service.remove(req.user, +id);
+  @ApiOperation({ summary: 'Eliminar puesto empleadora (soft delete)' })
+  @ApiParam({ name: 'id', description: 'ID del puesto empleadora' })
+  @ApiResponse({
+    status: 200,
+    description: 'Puesto empleadora eliminado correctamente.',
+  })
+  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+    const puesto = await this.puestoEmpleadoraService.remove(user, id);
+    return {
+      message: `Puesto empleadora con ID ${id} eliminado correctamente.`,
+      data: { puesto },
+    };
   }
 }

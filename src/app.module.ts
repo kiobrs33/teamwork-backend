@@ -9,6 +9,8 @@ import { EmpresaEmpleadoraModule } from './empresa-empleadora/empresa-empleadora
 import { EquipoEmpleadoraModule } from './equipo-empleadora/equipo-empleadora.module';
 import { PuestoEmpleadoraModule } from './puesto-empleadora/puesto-empleadora.module';
 import { UnidadEmpleadoraModule } from './unidad-empleadora/unidad-empleadora.module';
+import { ObjetivoModule } from './objetivo/objetivo.module';
+import { ObjetivoDetalleModule } from './objetivo-detalle/objetivo-detalle.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { UnidadEmpleadoraModule } from './unidad-empleadora/unidad-empleadora.mo
     EquipoEmpleadoraModule,
     PuestoEmpleadoraModule,
     UnidadEmpleadoraModule,
+    ObjetivoModule,
+    ObjetivoDetalleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

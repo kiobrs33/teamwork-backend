@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -52,60 +53,62 @@ export class EmpleadoService {
     }
   }
 
-  // async findOne(id: number) {
-  //   try {
-  //     console.log('ID', id);
-  //     const empleado = await this.prisma.empleado.findUnique({
-  //       where: { idEmpleado: id },
-  //       include: {
-  //         empresaEmpleadora: true,
-  //         equipoEmpleadora: true,
-  //         puestoEmpleadora: true,
-  //         unidadEmpleadora: true,
-  //         usuario: true,
-  //         objetivo: true,
-  //       },
-  //     });
-
-  //     if (!empleado || !empleado.estado) {
-  //       throw new NotFoundException('Empleado no encontrado');
-  //     }
-
-  //     return empleado;
-  //   } catch (error) {
-  //     console.error('Error al obtener al empleado:', error);
-  //     throw new InternalServerErrorException('No se pudo obtener al empleado.');
-  //   }
-  // }
-
   async findOne(id: number) {
-    const empleado = await this.prisma.empleado.findUnique({
-      where: { idEmpleado: id, estado: true },
-      include: {
-        empresaEmpleadora: true,
-        equipoEmpleadora: true,
-        puestoEmpleadora: true,
-        unidadEmpleadora: true,
-        usuario: true,
-        objetivo: true,
-      },
-    });
+    try {
+      const empleado = await this.prisma.empleado.findUnique({
+        where: { idEmpleado: id, estado: true },
+        include: {
+          empresaEmpleadora: true,
+          equipoEmpleadora: true,
+          puestoEmpleadora: true,
+          unidadEmpleadora: true,
+          usuario: true,
+          objetivo: true,
+        },
+      });
+      if (!empleado) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
 
-    if (!empleado) {
-      this.logger.error(`Empleado no encontrado con ID: ${id}`);
-      throw new NotFoundException('Empleado no encontrado');
+      return empleado;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('Error al obtener al empleado:', error);
+      throw new InternalServerErrorException('No se pudo obtener al empleado.');
     }
-
-    return empleado;
   }
+
+  // async findOne(id: number) {
+  //   const empleado = await this.prisma.empleado.findUnique({
+  //     where: { idEmpleado: id, estado: true },
+  //     include: {
+  //       empresaEmpleadora: true,
+  //       equipoEmpleadora: true,
+  //       puestoEmpleadora: true,
+  //       unidadEmpleadora: true,
+  //       usuario: true,
+  //       objetivo: true,
+  //     },
+  //   });
+
+  //   if (!empleado) {
+  //     this.logger.error(`Empleado no encontrado con ID: ${id}`);
+  //     throw new NotFoundException('Empleado no encontrado');
+  //   }
+
+  //   return empleado;
+  // }
 
   async update(user: any, id: number, dto: UpdateEmpleadoDto) {
     try {
       const existEmpleado = await this.prisma.empleado.findUnique({
-        where: { idEmpleado: id },
+        where: { idEmpleado: id, estado: true },
+        select: { idEmpleado: true },
       });
 
-      if (!existEmpleado || !existEmpleado.estado) {
+      if (!existEmpleado) {
         throw new NotFoundException('Empleado no encontrado');
       }
 

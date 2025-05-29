@@ -7,42 +7,98 @@ import {
   Patch,
   Param,
   Delete,
-  Req,
+  ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { EmpresaEmpleadoraService } from './empresa-empleadora.service';
 import { CreateEmpresaEmpleadoraDto } from './dto/create-empresa-empleadora.dto';
 import { UpdateEmpresaEmpleadoraDto } from './dto/update-empresa-empleadora.dto';
 
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/auth/jwt.guard';
+import { User } from 'src/auth/auth.decorator';
+
+@ApiTags('Empresas Empleadoras')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('empresa-empleadora')
 export class EmpresaEmpleadoraController {
   constructor(private readonly service: EmpresaEmpleadoraService) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateEmpresaEmpleadoraDto) {
-    return this.service.create(req.user, dto);
+  @ApiOperation({ summary: 'Crear una nueva empresa empleadora' })
+  @ApiResponse({
+    status: 201,
+    description: 'Empresa empleadora creada exitosamente.',
+  })
+  async create(@User() user: any, @Body() dto: CreateEmpresaEmpleadoraDto) {
+    const empresa = await this.service.create(user, dto);
+    return {
+      message: 'Empresa empleadora creada exitosamente.',
+      data: { empresa },
+    };
   }
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  @ApiOperation({ summary: 'Listar todas las empresas empleadoras' })
+  @ApiResponse({ status: 200, description: 'Lista de empresas empleadoras.' })
+  async findAll() {
+    const empresas = await this.service.findAll();
+    return {
+      message: 'Lista de empresas empleadoras.',
+      data: { empresas },
+    };
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(+id);
+  @ApiOperation({ summary: 'Obtener empresa empleadora por ID' })
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  @ApiResponse({ status: 200, description: 'Empresa empleadora encontrada.' })
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const empresa = await this.service.findOne(id);
+    return {
+      message: 'Empresa empleadora encontrada.',
+      data: { empresa },
+    };
   }
 
   @Patch(':id')
-  update(
-    @Req() req: any,
-    @Param('id') id: string,
+  @ApiOperation({ summary: 'Actualizar empresa empleadora' })
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  @ApiResponse({
+    status: 200,
+    description: 'Empresa empleadora actualizada correctamente.',
+  })
+  async update(
+    @User() user: any,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateEmpresaEmpleadoraDto,
   ) {
-    return this.service.update(req.user, +id, dto);
+    const empresa = await this.service.update(user, id, dto);
+    return {
+      message: `Empresa empleadora con ID ${id} actualizada correctamente.`,
+      data: { empresa },
+    };
   }
 
   @Delete(':id')
-  remove(@Req() req: any, @Param('id') id: string) {
-    return this.service.remove(req.user, +id);
+  @ApiOperation({ summary: 'Eliminar empresa empleadora (soft delete)' })
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  @ApiResponse({
+    status: 200,
+    description: 'Empresa empleadora eliminada correctamente.',
+  })
+  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+    const empresa = await this.service.remove(user, id);
+    return {
+      message: `Empresa empleadora con ID ${id} eliminada correctamente.`,
+      data: { empresa },
+    };
   }
 }
