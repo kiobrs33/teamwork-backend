@@ -32,6 +32,10 @@ export class UnidadEmpleadoraService {
     try {
       return await this.prisma.unidadEmpleadora.findMany({
         include: { empresaEmpleadora: true },
+        where: { estado: true },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
       });
     } catch (error) {
       console.error('Error al obtener unidades:', error);

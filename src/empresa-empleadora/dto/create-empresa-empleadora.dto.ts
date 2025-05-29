@@ -17,7 +17,7 @@ export class CreateEmpresaEmpleadoraDto {
   })
   @IsString()
   @IsNotEmpty({ message: 'El nombre de la empresa es obligatorio.' })
-  @Length(3, 100, {
+  @Length(1, 100, {
     message: 'El nombre debe tener entre 3 y 100 caracteres.',
   })
   nombreEmpresa: string;
@@ -34,24 +34,24 @@ export class CreateEmpresaEmpleadoraDto {
   })
   ruc?: string;
 
-  @ApiProperty({
-    example: 'empresa@xyz.com',
-    description: 'Correo electrónico de contacto',
-  })
-  @IsEmail({}, { message: 'El correo electrónico no es válido.' })
-  @IsNotEmpty({ message: 'El correo es obligatorio.' })
-  correo: string;
+  // @ApiProperty({
+  //   example: 'empresa@xyz.com',
+  //   description: 'Correo electrónico de contacto',
+  // })
+  // @IsEmail({}, { message: 'El correo electrónico no es válido.' })
+  // @IsNotEmpty({ message: 'El correo es obligatorio.' })
+  // correo: string;
 
-  @ApiProperty({
-    example: '+51987654321',
-    description: 'Teléfono de contacto (opcional)',
-    required: false,
-  })
-  @IsOptional()
-  @IsPhoneNumber('PE', {
-    message: 'El número de teléfono no es válido para Perú.',
-  })
-  telefono?: string;
+  // @ApiProperty({
+  //   example: '+51987654321',
+  //   description: 'Teléfono de contacto (opcional)',
+  //   required: false,
+  // })
+  // @IsOptional()
+  // @IsPhoneNumber('PE', {
+  //   message: 'El número de teléfono no es válido para Perú.',
+  // })
+  // telefono?: string;
 
   @ApiProperty({
     example: 'Av. Principal 123, Lima',
@@ -60,7 +60,7 @@ export class CreateEmpresaEmpleadoraDto {
   })
   @IsOptional()
   @IsString({ message: 'La dirección debe ser un texto.' })
-  @Length(5, 200, {
+  @Length(1, 200, {
     message: 'La dirección debe tener entre 5 y 200 caracteres.',
   })
   direccionEmpresa?: string;

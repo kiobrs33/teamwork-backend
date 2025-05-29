@@ -8,6 +8,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
+import { hash } from 'bcryptjs';
 
 @Injectable()
 export class EmpleadoService {
@@ -16,16 +17,67 @@ export class EmpleadoService {
 
   constructor(private prisma: PrismaService) {}
 
-  async create(user: any, dto: CreateEmpleadoDto) {
+  async create(user: any, body: CreateEmpleadoDto) {
     try {
-      const empleado = await this.prisma.empleado.create({
+      const {
+        codigoUsuario,
+        correoElectronico,
+        contrasena,
+        rol,
+        nombres,
+        apellidoPaterno,
+        apellidoMaterno,
+        idEmpresaEmpleadora,
+        idEquipoEmpleadora,
+        idPuestoEmpleadora,
+        idUnidadEmpleadora,
+      } = body;
+
+      if (!contrasena) {
+        throw new InternalServerErrorException('La contraseña es requerida.');
+      }
+      const hashedPassword = await hash(contrasena, 10);
+
+      const usuario = await this.prisma.usuario.create({
         data: {
-          ...dto,
+          codigoUsuario,
+          correoElectronico,
+          contrasena: hashedPassword,
+          rol,
           fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
       });
-      return empleado;
+
+      const empleado = await this.prisma.empleado.create({
+        data: {
+          nombres,
+          apellidoPaterno,
+          apellidoMaterno,
+          idEmpresaEmpleadora,
+          idEquipoEmpleadora,
+          idPuestoEmpleadora,
+          idUnidadEmpleadora,
+          idUsuario: usuario.idUsuario,
+          fechaCreacion: new Date(),
+          creadoPorId: user.idUsuario,
+        },
+      });
+      return {
+        idEmpleado: empleado.idEmpleado,
+        idUsuario: usuario.idUsuario,
+        codigoUsuario,
+        correoElectronico,
+        // contrasena,
+        rol,
+        nombres,
+        apellidoPaterno,
+        apellidoMaterno,
+        idEmpresaEmpleadora,
+        idEquipoEmpleadora,
+        idPuestoEmpleadora,
+        idUnidadEmpleadora,
+      };
     } catch (error) {
       this.logger.error('Error al crear empleado:', error);
       throw new InternalServerErrorException('No se pudo crear al empleado.');
@@ -35,6 +87,7 @@ export class EmpleadoService {
   async findAll() {
     try {
       const empleados = await this.prisma.empleado.findMany({
+        where: { estado: true },
         include: {
           empresaEmpleadora: true,
           equipoEmpleadora: true,
@@ -42,6 +95,9 @@ export class EmpleadoService {
           unidadEmpleadora: true,
           usuario: true,
           objetivo: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
         },
       });
       return empleados;
@@ -80,23 +136,81 @@ export class EmpleadoService {
     }
   }
 
-  async update(user: any, id: number, dto: UpdateEmpleadoDto) {
+  async update(user: any, id: number, body: UpdateEmpleadoDto) {
     try {
+      const {
+        codigoUsuario,
+        contrasena,
+        correoElectronico,
+        rol,
+        nombres,
+        apellidoPaterno,
+        apellidoMaterno,
+        idEmpresaEmpleadora,
+        idEquipoEmpleadora,
+        idPuestoEmpleadora,
+        idUnidadEmpleadora,
+      } = body;
+
       const existEmpleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id, estado: true },
-        select: { idEmpleado: true },
+        select: { idEmpleado: true, idUsuario: true, usuario: true },
       });
 
       if (!existEmpleado) {
         throw new NotFoundException('Empleado no encontrado');
       }
 
+      // USER
+      if (contrasena) {
+        const hashedPassword = await hash(contrasena, 10);
+
+        await this.prisma.usuario.update({
+          where: { idUsuario: existEmpleado.idUsuario },
+          data: {
+            codigoUsuario,
+            correoElectronico,
+            contrasena: hashedPassword,
+            rol,
+            fechaModificacion: new Date(),
+            actualizadoPorId: user.idUsuario,
+          },
+        });
+      } else {
+        await this.prisma.usuario.update({
+          where: { idUsuario: existEmpleado.idUsuario },
+          data: {
+            codigoUsuario,
+            correoElectronico,
+            rol,
+            fechaModificacion: new Date(),
+            actualizadoPorId: user.idUsuario,
+          },
+        });
+      }
+
+      // EMPLEADO
       const updated = await this.prisma.empleado.update({
         where: { idEmpleado: id },
         data: {
-          ...dto,
+          nombres,
+          apellidoPaterno,
+          apellidoMaterno,
+          idEmpresaEmpleadora,
+          idEquipoEmpleadora,
+          idPuestoEmpleadora,
+          idUnidadEmpleadora,
+          idUsuario: existEmpleado.idUsuario,
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
+        },
+        include: {
+          empresaEmpleadora: true,
+          equipoEmpleadora: true,
+          puestoEmpleadora: true,
+          unidadEmpleadora: true,
+          usuario: true,
+          objetivo: true,
         },
       });
 

@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -31,6 +32,10 @@ export class EquipoEmpleadoraService {
     try {
       return await this.prisma.equipoEmpleadora.findMany({
         include: { empresaEmpleadora: true },
+        where: { estado: true },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
       });
     } catch (error) {
       console.error('Error al obtener equipos:', error);
@@ -103,6 +108,10 @@ export class EquipoEmpleadoraService {
         },
       });
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       console.error('Error al eliminar el equipo:', error);
       throw new InternalServerErrorException('No se pudo eliminar el equipo.');
     }

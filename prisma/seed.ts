@@ -10,7 +10,7 @@ async function main() {
 
   const admin = await prisma.usuario.create({
     data: {
-      codigoUsuario: faker.string.alphanumeric(10),
+      codigoUsuario: "admin",
       correoElectronico: faker.internet.email(),
       contrasena: hashedPassword,
       rol: 'ADMIN',

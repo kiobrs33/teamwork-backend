@@ -17,6 +17,8 @@ export class EmpresaEmpleadoraService {
       const empresa = await this.prisma.empresaEmpleadora.create({
         data: {
           ...dto,
+          fechaVigenciaInicio: new Date(dto.fechaVigenciaInicio),
+          fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
           fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
@@ -37,6 +39,12 @@ export class EmpresaEmpleadoraService {
           unidadEmpleadora: true,
           objetivo: true,
           empleado: true,
+        },
+        where: {
+          estado: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
         },
       });
       return empresas;

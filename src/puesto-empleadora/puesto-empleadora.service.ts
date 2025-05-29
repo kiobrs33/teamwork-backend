@@ -30,6 +30,10 @@ export class PuestoEmpleadoraService {
     try {
       return await this.prisma.puestoEmpleadora.findMany({
         include: { empresaEmpleadora: true },
+        where: { estado: true },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
       });
     } catch (error) {
       console.error('Error al obtener puestos:', error);

@@ -38,7 +38,9 @@ export class ObjetivoDetalleService {
     try {
       return await this.prisma.objetivoDetalle.findMany({
         where: { estado: true },
-        orderBy: { idObjetivoDetalle: 'desc' },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
       });
     } catch (error) {
       this.logger.error('Error al obtener objetivos detalle:', error);

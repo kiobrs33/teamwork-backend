@@ -1,13 +1,48 @@
 import {
   IsBoolean,
+  IsEmail,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Rol } from '../types/empleadoTypes';
 
 export class CreateEmpleadoDto {
+  @ApiProperty({ example: 'ABC123' })
+  @IsString({ message: 'El codigo de usuario debe ser una cadena de texto.' })
+  @IsNotEmpty({ message: 'El codigo usuario es obligatorio.' })
+  codigoUsuario: string;
+
+  @ApiProperty({ example: 'usuario@gmail.com' })
+  @IsEmail(
+    {},
+    { message: 'El correo electrónico debe tener un formato válido.' },
+  )
+  @IsNotEmpty({ message: 'El correo electrónico es obligatorio.' })
+  correoElectronico: string;
+
+  @ApiProperty({ example: '12345678' })
+  @IsString({ message: 'La contraseña debe ser una cadena de texto.' })
+  @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
+  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+  contrasena: string;
+
+  @ApiProperty({
+    example: Rol.EMPLEADO,
+    enum: Rol,
+    description: 'Rol del usuario dentro del sistema',
+  })
+  @IsEnum(Rol, {
+    message:
+      'El rol debe ser uno de los siguientes valores: ADMIN, SUBADMIN, JEFE o EMPLEADO.',
+  })
+  @IsOptional() // Si deseas que el campo sea opcional; quítalo si es obligatorio
+  rol: Rol;
+
   @ApiProperty({ example: 'Juan Carlos' })
   @IsString({ message: 'El nombre debe ser una cadena de texto.' })
   @IsNotEmpty({ message: 'El nombre es obligatorio.' })
@@ -29,38 +64,17 @@ export class CreateEmpleadoDto {
   })
   idEmpresaEmpleadora: number;
 
-  @ApiProperty({ example: 2, description: 'ID del equipo empleador' })
+  @ApiProperty({ example: 1, description: 'ID del equipo empleador' })
   @IsInt({ message: 'El ID del equipo empleador debe ser un número entero.' })
   idEquipoEmpleadora: number;
 
-  @ApiProperty({ example: 3, description: 'ID del puesto empleador' })
+  @ApiProperty({ example: 1, description: 'ID del puesto empleador' })
   @IsInt({ message: 'El ID del puesto empleador debe ser un número entero.' })
   idPuestoEmpleadora: number;
 
-  @ApiProperty({ example: 4, description: 'ID de la unidad empleadora' })
+  @ApiProperty({ example: 1, description: 'ID de la unidad empleadora' })
   @IsInt({
     message: 'El ID de la unidad empleadora debe ser un número entero.',
   })
   idUnidadEmpleadora: number;
-
-  @ApiProperty({ example: 1, description: 'ID del usuario asociado' })
-  @IsInt({ message: 'El ID del usuario debe ser un número entero.' })
-  idUsuario: number;
-
-  @ApiPropertyOptional({
-    example: true,
-    description: 'Estado del empleado (activo o no)',
-  })
-  @IsBoolean({
-    message: 'El estado debe ser un valor booleano (true o false).',
-  })
-  @IsOptional()
-  estado?: boolean = false;
-
-  @ApiProperty({
-    example: 1,
-    description: 'ID del usuario que crea el registro',
-  })
-  @IsInt({ message: 'El ID del creador debe ser un número entero.' })
-  creadoPorId: number;
 }

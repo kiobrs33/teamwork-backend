@@ -41,7 +41,9 @@ export class ObjetivoService {
     try {
       const objetivos = await this.prisma.objetivo.findMany({
         where: { estado: true },
-        orderBy: { idObjetivo: 'desc' },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
         include: {
           empresaEmpleadora: true,
           empleado: true,

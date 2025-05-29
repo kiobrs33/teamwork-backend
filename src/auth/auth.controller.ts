@@ -15,10 +15,9 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
   async login(@Body() body: LoginAuthDto) {
     const usuario = await this.authService.login(body);
-
     return {
       message: 'Login exitoso',
-      data: usuario, // ya viene con token y datos
+      data: usuario,
     };
   }
 }
