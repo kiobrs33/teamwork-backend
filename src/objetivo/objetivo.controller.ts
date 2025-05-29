@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
+import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
 
 @ApiTags('Objetivo')
 @ApiBearerAuth()
@@ -95,6 +96,22 @@ export class ObjetivoController {
     return {
       message: `Objetivo con ID ${id} eliminado correctamente.`,
       data: { objetivo },
+    };
+  }
+  @Post('con-detalles')
+  @ApiOperation({ summary: 'Crear objetivo con detalles asociados' })
+  @ApiResponse({
+    status: 201,
+    description: 'Objetivo y detalles creados exitosamente.',
+  })
+  async createConDetalles(
+    @User() user: any,
+    @Body() dto: CreateObjetivoConDetallesDto,
+  ) {
+    const result = await this.objetivoService.createConDetalles(user, dto);
+    return {
+      message: 'Objetivo y detalles creados exitosamente.',
+      data: result,
     };
   }
 }

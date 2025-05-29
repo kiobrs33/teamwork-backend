@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -8,6 +9,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateObjetivoDto } from './dto/create-objetivo.dto';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
+import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
 
 @Injectable()
 export class ObjetivoService {
@@ -23,7 +25,7 @@ export class ObjetivoService {
           fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
           idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
           idEmpleado: dto.idEmpleado,
-          creadoPorId: user.id,
+          creadoPorId: user.idUsuario,
           fechaCreacion: new Date(),
         },
       });
@@ -98,7 +100,7 @@ export class ObjetivoService {
             : undefined,
           idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
           idEmpleado: dto.idEmpleado,
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
         },
       });
@@ -125,7 +127,7 @@ export class ObjetivoService {
         where: { idObjetivo: id },
         data: {
           estado: false,
-          actualizadoPorId: user.id,
+          actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
         },
       });
@@ -135,6 +137,56 @@ export class ObjetivoService {
       this.logger.error(`Error al eliminar objetivo con ID ${id}:`, error);
       throw new InternalServerErrorException(
         'No se pudo eliminar el objetivo.',
+      );
+    }
+  }
+
+  /**
+   * Crea un objetivo con entre 2 y 4 detalles asociados en una transacción.
+   */
+  async createConDetalles(user: any, dto: CreateObjetivoConDetallesDto) {
+    if (dto.detalles.length < 2 || dto.detalles.length > 4) {
+      throw new BadRequestException(
+        'Debe enviar entre 2 y 4 detalles para el objetivo.',
+      );
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx: PrismaService) => {
+        const objetivo = await tx.objetivo.create({
+          data: {
+            fechaVigenciaInicia: new Date(dto.fechaVigenciaInicia),
+            fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
+            idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
+            idEmpleado: dto.idEmpleado,
+            estado: true,
+            creadoPorId: user.idUsuario,
+          },
+        });
+
+        const detallesCreados = await Promise.all(
+          dto.detalles.map((detalle) =>
+            tx.objetivoDetalle.create({
+              data: {
+                idObjetivo: objetivo.idObjetivo,
+                secuencial: detalle.secuencial,
+                descripcion: detalle.descripcion ?? null,
+                descripcionIniciativa: detalle.descripcionIniciativa ?? null,
+                unidadMedida: detalle.unidadMedida ?? null,
+                pesoEspecifico: detalle.pesoEspecifico ?? null,
+                estado: true,
+                creadoPorId: user.idUsuario,
+              },
+            }),
+          ),
+        );
+
+        return { objetivo, detalles: detallesCreados };
+      });
+    } catch (error) {
+      this.logger.error('Error creando objetivo con detalles:', error);
+      throw new InternalServerErrorException(
+        'No se pudo crear el objetivo con sus detalles.',
       );
     }
   }
