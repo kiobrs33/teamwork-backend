@@ -33,8 +33,8 @@ export class EmpleadoController {
   @Post()
   @ApiOperation({ summary: 'Crear un nuevo empleado' })
   @ApiResponse({ status: 201, description: 'Empleado creado exitosamente.' })
-  async create(@User() user: any, @Body() dto: CreateEmpleadoDto) {
-    const empleado = await this.empleadoService.create(user, dto);
+  async create(@User() user: any, @Body() body: CreateEmpleadoDto) {
+    const empleado = await this.empleadoService.create(user, body);
     return {
       message: 'Empleado creado exitosamente.',
       data: { empleado },

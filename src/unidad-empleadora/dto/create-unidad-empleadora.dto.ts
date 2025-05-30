@@ -13,11 +13,4 @@ export class CreateUnidadEmpleadoraDto {
   @ApiProperty({ example: 1, description: 'ID de la empresa empleadora' })
   @IsNumber({}, { message: 'El ID de empresa empleadora debe ser un número.' })
   idEmpresaEmpleadora: number;
-
-  @ApiProperty({
-    example: 101,
-    description: 'ID del usuario que crea el registro',
-  })
-  @IsNumber({}, { message: 'El ID del creador debe ser un número.' })
-  creadoPorId: number;
 }

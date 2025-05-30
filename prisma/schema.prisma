@@ -32,7 +32,7 @@ model Empleado {
   creadoPorId         Int               @map("creado_por_id")
   actualizadoPorId    Int?              @map("actualizado_por_id")
   fechaCreacion       DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?         @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?         @map("fecha_modificacion")
   objetivo            Objetivo[]
 
   @@map("empleado")
@@ -48,7 +48,7 @@ model Usuario {
   creadoPorId       Int?       @map("creado_por_id")
   actualizadoPorId  Int?       @map("actualizado_por_id")
   fechaCreacion     DateTime   @default(now()) @map("fecha_creacion")
-  fechaModificacion DateTime?  @updatedAt @map("fecha_modificacion")
+  fechaModificacion DateTime?  @map("fecha_modificacion")
   empleado          Empleado[]
 
   @@map("usuario")
@@ -75,7 +75,7 @@ model EmpresaEmpleadora {
   creadoPorId         Int                @map("creado_por_id")
   actualizadoPorId    Int?               @map("actualizado_por_id")
   fechaCreacion       DateTime           @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?          @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?          @map("fecha_modificacion")
   equipoEmpleadora    EquipoEmpleadora[]
   puestoEmpleadora    PuestoEmpleadora[]
   unidadEmpleadora    UnidadEmpleadora[]
@@ -94,7 +94,7 @@ model EquipoEmpleadora {
   creadoPorId         Int               @map("creado_por_id")
   actualizadoPorId    Int?              @map("actualizado_por_id")
   fechaCreacion       DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?         @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?         @map("fecha_modificacion")
   Empleado            Empleado[]
 
   @@map("equipo_empleadora")
@@ -109,7 +109,7 @@ model PuestoEmpleadora {
   creadoPorId         Int               @map("creado_por_id")
   actualizadoPorId    Int?              @map("actualizado_por_id")
   fechaCreacion       DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?         @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?         @map("fecha_modificacion")
   Empleado            Empleado[]
 
   @@map("puesto_empleadora")
@@ -124,7 +124,7 @@ model UnidadEmpleadora {
   creadoPorId         Int               @map("creado_por_id")
   actualizadoPorId    Int?              @map("actualizado_por_id")
   fechaCreacion       DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?         @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?         @map("fecha_modificacion")
   empleado            Empleado[]
 
   @@map("unidad_empleadora")
@@ -142,7 +142,7 @@ model Objetivo {
   creadoPorId         Int               @map("creado_por_id")
   actualizadoPorId    Int?              @map("actualizado_por_id")
   fechaCreacion       DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?         @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?         @map("fecha_modificacion")
   ObjetivoDetalle     ObjetivoDetalle[]
 
   @@map("objetivo")
@@ -161,7 +161,7 @@ model ObjetivoDetalle {
   creadoPorId           Int       @map("creado_por_id")
   actualizadoPorId      Int?      @map("actualizado_por_id")
   fechaCreacion         DateTime  @default(now()) @map("fecha_creacion")
-  fechaModificacion     DateTime? @updatedAt @map("fecha_modificacion")
+  fechaModificacion     DateTime? @map("fecha_modificacion")
 
   @@map("objetivo_detalle")
 }
@@ -173,7 +173,7 @@ model TablaMaestra {
   creadoPorId         Int                   @map("creado_por_id")
   actualizadoPorId    Int?                  @map("actualizado_por_id")
   fechaCreacion       DateTime              @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?             @updatedAt @map("fecha_modificacion")
+  fechaModificacion   DateTime?             @map("fecha_modificacion")
   TablaMaestraDetalle TablaMaestraDetalle[]
 
   @@map("tabla_maestra")
@@ -189,7 +189,7 @@ model TablaMaestraDetalle {
   creadoPorId           Int          @map("creado_por_id")
   actualizadoPorId      Int?         @map("actualizado_por_id")
   fechaCreacion         DateTime     @default(now()) @map("fecha_creacion")
-  fechaModificacion     DateTime?    @updatedAt @map("fecha_modificacion")
+  fechaModificacion     DateTime?    @map("fecha_modificacion")
 
   @@map("tabla_maestra_detalle")
 }

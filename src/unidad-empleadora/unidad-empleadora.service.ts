@@ -13,11 +13,11 @@ export class UnidadEmpleadoraService {
   constructor(private prisma: PrismaService) {}
 
   async create(user: any, dto: CreateUnidadEmpleadoraDto) {
+    console.log(user);
     try {
       const unidad = await this.prisma.unidadEmpleadora.create({
         data: {
           ...dto,
-          fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
       });

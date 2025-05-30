@@ -19,7 +19,6 @@ export class EmpresaEmpleadoraService {
           ...dto,
           fechaVigenciaInicio: new Date(dto.fechaVigenciaInicio),
           fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
-          fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
       });

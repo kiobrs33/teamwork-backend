@@ -40,6 +40,7 @@ export class UnidadEmpleadoraController {
     description: 'Unidad empleadora creada exitosamente.',
   })
   async create(@User() user: any, @Body() dto: CreateUnidadEmpleadoraDto) {
+    console.log('🐛 user in decorator:', user);
     const unidad = await this.unidadEmpleadoraService.create(user, dto);
     return {
       message: 'Unidad empleadora creada exitosamente.',
