@@ -82,9 +82,9 @@ export class EmpleadoService {
           usuario: true,
           objetivo: {
             include: {
-              ObjetivoDetalle: true
-            }
-          }
+              ObjetivoDetalle: true,
+            },
+          },
         },
         orderBy: {
           fechaCreacion: 'desc',
