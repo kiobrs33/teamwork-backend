@@ -110,10 +110,10 @@ export class ObjetivoController {
     @User() user: any,
     @Body() dto: CreateObjetivoConDetallesDto,
   ) {
-    const result = await this.objetivoService.createConDetalles(user, dto);
+    const empleado = await this.objetivoService.createConDetalles(user, dto);
     return {
       message: 'Objetivo y detalles creados exitosamente.',
-      data: result,
+      data: { empleado },
     };
   }
 

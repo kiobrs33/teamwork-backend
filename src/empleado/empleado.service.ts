@@ -55,7 +55,11 @@ export class EmpleadoService {
           puestoEmpleadora: true,
           unidadEmpleadora: true,
           usuario: true,
-          objetivo: true,
+          objetivo: {
+            include: {
+              ObjetivoDetalle: true
+            }
+          },
         },
       });
 
@@ -76,7 +80,11 @@ export class EmpleadoService {
           puestoEmpleadora: true,
           unidadEmpleadora: true,
           usuario: true,
-          objetivo: true,
+          objetivo: {
+            include: {
+              ObjetivoDetalle: true
+            }
+          }
         },
         orderBy: {
           fechaCreacion: 'desc',

@@ -184,7 +184,20 @@ export class ObjetivoService {
           ),
         );
 
-        return { objetivo, detalles: detallesCreados };
+        const empleado = await this.prisma.empleado.findUnique({
+          where: { idEmpleado: objetivo.idEmpleado, estado: true },
+          include: {
+            empresaEmpleadora: true,
+            equipoEmpleadora: true,
+            puestoEmpleadora: true,
+            unidadEmpleadora: true,
+            usuario: true,
+            objetivo: true,
+          },
+        });
+
+        // return { objetivo, detalles: detallesCreados };
+        return empleado;
       });
     } catch (error) {
       this.logger.error('Error creando objetivo con detalles:', error);
