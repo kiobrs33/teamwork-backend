@@ -16,30 +16,29 @@ class ObjetivoDetalleDto {
   @Min(1, { message: 'El secuencial debe ser mayor o igual a 1.' })
   secuencial: number;
 
-  @ApiProperty({ example: 'Descripción del detalle', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Descripción del detalle' })
   @MaxLength(255, {
     message: 'La descripción no puede exceder 255 caracteres.',
   })
-  descripcion?: string;
+  descripcion: string;
 
-  @ApiProperty({ example: 'Iniciativa relacionada', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Iniciativa relacionada' })
   @MaxLength(255, {
     message: 'La descripción de iniciativa no puede exceder 255 caracteres.',
   })
-  descripcionIniciativa?: string;
+  descripcionIniciativa: string;
 
-  @ApiProperty({ example: 'Kg', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Kg' })
   @MaxLength(50, {
     message: 'La unidad de medida no puede exceder 50 caracteres.',
   })
-  unidadMedida?: string;
+  unidadMedida: string;
 
-  @ApiProperty({ example: 0.5, required: false })
-  @IsOptional()
-  pesoEspecifico?: number;
+  @ApiProperty({ example: 0.5 })
+  pesoEspecifico: number;
+
+  @ApiProperty({ example: 0.5 })
+  ponderacion: number;
 }
 
 export class CreateObjetivoConDetallesDto {

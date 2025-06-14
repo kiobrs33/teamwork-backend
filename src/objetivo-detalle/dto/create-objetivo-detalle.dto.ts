@@ -1,12 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsNumber,
-  Min,
-} from 'class-validator';
+import { IsInt, IsString, IsNumber, Min } from 'class-validator';
 
 export class CreateObjetivoDetalleDto {
   @ApiProperty({ example: 1, description: 'ID del objetivo al que pertenece' })
@@ -23,34 +16,38 @@ export class CreateObjetivoDetalleDto {
     description: 'Descripción opcional',
     required: false,
   })
-  @IsOptional()
   @IsString({ message: 'Debe ser un texto.' })
-  descripcion?: string;
+  descripcion: string;
 
   @ApiProperty({
     example: 'Iniciativa para mejorar...',
     description: 'Descripción de la iniciativa',
     required: false,
   })
-  @IsOptional()
   @IsString({ message: 'Debe ser un texto.' })
-  descripcionIniciativa?: string;
+  descripcionIniciativa: string;
 
   @ApiProperty({
     example: 'Horas',
     description: 'Unidad de medida',
     required: false,
   })
-  @IsOptional()
   @IsString({ message: 'Debe ser un texto.' })
-  unidadMedida?: string;
+  unidadMedida: string;
 
   @ApiProperty({
     example: 25.5,
     description: 'Peso específico del objetivo detalle',
     required: false,
   })
-  @IsOptional()
   @IsNumber({}, { message: 'Debe ser un número.' })
-  pesoEspecifico?: number;
+  pesoEspecifico: number;
+
+  @ApiProperty({
+    example: 25.5,
+    description: 'Ponderación del objetivo detalle',
+    required: false,
+  })
+  @IsNumber({}, { message: 'Debe ser un número.' })
+  ponderacion: number;
 }

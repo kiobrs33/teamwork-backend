@@ -47,7 +47,7 @@ export class ObjetivoService {
         include: {
           empresaEmpleadora: true,
           empleado: true,
-          ObjetivoDetalle: true,
+          objetivoDetalle: true,
         },
       });
       return objetivos;
@@ -66,7 +66,7 @@ export class ObjetivoService {
         include: {
           empresaEmpleadora: true,
           empleado: true,
-          ObjetivoDetalle: true,
+          objetivoDetalle: true,
         },
       });
       if (!objetivo) {
@@ -173,10 +173,11 @@ export class ObjetivoService {
               data: {
                 idObjetivo: objetivo.idObjetivo,
                 secuencial: detalle.secuencial,
-                descripcion: detalle.descripcion ?? null,
-                descripcionIniciativa: detalle.descripcionIniciativa ?? null,
-                unidadMedida: detalle.unidadMedida ?? null,
-                pesoEspecifico: detalle.pesoEspecifico ?? null,
+                descripcion: detalle.descripcion,
+                descripcionIniciativa: detalle.descripcionIniciativa,
+                unidadMedida: detalle.unidadMedida,
+                pesoEspecifico: detalle.pesoEspecifico,
+                ponderacion: detalle.ponderacion,
                 estado: true,
                 creadoPorId: user.idUsuario,
               },
@@ -188,9 +189,9 @@ export class ObjetivoService {
           where: { idEmpleado: objetivo.idEmpleado, estado: true },
           include: {
             empresaEmpleadora: true,
-            equipoEmpleadora: true,
+            areaEmpleadora: true,
             puestoEmpleadora: true,
-            unidadEmpleadora: true,
+            gerenciaEmpleadora: true,
             usuario: true,
             objetivo: true,
           },
@@ -235,10 +236,11 @@ export class ObjetivoService {
             data: {
               idObjetivo,
               secuencial: detalle.secuencial,
-              descripcion: detalle.descripcion ?? null,
-              descripcionIniciativa: detalle.descripcionIniciativa ?? null,
-              unidadMedida: detalle.unidadMedida ?? null,
-              pesoEspecifico: detalle.pesoEspecifico ?? null,
+              descripcion: detalle.descripcion,
+              descripcionIniciativa: detalle.descripcionIniciativa,
+              unidadMedida: detalle.unidadMedida,
+              pesoEspecifico: detalle.pesoEspecifico,
+              ponderacion: detalle.ponderacion,
               estado: true,
               creadoPorId: user.idUsuario,
             },

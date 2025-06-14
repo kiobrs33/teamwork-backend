@@ -28,7 +28,7 @@ export class EmpleadoService {
       const usuario = await this.prisma.usuario.create({
         data: {
           codigoUsuario: body.codigoUsuario,
-          correoElectronico: body.correoElectronico,
+          //correoElectronico: body.correoElectronico,
           contrasena: hashedPassword,
           rol: body.rol,
           fechaCreacion: new Date(),
@@ -41,24 +41,29 @@ export class EmpleadoService {
           nombres: body.nombres,
           apellidoPaterno: body.apellidoPaterno,
           apellidoMaterno: body.apellidoMaterno,
+          documento: body.documento,
+          sede: body.sede,
+          tiempoEmpresaValor: body.tiempoEmpresaValor,
+          tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
           idEmpresaEmpleadora: body.idEmpresaEmpleadora,
-          idEquipoEmpleadora: body.idEquipoEmpleadora,
+          idAreaEmpleadora: body.idAreaEmpleadora,
           idPuestoEmpleadora: body.idPuestoEmpleadora,
-          idUnidadEmpleadora: body.idUnidadEmpleadora,
+          idGerenciaEmpleadora: body.idGerenciaEmpleadora,
+          idUnidadOcupacionalEmpleadora: body.unidadOcupacionalEmpleadora,
           idUsuario: usuario.idUsuario,
           fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
         include: {
           empresaEmpleadora: true,
-          equipoEmpleadora: true,
+          areaEmpleadora: true,
           puestoEmpleadora: true,
-          unidadEmpleadora: true,
+          gerenciaEmpleadora: true,
           usuario: true,
           objetivo: {
             include: {
-              ObjetivoDetalle: true
-            }
+              objetivoDetalle: true,
+            },
           },
         },
       });
@@ -76,13 +81,13 @@ export class EmpleadoService {
         where: { estado: true },
         include: {
           empresaEmpleadora: true,
-          equipoEmpleadora: true,
+          areaEmpleadora: true,
           puestoEmpleadora: true,
-          unidadEmpleadora: true,
+          gerenciaEmpleadora: true,
           usuario: true,
           objetivo: {
             include: {
-              ObjetivoDetalle: true,
+              objetivoDetalle: true,
             },
           },
         },
@@ -105,9 +110,9 @@ export class EmpleadoService {
         where: { idEmpleado: id, estado: true },
         include: {
           empresaEmpleadora: true,
-          equipoEmpleadora: true,
+          areaEmpleadora: true,
           puestoEmpleadora: true,
-          unidadEmpleadora: true,
+          gerenciaEmpleadora: true,
           usuario: true,
           objetivo: true,
         },
@@ -139,7 +144,7 @@ export class EmpleadoService {
 
       const usuarioUpdateData: any = {
         codigoUsuario: body.codigoUsuario,
-        correoElectronico: body.correoElectronico,
+        //correoElectronico: body.correoElectronico,
         rol: body.rol,
         fechaModificacion: new Date(),
         actualizadoPorId: user.idUsuario,
@@ -158,13 +163,18 @@ export class EmpleadoService {
         nombres: body.nombres,
         apellidoPaterno: body.apellidoPaterno,
         apellidoMaterno: body.apellidoMaterno,
+        documento: body.documento,
+        sede: body.sede,
+        tiempoEmpresaValor: body.tiempoEmpresaValor,
+        tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
         idEmpresaEmpleadora: body.idEmpresaEmpleadora,
-        idEquipoEmpleadora: body.idEquipoEmpleadora,
+        idAreaEmpleadora: body.idAreaEmpleadora,
         idPuestoEmpleadora: body.idPuestoEmpleadora,
-        idUnidadEmpleadora: body.idUnidadEmpleadora,
+        idGerenciaEmpleadora: body.idGerenciaEmpleadora,
+        idUnidadOcupacionalEmpleadora: body.unidadOcupacionalEmpleadora,
         idUsuario: existEmpleado.idUsuario,
-        fechaModificacion: new Date(),
-        actualizadoPorId: user.idUsuario,
+        fechaCreacion: new Date(),
+        creadoPorId: user.idUsuario,
       };
 
       const updated = await this.prisma.empleado.update({
@@ -172,9 +182,9 @@ export class EmpleadoService {
         data: empleadoUpdateData,
         include: {
           empresaEmpleadora: true,
-          equipoEmpleadora: true,
+          areaEmpleadora: true,
           puestoEmpleadora: true,
-          unidadEmpleadora: true,
+          gerenciaEmpleadora: true,
           usuario: true,
           objetivo: true,
         },

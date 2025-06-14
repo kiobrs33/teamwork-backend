@@ -7,10 +7,10 @@ import {
   Length,
 } from 'class-validator';
 
-export class CreateEquipoEmpleadoraDto {
+export class CreateAreaEmpleadoraDto {
   @ApiProperty({
-    example: 'Equipo de Marketing',
-    description: 'Descripción del equipo empleadora',
+    example: 'Área de Marketing',
+    description: 'Descripción del área empleadora',
   })
   @IsString()
   @IsNotEmpty({ message: 'La descripción es obligatoria.' })

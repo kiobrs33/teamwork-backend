@@ -34,25 +34,6 @@ export class CreateEmpresaEmpleadoraDto {
   })
   ruc?: string;
 
-  // @ApiProperty({
-  //   example: 'empresa@xyz.com',
-  //   description: 'Correo electrónico de contacto',
-  // })
-  // @IsEmail({}, { message: 'El correo electrónico no es válido.' })
-  // @IsNotEmpty({ message: 'El correo es obligatorio.' })
-  // correo: string;
-
-  // @ApiProperty({
-  //   example: '+51987654321',
-  //   description: 'Teléfono de contacto (opcional)',
-  //   required: false,
-  // })
-  // @IsOptional()
-  // @IsPhoneNumber('PE', {
-  //   message: 'El número de teléfono no es válido para Perú.',
-  // })
-  // telefono?: string;
-
   @ApiProperty({
     example: 'Av. Principal 123, Lima',
     description: 'Dirección de la empresa (opcional)',
@@ -72,6 +53,22 @@ export class CreateEmpresaEmpleadoraDto {
   @IsString()
   @IsNotEmpty({ message: 'La URL del logo es obligatoria.' })
   urlLogo: string;
+
+  @ApiProperty({
+    example: '90, 180 y 90/180',
+    description: 'Modelo Empresa',
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'El modelo empresa es obligatorio.' })
+  modeloEmpresa: string;
+
+  @ApiProperty({
+    example: '2, 3 o 4',
+    description: 'Obejetivo Empresa',
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'El objetivo empresa es obligatorio.' })
+  objetivoEmpresa: string;
 
   @ApiProperty({
     example: '2024-01-01',

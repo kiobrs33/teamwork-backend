@@ -15,24 +15,23 @@ export class NuevoDetalleDto {
   @Min(1)
   secuencial: number;
 
-  @ApiProperty({ example: 'Descripción del nuevo detalle', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Descripción del nuevo detalle' })
   @MaxLength(255)
-  descripcion?: string;
+  descripcion: string;
 
-  @ApiProperty({ example: 'Iniciativa relacionada', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Iniciativa relacionada' })
   @MaxLength(255)
-  descripcionIniciativa?: string;
+  descripcionIniciativa: string;
 
-  @ApiProperty({ example: 'Kg', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Kg' })
   @MaxLength(50)
-  unidadMedida?: string;
+  unidadMedida: string;
 
-  @ApiProperty({ example: 0.5, required: false })
-  @IsOptional()
-  pesoEspecifico?: number;
+  @ApiProperty({ example: 0.5 })
+  pesoEspecifico: number;
+
+  @ApiProperty({ example: 0.5 })
+  ponderacion: number;
 }
 
 export class AddDetallesAObjetivoDto {

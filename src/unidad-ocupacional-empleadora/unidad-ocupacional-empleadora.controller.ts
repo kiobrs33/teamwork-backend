@@ -1,34 +1,137 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseIntPipe,
+  UseGuards,
+} from '@nestjs/common';
 import { UnidadOcupacionalEmpleadoraService } from './unidad-ocupacional-empleadora.service';
 import { CreateUnidadOcupacionalEmpleadoraDto } from './dto/create-unidad-ocupacional-empleadora.dto';
 import { UpdateUnidadOcupacionalEmpleadoraDto } from './dto/update-unidad-ocupacional-empleadora.dto';
 
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/auth/jwt.guard';
+import { User } from 'src/auth/auth.decorator';
+
+@ApiTags('Unidad Ocupacional Empleadora')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('unidad-ocupacional-empleadora')
 export class UnidadOcupacionalEmpleadoraController {
-  constructor(private readonly unidadOcupacionalEmpleadoraService: UnidadOcupacionalEmpleadoraService) {}
+  constructor(
+    private readonly unidadOcupacionalEmpleadoraService: UnidadOcupacionalEmpleadoraService,
+  ) {}
 
   @Post()
-  create(@Body() createUnidadOcupacionalEmpleadoraDto: CreateUnidadOcupacionalEmpleadoraDto) {
-    return this.unidadOcupacionalEmpleadoraService.create(createUnidadOcupacionalEmpleadoraDto);
+  @ApiOperation({ summary: 'Crear una nueva unidad ocupacional empleadora' })
+  @ApiResponse({
+    status: 201,
+    description: 'Unidad ocupacional empleadora creada exitosamente.',
+  })
+  async create(
+    @User() user: any,
+    @Body() dto: CreateUnidadOcupacionalEmpleadoraDto,
+  ) {
+    const unidad = await this.unidadOcupacionalEmpleadoraService.create(
+      user,
+      dto,
+    );
+    return {
+      message: 'Unidad ocupacional empleadora creada exitosamente.',
+      data: { unidad },
+    };
   }
 
   @Get()
-  findAll() {
-    return this.unidadOcupacionalEmpleadoraService.findAll();
+  @ApiOperation({
+    summary: 'Listar todas las unidades ocupacionales empleadoras',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de unidades ocupacionales empleadoras.',
+  })
+  async findAll() {
+    const unidades = await this.unidadOcupacionalEmpleadoraService.findAll();
+    return {
+      message: 'Lista de unidades ocupacionales empleadoras.',
+      data: { unidades },
+    };
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.unidadOcupacionalEmpleadoraService.findOne(+id);
+  @ApiOperation({ summary: 'Obtener unidad ocupacional empleadora por ID' })
+  @ApiParam({
+    name: 'id',
+    description: 'ID de la unidad ocupacional empleadora',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Unidad ocupacional empleadora encontrada.',
+  })
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const unidad = await this.unidadOcupacionalEmpleadoraService.findOne(id);
+    return {
+      message: 'Unidad ocupacional empleadora encontrada.',
+      data: { unidad },
+    };
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUnidadOcupacionalEmpleadoraDto: UpdateUnidadOcupacionalEmpleadoraDto) {
-    return this.unidadOcupacionalEmpleadoraService.update(+id, updateUnidadOcupacionalEmpleadoraDto);
+  @ApiOperation({ summary: 'Actualizar unidad ocupacional empleadora' })
+  @ApiParam({
+    name: 'id',
+    description: 'ID de la unidad ocupacional empleadora',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Unidad ocupacional empleadora actualizada correctamente.',
+  })
+  async update(
+    @User() user: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUnidadOcupacionalEmpleadoraDto,
+  ) {
+    const unidad = await this.unidadOcupacionalEmpleadoraService.update(
+      user,
+      id,
+      dto,
+    );
+    return {
+      message: `Unidad ocupacional empleadora con ID ${id} actualizada correctamente.`,
+      data: { unidad },
+    };
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.unidadOcupacionalEmpleadoraService.remove(+id);
+  @ApiOperation({
+    summary: 'Eliminar unidad ocupacional empleadora (soft delete)',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID de la unidad ocupacional empleadora',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Unidad ocupacional empleadora eliminada correctamente.',
+  })
+  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+    const unidad = await this.unidadOcupacionalEmpleadoraService.remove(
+      user,
+      id,
+    );
+    return {
+      message: `Unidad ocupacional empleadora con ID ${id} eliminada correctamente.`,
+      data: { unidad },
+    };
   }
 }

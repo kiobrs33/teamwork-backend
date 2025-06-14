@@ -6,12 +6,12 @@ import { hash } from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const hashedPassword = await hash('123456', 10);
+  /**const hashedPassword = await hash('123456', 10);
 
   const admin = await prisma.usuario.create({
     data: {
       codigoUsuario: "admin",
-      correoElectronico: faker.internet.email(),
+     // correoElectronico: faker.internet.email(),
       contrasena: hashedPassword,
       rol: 'ADMIN',
     },
@@ -97,7 +97,7 @@ async function main() {
     }
   }
 
-  console.log('✅ Datos de prueba generados correctamente.');
+  console.log('✅ Datos de prueba generados correctamente.');**/
 }
 
 main()

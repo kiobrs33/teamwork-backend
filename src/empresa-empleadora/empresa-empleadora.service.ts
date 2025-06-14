@@ -33,9 +33,9 @@ export class EmpresaEmpleadoraService {
     try {
       const empresas = await this.prisma.empresaEmpleadora.findMany({
         include: {
-          equipoEmpleadora: true,
+          areaEmpleadora: true,
           puestoEmpleadora: true,
-          unidadEmpleadora: true,
+          gerenciaEmpleadora: true,
           objetivo: true,
           empleado: true,
         },
@@ -59,9 +59,9 @@ export class EmpresaEmpleadoraService {
     const empresa = await this.prisma.empresaEmpleadora.findUnique({
       where: { idEmpresaEmpleadora: id, estado: true },
       include: {
-        equipoEmpleadora: true,
+        areaEmpleadora: true,
         puestoEmpleadora: true,
-        unidadEmpleadora: true,
+        gerenciaEmpleadora: true,
         objetivo: true,
         empleado: true,
       },
