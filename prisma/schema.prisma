@@ -15,17 +15,23 @@ datasource db {
 
 model Empleado {
   idEmpleado          Int               @id @default(autoincrement()) @map("id_empleado")
-  nombres             String            @map("nombres")
+  nombres             String            
   apellidoPaterno     String            @map("apellido_paterno")
   apellidoMaterno     String            @map("apellido_materno")
+  documento           Int 
+  sede String
+  tiempoEmpresaValor Int @map("tiempo_empresa_valor")
+  tiempoEmpresaUnidad String @map("tiempo_empresa_unidad")
   idEmpresaEmpleadora Int               @map("id_empresa_empleadora")
   empresaEmpleadora   EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
-  idEquipoEmpleadora  Int               @map("id_equipo_empleadora")
-  equipoEmpleadora    EquipoEmpleadora  @relation(fields: [idEquipoEmpleadora], references: [idEquipoEmpleadora])
+  idAreaEmpleadora  Int               @map("id_equipo_empleadora")
+  areaEmpleadora    AreaEmpleadora  @relation(fields: [idAreaEmpleadora], references: [idAreaEmpleadora])
   idPuestoEmpleadora  Int               @map("id_puesto_empleadora")
   puestoEmpleadora    PuestoEmpleadora  @relation(fields: [idPuestoEmpleadora], references: [idPuestoEmpleadora])
-  idUnidadEmpleadora  Int               @map("id_unidad_empleadora")
-  unidadEmpleadora    UnidadEmpleadora  @relation(fields: [idUnidadEmpleadora], references: [idUnidadEmpleadora])
+  idGerenciaEmpleadora  Int               @map("id_unidad_empleadora")
+  gerenciaEmpleadora  GerenciaEmpleadora  @relation(fields: [idGerenciaEmpleadora], references: [idGerenciaEmpleadora])
+  idUnidadOcupacionalEmpleadora Int @map("id_unidad_ocupacional_empleadora")
+  unidadOcupacionalEmpleadora  UnidadOcupacionalEmpleadora  @relation(fields: [idUnidadOcupacionalEmpleadora], references: [idUnidadOcupacionalEmpleadora])
   idUsuario           Int               @map("id_usuario")
   usuario             Usuario           @relation(fields: [idUsuario], references: [idUsuario])
   estado              Boolean           @default(true)
@@ -41,7 +47,6 @@ model Empleado {
 model Usuario {
   idUsuario         Int        @id @default(autoincrement()) @map("id_usuario")
   codigoUsuario     String     @map("codigo_usuario")
-  correoElectronico String?    @map("correo_electronico")
   contrasena        String
   rol               Rol        @default(EMPLEADO)
   estado            Boolean    @default(true)
@@ -69,6 +74,8 @@ model EmpresaEmpleadora {
   ruc                 String?
   direccionEmpresa    String?            @map("direccion_empresa")
   urlLogo             String             @map("url_logo")
+  modeloEmpresa String
+  objetivoEmpresa String
   fechaVigenciaInicio DateTime           @map("fecha_vigencia_inicio")
   fechaVigenciaFin    DateTime           @map("fecha_vigencia_fin")
   estado              Boolean            @default(true)
@@ -76,17 +83,18 @@ model EmpresaEmpleadora {
   actualizadoPorId    Int?               @map("actualizado_por_id")
   fechaCreacion       DateTime           @default(now()) @map("fecha_creacion")
   fechaModificacion   DateTime?          @map("fecha_modificacion")
-  equipoEmpleadora    EquipoEmpleadora[]
+  areaEmpleadora    AreaEmpleadora[]
   puestoEmpleadora    PuestoEmpleadora[]
-  unidadEmpleadora    UnidadEmpleadora[]
+  gerenciaEmpleadora    GerenciaEmpleadora[]
   objetivo            Objetivo[]
   empleado            Empleado[]
+  unidadOcupacionalEmpleadora UnidadOcupacionalEmpleadora[]
 
   @@map("empresa_empleadora")
 }
 
-model EquipoEmpleadora {
-  idEquipoEmpleadora  Int               @id @default(autoincrement()) @map("id_equipo_empleadora")
+model AreaEmpleadora {
+  idAreaEmpleadora  Int               @id @default(autoincrement()) @map("id_equipo_empleadora")
   descripcion         String
   idEmpresaEmpleadora Int               @map("id_empresa_empleadora")
   empresaEmpleadora   EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
@@ -97,7 +105,7 @@ model EquipoEmpleadora {
   fechaModificacion   DateTime?         @map("fecha_modificacion")
   Empleado            Empleado[]
 
-  @@map("equipo_empleadora")
+  @@map("area_empleadora")
 }
 
 model PuestoEmpleadora {
@@ -115,8 +123,8 @@ model PuestoEmpleadora {
   @@map("puesto_empleadora")
 }
 
-model UnidadEmpleadora {
-  idUnidadEmpleadora  Int               @id @default(autoincrement()) @map("id_unidad_empleadora")
+model GerenciaEmpleadora {
+  idGerenciaEmpleadora  Int               @id @default(autoincrement()) @map("id_unidad_empleadora")
   descripcion         String
   idEmpresaEmpleadora Int               @map("id_empresa_empleadora")
   empresaEmpleadora   EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
@@ -127,8 +135,24 @@ model UnidadEmpleadora {
   fechaModificacion   DateTime?         @map("fecha_modificacion")
   empleado            Empleado[]
 
-  @@map("unidad_empleadora")
+  @@map("gerencia_empleadora")
 }
+
+model UnidadOcupacionalEmpleadora {
+  idUnidadOcupacionalEmpleadora  Int                  @id @default(autoincrement()) @map("id_unidad_ocupacional_empleadora")
+  descripcion                    String
+  idEmpresaEmpleadora            Int                  @map("id_empresa_empleadora")
+  empresaEmpleadora              EmpresaEmpleadora    @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
+  estado                         Boolean              @default(true)
+  creadoPorId                    Int                  @map("creado_por_id")
+  actualizadoPorId               Int?                 @map("actualizado_por_id")
+  fechaCreacion                  DateTime             @default(now()) @map("fecha_creacion")
+  fechaModificacion              DateTime?            @map("fecha_modificacion")
+  empleado                       Empleado[]
+
+  @@map("unidad_ocupacional_empleadora")
+}
+
 
 model Objetivo {
   idObjetivo          Int               @id @default(autoincrement()) @map("id_objetivo")
@@ -153,10 +177,11 @@ model ObjetivoDetalle {
   idObjetivo            Int       @map("id_objetivo")
   objetivo              Objetivo  @relation(fields: [idObjetivo], references: [idObjetivo])
   secuencial            Int
-  descripcion           String?
-  descripcionIniciativa String?   @map("descripcion_iniciativa")
-  unidadMedida          String?   @map("unidad_medida")
-  pesoEspecifico        Float?    @map("peso_especifico")
+  descripcion           String
+  descripcionIniciativa String   @map("descripcion_iniciativa")
+  unidadMedida          String   @map("unidad_medida")
+  pesoEspecifico        Float    @map("peso_especifico")
+  ponderacion Float 
   estado                Boolean   @default(true)
   creadoPorId           Int       @map("creado_por_id")
   actualizadoPorId      Int?      @map("actualizado_por_id")

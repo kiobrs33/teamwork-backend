@@ -11,6 +11,8 @@ import { PuestoEmpleadoraModule } from './puesto-empleadora/puesto-empleadora.mo
 import { UnidadEmpleadoraModule } from './unidad-empleadora/unidad-empleadora.module';
 import { ObjetivoModule } from './objetivo/objetivo.module';
 import { ObjetivoDetalleModule } from './objetivo-detalle/objetivo-detalle.module';
+import { GerenciaEmpleadoraModule } from './gerencia-empleadora/gerencia-empleadora.module';
+import { UnidadOcupacionalEmpleadoraModule } from './unidad-ocupacional-empleadora/unidad-ocupacional-empleadora.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { ObjetivoDetalleModule } from './objetivo-detalle/objetivo-detalle.modul
     UnidadEmpleadoraModule,
     ObjetivoModule,
     ObjetivoDetalleModule,
+    GerenciaEmpleadoraModule,
+    UnidadOcupacionalEmpleadoraModule,
   ],
   controllers: [AppController],
   providers: [AppService],
