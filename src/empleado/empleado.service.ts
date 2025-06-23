@@ -57,7 +57,7 @@ export class EmpleadoService {
           usuario: true,
           objetivo: {
             include: {
-              ObjetivoDetalle: true
+              objetivoDetalle: true
             }
           },
         },
@@ -82,7 +82,7 @@ export class EmpleadoService {
           usuario: true,
           objetivo: {
             include: {
-              ObjetivoDetalle: true,
+              objetivoDetalle: true,
             },
           },
         },

@@ -20,6 +20,9 @@ export class EquipoEmpleadoraService {
           fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
+        include: {
+          empresaEmpleadora: true,
+        },
       });
       return equipo;
     } catch (error) {
@@ -79,6 +82,9 @@ export class EquipoEmpleadoraService {
           ...dto,
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
+        },
+        include: {
+          empresaEmpleadora: true,
         },
       });
     } catch (error) {

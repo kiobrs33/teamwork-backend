@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ValidationPipe } from '@nestjs/common';
+import { PurgeResponseInterceptor } from './common/interceptors/purge-response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -28,12 +29,12 @@ async function bootstrap() {
       whitelist: true, // elimina propiedades no definidas en el DTO
       forbidNonWhitelisted: false, // lanza error si se envían propiedades no esperadas
       forbidUnknownValues: true, // lanza error si se envía null en vez de objeto
-      // transform: true, // convierte los tipos
     }),
   );
 
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new PurgeResponseInterceptor());
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

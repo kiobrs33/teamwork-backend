@@ -24,6 +24,7 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
 import { AddDetallesAObjetivoDto } from './dto/add-detalles-a-objetivo.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Objetivo')
 @ApiBearerAuth()
@@ -35,7 +36,7 @@ export class ObjetivoController {
   @Post()
   @ApiOperation({ summary: 'Crear un nuevo objetivo' })
   @ApiResponse({ status: 201, description: 'Objetivo creado exitosamente.' })
-  async create(@User() user: any, @Body() dto: CreateObjetivoDto) {
+  async create(@User() user: AuthUser, @Body() dto: CreateObjetivoDto) {
     const objetivo = await this.objetivoService.create(user, dto);
     return {
       message: 'Objetivo creado exitosamente.',
@@ -74,11 +75,11 @@ export class ObjetivoController {
     description: 'Objetivo actualizado correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateObjetivoDto,
   ) {
-    const objetivo = await this.objetivoService.update(user, id, dto);
+    const objetivo = await this.objetivoService.update(id, user, dto);
     return {
       message: `Objetivo con ID ${id} actualizado correctamente.`,
       data: { objetivo },
@@ -92,7 +93,7 @@ export class ObjetivoController {
     status: 200,
     description: 'Objetivo eliminado correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const objetivo = await this.objetivoService.remove(user, id);
     return {
       message: `Objetivo con ID ${id} eliminado correctamente.`,
@@ -107,7 +108,7 @@ export class ObjetivoController {
     description: 'Objetivo y detalles creados exitosamente.',
   })
   async createConDetalles(
-    @User() user: any,
+    @User() user: AuthUser,
     @Body() dto: CreateObjetivoConDetallesDto,
   ) {
     const empleado = await this.objetivoService.createConDetalles(user, dto);
@@ -124,14 +125,14 @@ export class ObjetivoController {
     description: 'Detalles agregados correctamente.',
   })
   async agregarDetalles(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('idObjetivo', ParseIntPipe) idObjetivo: number,
-    @Body() body: AddDetallesAObjetivoDto,
+    @Body() dto: AddDetallesAObjetivoDto,
   ) {
     const result = await this.objetivoService.agregarDetalles(
       user,
       idObjetivo,
-      body.detalles,
+      dto.detalles,
     );
     return {
       message: 'Detalles agregados correctamente.',

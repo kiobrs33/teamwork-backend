@@ -20,6 +20,9 @@ export class UnidadEmpleadoraService {
           ...dto,
           creadoPorId: user.idUsuario,
         },
+        include: {
+          empresaEmpleadora: true,
+        },
       });
       return unidad;
     } catch (error) {
@@ -82,6 +85,9 @@ export class UnidadEmpleadoraService {
           ...dto,
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
+        },
+        include: {
+          empresaEmpleadora: true,
         },
       });
     } catch (error) {

@@ -19,6 +19,9 @@ export class PuestoEmpleadoraService {
           fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
+        include: {
+          empresaEmpleadora: true,
+        },
       });
     } catch (error) {
       console.error('Error al crear puesto:', error);
@@ -72,6 +75,9 @@ export class PuestoEmpleadoraService {
           ...dto,
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
+        },
+        include: {
+          empresaEmpleadora: true,
         },
       });
     } catch (error) {
