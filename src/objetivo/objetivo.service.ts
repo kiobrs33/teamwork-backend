@@ -198,6 +198,7 @@ export class ObjetivoService {
           where: { idObjetivo: id },
         });
 
+        // Si se envían detalles, insertarlos
         if (dto.objetivoDetalle && Array.isArray(dto.objetivoDetalle)) {
           // Insertar nuevos detalles
           let secuencial = 1;
