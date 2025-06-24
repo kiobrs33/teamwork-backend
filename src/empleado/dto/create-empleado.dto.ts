@@ -61,7 +61,7 @@ export class CreateEmpleadoDto {
   sede: string;
 
   @ApiProperty({ example: '1' })
-  @IsString({ message: 'El tiempo empresa valor debe ser un número entero.' })
+  @IsInt({ message: 'El tiempo empresa valor debe ser un número entero.' })
   @IsNotEmpty({ message: 'El tiempo empresa valor es obligatorio.' })
   tiempoEmpresaValor: number;
 

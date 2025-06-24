@@ -11,11 +11,6 @@ import {
 import { Type } from 'class-transformer';
 
 class ObjetivoDetalleDto {
-  @ApiProperty({ example: 1, description: 'Número secuencial del detalle' })
-  @IsInt({ message: 'El secuencial debe ser un número entero.' })
-  @Min(1, { message: 'El secuencial debe ser mayor o igual a 1.' })
-  secuencial: number;
-
   @ApiProperty({ example: 'Descripción del detalle' })
   @MaxLength(255, {
     message: 'La descripción no puede exceder 255 caracteres.',
@@ -38,7 +33,11 @@ class ObjetivoDetalleDto {
   pesoEspecifico: number;
 
   @ApiProperty({ example: 0.5 })
-  ponderacion: number;
+  metaObjetivo: number;
+
+  @ApiProperty({ example: 0.5 })
+  @IsOptional()
+  metaAlcanzada?: number;
 }
 
 export class CreateObjetivoConDetallesDto {

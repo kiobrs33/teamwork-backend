@@ -7,12 +7,13 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUnidadOcupacionalEmpleadoraDto } from './dto/create-unidad-ocupacional-empleadora.dto';
 import { UpdateUnidadOcupacionalEmpleadoraDto } from './dto/update-unidad-ocupacional-empleadora.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class UnidadOcupacionalEmpleadoraService {
   constructor(private prisma: PrismaService) {}
 
-  async create(user: any, dto: CreateUnidadOcupacionalEmpleadoraDto) {
+  async create(user: AuthUser, dto: CreateUnidadOcupacionalEmpleadoraDto) {
     try {
       const unidad = await this.prisma.unidadOcupacionalEmpleadora.create({
         data: {
@@ -32,13 +33,14 @@ export class UnidadOcupacionalEmpleadoraService {
 
   async findAll() {
     try {
-      return await this.prisma.unidadOcupacionalEmpleadora.findMany({
+      const unidades = await this.prisma.unidadOcupacionalEmpleadora.findMany({
         include: { empresaEmpleadora: true },
         where: { estado: true },
         orderBy: {
           fechaCreacion: 'desc',
         },
       });
+      return unidades;
     } catch (error) {
       console.error('Error al obtener unidades ocupacionales:', error);
       throw new InternalServerErrorException(
@@ -50,11 +52,11 @@ export class UnidadOcupacionalEmpleadoraService {
   async findOne(id: number) {
     try {
       const unidad = await this.prisma.unidadOcupacionalEmpleadora.findUnique({
-        where: { idUnidadOcupacionalEmpleadora: id },
+        where: { idUnidadOcupacionalEmpleadora: id, estado: true },
         include: { empresaEmpleadora: true },
       });
 
-      if (!unidad || !unidad.estado) {
+      if (!unidad) {
         throw new NotFoundException('Unidad ocupacional no encontrada');
       }
 
@@ -68,27 +70,29 @@ export class UnidadOcupacionalEmpleadoraService {
   }
 
   async update(
-    user: any,
+    user: AuthUser,
     id: number,
     dto: UpdateUnidadOcupacionalEmpleadoraDto,
   ) {
     try {
       const unidad = await this.prisma.unidadOcupacionalEmpleadora.findUnique({
-        where: { idUnidadOcupacionalEmpleadora: id },
+        where: { idUnidadOcupacionalEmpleadora: id, estado: true },
       });
 
-      if (!unidad || !unidad.estado) {
+      if (!unidad) {
         throw new NotFoundException('Unidad ocupacional no encontrada');
       }
 
-      return await this.prisma.unidadOcupacionalEmpleadora.update({
-        where: { idUnidadOcupacionalEmpleadora: id },
-        data: {
-          ...dto,
-          fechaModificacion: new Date(),
-          actualizadoPorId: user.idUsuario,
-        },
-      });
+      const updatedUnidad =
+        await this.prisma.unidadOcupacionalEmpleadora.update({
+          where: { idUnidadOcupacionalEmpleadora: id },
+          data: {
+            ...dto,
+            fechaModificacion: new Date(),
+            actualizadoPorId: user.idUsuario,
+          },
+        });
+      return updatedUnidad;
     } catch (error) {
       console.error('Error al actualizar la unidad ocupacional:', error);
       throw new InternalServerErrorException(
@@ -97,24 +101,26 @@ export class UnidadOcupacionalEmpleadoraService {
     }
   }
 
-  async remove(user: any, id: number) {
+  async remove(user: AuthUser, id: number) {
     try {
       const unidad = await this.prisma.unidadOcupacionalEmpleadora.findUnique({
-        where: { idUnidadOcupacionalEmpleadora: id },
+        where: { idUnidadOcupacionalEmpleadora: id, estado: true },
       });
 
-      if (!unidad || !unidad.estado) {
+      if (!unidad) {
         throw new NotFoundException('Unidad ocupacional no encontrada');
       }
 
-      return await this.prisma.unidadOcupacionalEmpleadora.update({
-        where: { idUnidadOcupacionalEmpleadora: id },
-        data: {
-          estado: false,
-          fechaModificacion: new Date(),
-          actualizadoPorId: user.idUsuario,
-        },
-      });
+      const removedUnidad =
+        await this.prisma.unidadOcupacionalEmpleadora.update({
+          where: { idUnidadOcupacionalEmpleadora: id },
+          data: {
+            estado: false,
+            fechaModificacion: new Date(),
+            actualizadoPorId: user.idUsuario,
+          },
+        });
+      return removedUnidad;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

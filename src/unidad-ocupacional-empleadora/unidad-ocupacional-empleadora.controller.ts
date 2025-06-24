@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Unidad Ocupacional Empleadora')
 @ApiBearerAuth()
@@ -39,7 +40,7 @@ export class UnidadOcupacionalEmpleadoraController {
     description: 'Unidad ocupacional empleadora creada exitosamente.',
   })
   async create(
-    @User() user: any,
+    @User() user: AuthUser,
     @Body() dto: CreateUnidadOcupacionalEmpleadoraDto,
   ) {
     const unidad = await this.unidadOcupacionalEmpleadoraService.create(
@@ -97,7 +98,7 @@ export class UnidadOcupacionalEmpleadoraController {
     description: 'Unidad ocupacional empleadora actualizada correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUnidadOcupacionalEmpleadoraDto,
   ) {
@@ -124,7 +125,7 @@ export class UnidadOcupacionalEmpleadoraController {
     status: 200,
     description: 'Unidad ocupacional empleadora eliminada correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const unidad = await this.unidadOcupacionalEmpleadoraService.remove(
       user,
       id,

@@ -9,6 +9,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 import { hash } from 'bcryptjs';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class EmpleadoService {
@@ -17,7 +18,7 @@ export class EmpleadoService {
 
   constructor(private prisma: PrismaService) {}
 
-  async create(user: any, body: CreateEmpleadoDto) {
+  async create(user: AuthUser, body: CreateEmpleadoDto) {
     try {
       if (!body.contrasena) {
         throw new InternalServerErrorException('La contraseña es requerida.');
@@ -62,7 +63,7 @@ export class EmpleadoService {
           usuario: true,
           objetivo: {
             include: {
-              objetivoDetalle: true,
+              objetivoDetalles: true,
             },
           },
         },
@@ -85,11 +86,6 @@ export class EmpleadoService {
           puestoEmpleadora: true,
           gerenciaEmpleadora: true,
           usuario: true,
-          objetivo: {
-            include: {
-              objetivoDetalle: true,
-            },
-          },
         },
         orderBy: {
           fechaCreacion: 'desc',
@@ -114,7 +110,6 @@ export class EmpleadoService {
           puestoEmpleadora: true,
           gerenciaEmpleadora: true,
           usuario: true,
-          objetivo: true,
         },
       });
       if (!empleado) {
@@ -131,7 +126,7 @@ export class EmpleadoService {
     }
   }
 
-  async update(user: any, id: number, body: UpdateEmpleadoDto) {
+  async update(user: AuthUser, id: number, body: UpdateEmpleadoDto) {
     try {
       const existEmpleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id, estado: true },
@@ -144,7 +139,6 @@ export class EmpleadoService {
 
       const usuarioUpdateData: any = {
         codigoUsuario: body.codigoUsuario,
-        //correoElectronico: body.correoElectronico,
         rol: body.rol,
         fechaModificacion: new Date(),
         actualizadoPorId: user.idUsuario,
@@ -202,7 +196,8 @@ export class EmpleadoService {
     }
   }
 
-  async remove(user: any, id: number) {
+  // observar para inactivar por ejemplo objetivos
+  async remove(user: AuthUser, id: number) {
     try {
       const existEmpleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id },

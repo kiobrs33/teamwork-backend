@@ -23,6 +23,7 @@ import { User } from 'src/auth/auth.decorator';
 import { GerenciaEmpleadoraService } from './gerencia-empleadora.service';
 import { CreateGerenciaEmpleadoraDto } from './dto/create-gerencia-empleadora.dto';
 import { UpdateGerenciaEmpleadoraDto } from './dto/update-gerencia-empleadora.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Gerencia Empleadora')
 @ApiBearerAuth()
@@ -39,8 +40,10 @@ export class GerenciaEmpleadoraController {
     status: 201,
     description: 'Gerencia empleadora creada exitosamente.',
   })
-  async create(@User() user: any, @Body() dto: CreateGerenciaEmpleadoraDto) {
-    console.log('🐛 user in decorator:', user);
+  async create(
+    @User() user: AuthUser,
+    @Body() dto: CreateGerenciaEmpleadoraDto,
+  ) {
     const unidad = await this.unidadEmpleadoraService.create(user, dto);
     return {
       message: 'Gerencia empleadora creada exitosamente.',
@@ -79,7 +82,7 @@ export class GerenciaEmpleadoraController {
     description: 'Gerencia empleadora actualizada correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateGerenciaEmpleadoraDto,
   ) {
@@ -97,7 +100,7 @@ export class GerenciaEmpleadoraController {
     status: 200,
     description: 'Gerencia empleadora eliminada correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const unidad = await this.unidadEmpleadoraService.remove(user, id);
     return {
       message: `Gerencia empleadora con ID ${id} eliminada correctamente.`,

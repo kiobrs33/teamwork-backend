@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
@@ -37,7 +38,10 @@ export class EmpresaEmpleadoraController {
     status: 201,
     description: 'Empresa empleadora creada exitosamente.',
   })
-  async create(@User() user: any, @Body() dto: CreateEmpresaEmpleadoraDto) {
+  async create(
+    @User() user: AuthUser,
+    @Body() dto: CreateEmpresaEmpleadoraDto,
+  ) {
     const empresa = await this.service.create(user, dto);
     return {
       message: 'Empresa empleadora creada exitosamente.',
@@ -76,7 +80,7 @@ export class EmpresaEmpleadoraController {
     description: 'Empresa empleadora actualizada correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateEmpresaEmpleadoraDto,
   ) {
@@ -94,7 +98,7 @@ export class EmpresaEmpleadoraController {
     status: 200,
     description: 'Empresa empleadora eliminada correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const empresa = await this.service.remove(user, id);
     return {
       message: `Empresa empleadora con ID ${id} eliminada correctamente.`,

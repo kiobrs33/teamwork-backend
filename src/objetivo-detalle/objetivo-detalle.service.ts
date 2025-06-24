@@ -8,6 +8,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateObjetivoDetalleDto } from './dto/create-objetivo-detalle.dto';
 import { UpdateObjetivoDetalleDto } from './dto/update-objetivo-detalle.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class ObjetivoDetalleService {
@@ -15,7 +16,7 @@ export class ObjetivoDetalleService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(user: any, dto: CreateObjetivoDetalleDto) {
+  async create(user: AuthUser, dto: CreateObjetivoDetalleDto) {
     try {
       const objetivoDetalle = await this.prisma.objetivoDetalle.create({
         data: {
@@ -75,7 +76,7 @@ export class ObjetivoDetalleService {
     }
   }
 
-  async update(user: any, id: number, dto: UpdateObjetivoDetalleDto) {
+  async update(user: AuthUser, id: number, dto: UpdateObjetivoDetalleDto) {
     try {
       const exist = await this.prisma.objetivoDetalle.findFirst({
         where: { idObjetivoDetalle: id, estado: true },
@@ -108,7 +109,7 @@ export class ObjetivoDetalleService {
     }
   }
 
-  async remove(user: any, id: number) {
+  async remove(user: AuthUser, id: number) {
     try {
       const exist = await this.prisma.objetivoDetalle.findUnique({
         where: { idObjetivoDetalle: id },

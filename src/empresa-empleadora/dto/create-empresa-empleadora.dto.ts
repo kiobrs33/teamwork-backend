@@ -68,7 +68,7 @@ export class CreateEmpresaEmpleadoraDto {
   })
   @IsString()
   @IsNotEmpty({ message: 'El objetivo empresa es obligatorio.' })
-  objetivoEmpresa: string;
+  cantidadObjetivos: string;
 
   @ApiProperty({
     example: '2024-01-01',

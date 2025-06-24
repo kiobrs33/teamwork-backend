@@ -7,12 +7,13 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateEmpresaEmpleadoraDto } from './dto/create-empresa-empleadora.dto';
 import { UpdateEmpresaEmpleadoraDto } from './dto/update-empresa-empleadora.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class EmpresaEmpleadoraService {
   constructor(private prisma: PrismaService) {}
 
-  async create(user: any, dto: CreateEmpresaEmpleadoraDto) {
+  async create(user: AuthUser, dto: CreateEmpresaEmpleadoraDto) {
     try {
       const empresa = await this.prisma.empresaEmpleadora.create({
         data: {
@@ -33,11 +34,9 @@ export class EmpresaEmpleadoraService {
     try {
       const empresas = await this.prisma.empresaEmpleadora.findMany({
         include: {
-          areaEmpleadora: true,
-          puestoEmpleadora: true,
-          gerenciaEmpleadora: true,
-          objetivo: true,
-          empleado: true,
+          areaEmpleadoras: true,
+          puestoEmpleadoras: true,
+          gerenciaEmpleadoras: true,
         },
         where: {
           estado: true,
@@ -59,11 +58,9 @@ export class EmpresaEmpleadoraService {
     const empresa = await this.prisma.empresaEmpleadora.findUnique({
       where: { idEmpresaEmpleadora: id, estado: true },
       include: {
-        areaEmpleadora: true,
-        puestoEmpleadora: true,
-        gerenciaEmpleadora: true,
-        objetivo: true,
-        empleado: true,
+        areaEmpleadoras: true,
+        puestoEmpleadoras: true,
+        gerenciaEmpleadoras: true,
       },
     });
 
@@ -74,13 +71,13 @@ export class EmpresaEmpleadoraService {
     return empresa;
   }
 
-  async update(user: any, id: number, dto: UpdateEmpresaEmpleadoraDto) {
+  async update(user: AuthUser, id: number, dto: UpdateEmpresaEmpleadoraDto) {
     try {
       const existEmpresa = await this.prisma.empresaEmpleadora.findUnique({
-        where: { idEmpresaEmpleadora: id },
+        where: { idEmpresaEmpleadora: id, estado: true },
       });
 
-      if (!existEmpresa || !existEmpresa.estado) {
+      if (!existEmpresa) {
         throw new NotFoundException('Empresa no encontrada');
       }
 
@@ -102,13 +99,13 @@ export class EmpresaEmpleadoraService {
     }
   }
 
-  async remove(user: any, id: number) {
+  async remove(user: AuthUser, id: number) {
     try {
       const existEmpresa = await this.prisma.empresaEmpleadora.findUnique({
-        where: { idEmpresaEmpleadora: id },
+        where: { idEmpresaEmpleadora: id, estado: true },
       });
 
-      if (!existEmpresa || !existEmpresa.estado) {
+      if (!existEmpresa) {
         throw new NotFoundException('Empresa no encontrada');
       }
 

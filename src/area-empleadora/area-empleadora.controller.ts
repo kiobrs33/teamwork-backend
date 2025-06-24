@@ -21,6 +21,7 @@ import { User } from 'src/auth/auth.decorator';
 import { AreaEmpleadoraService } from './area-empleadora.service';
 import { CreateAreaEmpleadoraDto } from './dto/create-area-empleadora.dto';
 import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Área Empleadora')
 @ApiBearerAuth()
@@ -35,7 +36,7 @@ export class AreaEmpleadoraController {
     status: 201,
     description: 'Área empleadora creada exitosamente.',
   })
-  async create(@User() user: any, @Body() dto: CreateAreaEmpleadoraDto) {
+  async create(@User() user: AuthUser, @Body() dto: CreateAreaEmpleadoraDto) {
     const area = await this.areaEmpleadoraService.create(user, dto);
     return {
       message: 'Área empleadora creada exitosamente.',
@@ -74,7 +75,7 @@ export class AreaEmpleadoraController {
     description: 'Área empleadora actualizada correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAreaEmpleadoraDto,
   ) {
@@ -92,7 +93,7 @@ export class AreaEmpleadoraController {
     status: 200,
     description: 'Área empleadora eliminada correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const area = await this.areaEmpleadoraService.remove(user, id);
     return {
       message: `Área empleadora con ID ${id} eliminada correctamente.`,

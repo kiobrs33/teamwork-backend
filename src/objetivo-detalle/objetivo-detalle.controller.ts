@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Objetivos Detalle')
 @ApiBearerAuth()
@@ -37,7 +38,7 @@ export class ObjetivoDetalleController {
     status: 201,
     description: 'Detalle de objetivo creado exitosamente.',
   })
-  async create(@User() user: any, @Body() dto: CreateObjetivoDetalleDto) {
+  async create(@User() user: AuthUser, @Body() dto: CreateObjetivoDetalleDto) {
     const detalle = await this.service.create(user, dto);
     return {
       message: 'Detalle de objetivo creado exitosamente.',
@@ -76,7 +77,7 @@ export class ObjetivoDetalleController {
     description: 'Detalle de objetivo actualizado correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateObjetivoDetalleDto,
   ) {
@@ -94,7 +95,7 @@ export class ObjetivoDetalleController {
     status: 200,
     description: 'Detalle de objetivo eliminado correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const detalle = await this.service.remove(user, id);
     return {
       message: `Detalle de objetivo con ID ${id} eliminado correctamente.`,

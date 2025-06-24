@@ -7,12 +7,13 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateAreaEmpleadoraDto } from './dto/create-area-empleadora.dto';
 import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class AreaEmpleadoraService {
   constructor(private prisma: PrismaService) {}
 
-  async create(user: any, dto: CreateAreaEmpleadoraDto) {
+  async create(user: AuthUser, dto: CreateAreaEmpleadoraDto) {
     try {
       const area = await this.prisma.areaEmpleadora.create({
         data: {
@@ -30,13 +31,14 @@ export class AreaEmpleadoraService {
 
   async findAll() {
     try {
-      return await this.prisma.areaEmpleadora.findMany({
+      const areas = await this.prisma.areaEmpleadora.findMany({
         include: { empresaEmpleadora: true },
         where: { estado: true },
         orderBy: {
           fechaCreacion: 'desc',
         },
       });
+      return areas;
     } catch (error) {
       console.error('Error al obtener áreas:', error);
       throw new InternalServerErrorException(
@@ -48,11 +50,11 @@ export class AreaEmpleadoraService {
   async findOne(id: number) {
     try {
       const area = await this.prisma.areaEmpleadora.findUnique({
-        where: { idAreaEmpleadora: id },
+        where: { idAreaEmpleadora: id, estado: true },
         include: { empresaEmpleadora: true },
       });
 
-      if (!area || !area.estado) {
+      if (!area) {
         throw new NotFoundException('Área no encontrada');
       }
 
@@ -63,17 +65,17 @@ export class AreaEmpleadoraService {
     }
   }
 
-  async update(user: any, id: number, dto: UpdateAreaEmpleadoraDto) {
+  async update(user: AuthUser, id: number, dto: UpdateAreaEmpleadoraDto) {
     try {
       const area = await this.prisma.areaEmpleadora.findUnique({
-        where: { idAreaEmpleadora: id },
+        where: { idAreaEmpleadora: id, estado: true },
       });
 
-      if (!area || !area.estado) {
+      if (!area) {
         throw new NotFoundException('Área no encontrada');
       }
 
-      return await this.prisma.areaEmpleadora.update({
+      const updatedArea = await this.prisma.areaEmpleadora.update({
         where: { idAreaEmpleadora: id },
         data: {
           ...dto,
@@ -81,23 +83,24 @@ export class AreaEmpleadoraService {
           actualizadoPorId: user.idUsuario,
         },
       });
+      return updatedArea;
     } catch (error) {
       console.error('Error al actualizar el área:', error);
       throw new InternalServerErrorException('No se pudo actualizar el área.');
     }
   }
 
-  async remove(user: any, id: number) {
+  async remove(user: AuthUser, id: number) {
     try {
       const area = await this.prisma.areaEmpleadora.findUnique({
-        where: { idAreaEmpleadora: id },
+        where: { idAreaEmpleadora: id, estado: true },
       });
 
-      if (!area || !area.estado) {
+      if (!area) {
         throw new NotFoundException('Área no encontrada');
       }
 
-      return await this.prisma.areaEmpleadora.update({
+      const deletedArea = await this.prisma.areaEmpleadora.update({
         where: { idAreaEmpleadora: id },
         data: {
           estado: false,
@@ -105,6 +108,7 @@ export class AreaEmpleadoraService {
           actualizadoPorId: user.idUsuario,
         },
       });
+      return deletedArea;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

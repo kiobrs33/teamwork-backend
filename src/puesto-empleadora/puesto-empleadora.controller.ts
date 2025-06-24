@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Puesto Empleadora')
 @ApiBearerAuth()
@@ -38,7 +39,7 @@ export class PuestoEmpleadoraController {
     status: 201,
     description: 'Puesto empleadora creado exitosamente.',
   })
-  async create(@User() user: any, @Body() dto: CreatePuestoEmpleadoraDto) {
+  async create(@User() user: AuthUser, @Body() dto: CreatePuestoEmpleadoraDto) {
     const puesto = await this.puestoEmpleadoraService.create(user, dto);
     return {
       message: 'Puesto empleadora creado exitosamente.',
@@ -77,7 +78,7 @@ export class PuestoEmpleadoraController {
     description: 'Puesto empleadora actualizado correctamente.',
   })
   async update(
-    @User() user: any,
+    @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePuestoEmpleadoraDto,
   ) {
@@ -95,7 +96,7 @@ export class PuestoEmpleadoraController {
     status: 200,
     description: 'Puesto empleadora eliminado correctamente.',
   })
-  async remove(@User() user: any, @Param('id', ParseIntPipe) id: number) {
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const puesto = await this.puestoEmpleadoraService.remove(user, id);
     return {
       message: `Puesto empleadora con ID ${id} eliminado correctamente.`,

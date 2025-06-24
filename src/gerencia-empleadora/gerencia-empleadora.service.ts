@@ -7,12 +7,13 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateGerenciaEmpleadoraDto } from './dto/create-gerencia-empleadora.dto';
 import { UpdateGerenciaEmpleadoraDto } from './dto/update-gerencia-empleadora.dto';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class GerenciaEmpleadoraService {
   constructor(private prisma: PrismaService) {}
 
-  async create(user: any, dto: CreateGerenciaEmpleadoraDto) {
+  async create(user: AuthUser, dto: CreateGerenciaEmpleadoraDto) {
     console.log(user);
     try {
       const gerencia = await this.prisma.gerenciaEmpleadora.create({
@@ -66,13 +67,13 @@ export class GerenciaEmpleadoraService {
     }
   }
 
-  async update(user: any, id: number, dto: UpdateGerenciaEmpleadoraDto) {
+  async update(user: AuthUser, id: number, dto: UpdateGerenciaEmpleadoraDto) {
     try {
       const gerencia = await this.prisma.gerenciaEmpleadora.findUnique({
-        where: { idGerenciaEmpleadora: id },
+        where: { idGerenciaEmpleadora: id, estado: true },
       });
 
-      if (!gerencia || !gerencia.estado) {
+      if (!gerencia) {
         throw new NotFoundException('Gerencia no encontrada');
       }
 
@@ -92,13 +93,13 @@ export class GerenciaEmpleadoraService {
     }
   }
 
-  async remove(user: any, id: number) {
+  async remove(user: AuthUser, id: number) {
     try {
       const gerencia = await this.prisma.gerenciaEmpleadora.findUnique({
-        where: { idGerenciaEmpleadora: id },
+        where: { idGerenciaEmpleadora: id, estado: true },
       });
 
-      if (!gerencia || !gerencia.estado) {
+      if (!gerencia) {
         throw new NotFoundException('Gerencia no encontrada');
       }
 
