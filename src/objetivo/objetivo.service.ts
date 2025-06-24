@@ -165,75 +165,75 @@ export class ObjetivoService {
   //   }
   // }
 
-  async update(id: number, user: AuthUser, dto: UpdateObjetivoDto) {
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const objetivo = await tx.objetivo.findUnique({
-          where: { idObjetivo: id, estado: true },
-        });
-
-        if (!objetivo) {
-          throw new NotFoundException('Objetivo no encontrado');
-        }
-
-        // Actualizar datos del objetivo
-        await tx.objetivo.update({
-          where: { idObjetivo: id },
-          data: {
-            fechaVigenciaInicia: dto.fechaVigenciaInicia
-              ? new Date(dto.fechaVigenciaInicia)
-              : undefined,
-            fechaVigenciaFin: dto.fechaVigenciaFin
-              ? new Date(dto.fechaVigenciaFin)
-              : undefined,
-            idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
-            idEmpleado: dto.idEmpleado,
-            actualizadoPorId: user.idUsuario,
-            fechaModificacion: new Date(),
-          },
-        });
-
-        // Eliminar detalles antiguos
-        await tx.objetivoDetalle.deleteMany({
-          where: { idObjetivo: id },
-        });
-
-        // Si se envían detalles, insertarlos
-        if (dto.objetivoDetalle && Array.isArray(dto.objetivoDetalle)) {
-          // Insertar nuevos detalles
-          let secuencial = 1;
-          for (const detalle of dto.objetivoDetalle) {
-            await tx.objetivoDetalle.create({
-              data: {
-                idObjetivo: id,
-                secuencial,
-                descripcion: detalle.descripcion,
-                descripcionIniciativa: detalle.descripcionIniciativa,
-                unidadMedida: detalle.unidadMedida,
-                pesoEspecifico: detalle.pesoEspecifico,
-                creadoPorId: user.idUsuario,
-                actualizadoPorId: user.idUsuario,
-              },
-            });
-            secuencial++;
-          }
-
-          // Retornar actualizado con detalles
-          const objetivoCompleto = await tx.objetivo.findUnique({
-            where: { idObjetivo: id },
-            include: { objetivoDetalle: true },
+    async update(id: number, user: AuthUser, dto: UpdateObjetivoDto) {
+      try {
+        const result = await this.prisma.$transaction(async (tx) => {
+          const objetivo = await tx.objetivo.findUnique({
+            where: { idObjetivo: id, estado: true },
           });
 
-          return objetivoCompleto;
-        }
-      });
+          if (!objetivo) {
+            throw new NotFoundException('Objetivo no encontrado');
+          }
 
-      return result;
-    } catch (error) {
-      console.error(error);
-      throw new InternalServerErrorException('Error al actualizar el objetivo');
+          // Actualizar datos del objetivo
+          await tx.objetivo.update({
+            where: { idObjetivo: id },
+            data: {
+              fechaVigenciaInicia: dto.fechaVigenciaInicia
+                ? new Date(dto.fechaVigenciaInicia)
+                : undefined,
+              fechaVigenciaFin: dto.fechaVigenciaFin
+                ? new Date(dto.fechaVigenciaFin)
+                : undefined,
+              idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
+              idEmpleado: dto.idEmpleado,
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion: new Date(),
+            },
+          });
+
+          // Eliminar detalles antiguos
+          await tx.objetivoDetalle.deleteMany({
+            where: { idObjetivo: id },
+          });
+
+          // Si se envían detalles, insertarlos
+          if (dto.objetivoDetalle && Array.isArray(dto.objetivoDetalle)) {
+            // Insertar nuevos detalles
+            let secuencial = 1;
+            for (const detalle of dto.objetivoDetalle) {
+              await tx.objetivoDetalle.create({
+                data: {
+                  idObjetivo: id,
+                  secuencial,
+                  descripcion: detalle.descripcion,
+                  descripcionIniciativa: detalle.descripcionIniciativa,
+                  unidadMedida: detalle.unidadMedida,
+                  pesoEspecifico: detalle.pesoEspecifico,
+                  creadoPorId: user.idUsuario,
+                  actualizadoPorId: user.idUsuario,
+                },
+              });
+              secuencial++;
+            }
+
+            // Retornar actualizado con detalles
+            const objetivoCompleto = await tx.objetivo.findUnique({
+              where: { idObjetivo: id },
+              include: { objetivoDetalle: true },
+            });
+
+            return objetivoCompleto;
+          }
+        });
+
+        return result;
+      } catch (error) {
+        console.error(error);
+        throw new InternalServerErrorException('Error al actualizar el objetivo');
+      }
     }
-  }
 
   async remove(user: any, id: number) {
     try {
