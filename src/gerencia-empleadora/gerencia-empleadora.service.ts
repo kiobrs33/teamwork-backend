@@ -118,4 +118,30 @@ export class GerenciaEmpleadoraService {
       );
     }
   }
+
+  async importData(user: AuthUser, data: CreateGerenciaEmpleadoraDto[]) {
+    try {
+      const registros = data.map((row) => ({
+        descripcion: row.descripcion,
+        idEmpresaEmpleadora: row.idEmpresaEmpleadora,
+        creadoPorId: user.idUsuario,
+      }));
+
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.gerenciaEmpleadora.createMany({
+          data: registros,
+        });
+
+        return {
+          message: 'Datos importados correctamente',
+          count: registros.length,
+        };
+      });
+    } catch (error) {
+      console.error('Error al importar datos:', error);
+      throw new InternalServerErrorException(
+        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+      );
+    }
+  }
 }

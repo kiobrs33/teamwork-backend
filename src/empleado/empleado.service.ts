@@ -19,57 +19,55 @@ export class EmpleadoService {
   constructor(private prisma: PrismaService) {}
 
   async create(user: AuthUser, body: CreateEmpleadoDto) {
+    if (!body.contrasena) {
+      throw new InternalServerErrorException('La contraseña es requerida.');
+    }
+
     try {
-      if (!body.contrasena) {
-        throw new InternalServerErrorException('La contraseña es requerida.');
-      }
+      return await this.prisma.$transaction(async (tx: PrismaService) => {
+        const hashedPassword = await hash(body.contrasena, 10);
 
-      const hashedPassword = await hash(body.contrasena, 10);
+        const usuario = await tx.usuario.create({
+          data: {
+            codigoUsuario: body.codigoUsuario,
+            contrasena: hashedPassword,
+            rol: body.rol,
+            creadoPorId: user.idUsuario,
+          },
+        });
 
-      const usuario = await this.prisma.usuario.create({
-        data: {
-          codigoUsuario: body.codigoUsuario,
-          //correoElectronico: body.correoElectronico,
-          contrasena: hashedPassword,
-          rol: body.rol,
-          fechaCreacion: new Date(),
-          creadoPorId: user.idUsuario,
-        },
-      });
-
-      const empleado = await this.prisma.empleado.create({
-        data: {
-          nombres: body.nombres,
-          apellidoPaterno: body.apellidoPaterno,
-          apellidoMaterno: body.apellidoMaterno,
-          documento: body.documento,
-          sede: body.sede,
-          tiempoEmpresaValor: body.tiempoEmpresaValor,
-          tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
-          idEmpresaEmpleadora: body.idEmpresaEmpleadora,
-          idAreaEmpleadora: body.idAreaEmpleadora,
-          idPuestoEmpleadora: body.idPuestoEmpleadora,
-          idGerenciaEmpleadora: body.idGerenciaEmpleadora,
-          idUnidadOcupacionalEmpleadora: body.unidadOcupacionalEmpleadora,
-          idUsuario: usuario.idUsuario,
-          fechaCreacion: new Date(),
-          creadoPorId: user.idUsuario,
-        },
-        include: {
-          empresaEmpleadora: true,
-          areaEmpleadora: true,
-          puestoEmpleadora: true,
-          gerenciaEmpleadora: true,
-          usuario: true,
-          objetivo: {
-            include: {
-              objetivoDetalles: true,
+        const empleado = await tx.empleado.create({
+          data: {
+            nombres: body.nombres,
+            apellidoPaterno: body.apellidoPaterno,
+            apellidoMaterno: body.apellidoMaterno,
+            documento: body.documento,
+            sede: body.sede,
+            tiempoEmpresaValor: body.tiempoEmpresaValor,
+            tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
+            idEmpresaEmpleadora: body.idEmpresaEmpleadora,
+            idAreaEmpleadora: body.idAreaEmpleadora,
+            idPuestoEmpleadora: body.idPuestoEmpleadora,
+            idGerenciaEmpleadora: body.idGerenciaEmpleadora,
+            idUnidadOcupacionalEmpleadora: body.unidadOcupacionalEmpleadora,
+            idUsuario: usuario.idUsuario,
+            creadoPorId: user.idUsuario,
+          },
+          include: {
+            empresaEmpleadora: true,
+            areaEmpleadora: true,
+            puestoEmpleadora: true,
+            gerenciaEmpleadora: true,
+            usuario: true,
+            objetivo: {
+              include: {
+                objetivoDetalles: true,
+              },
             },
           },
-        },
+        });
+        return empleado;
       });
-
-      return empleado;
     } catch (error) {
       this.logger.error('Error al crear empleado:', error);
       throw new InternalServerErrorException('No se pudo crear al empleado.');

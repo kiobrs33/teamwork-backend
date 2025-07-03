@@ -7,10 +7,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { CreateObjetivoDto } from './dto/create-objetivo.dto';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
-import { NuevoDetalleDto } from './dto/add-detalles-a-objetivo.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
@@ -62,43 +60,9 @@ export class ObjetivoService {
     }
   }
 
-  // async update(user: AuthUser, id: number, dto: UpdateObjetivoDto) {
-  //   try {
-  //     const existObjetivo = await this.prisma.objetivo.findFirst({
-  //       where: { idObjetivo: id, estado: true },
-  //       select: { idObjetivo: true },
-  //     });
-  //     if (!existObjetivo) {
-  //       throw new NotFoundException(`Objetivo con ID ${id} no encontrado.`);
-  //     }
-
-  //     const updated = await this.prisma.objetivo.update({
-  //       where: { idObjetivo: id },
-  //       data: {
-  //         fechaVigenciaInicia: dto.fechaVigenciaInicia
-  //           ? new Date(dto.fechaVigenciaInicia)
-  //           : undefined,
-  //         fechaVigenciaFin: dto.fechaVigenciaFin
-  //           ? new Date(dto.fechaVigenciaFin)
-  //           : undefined,
-  //         idEmpleado: dto.idEmpleado,
-  //         actualizadoPorId: user.idUsuario,
-  //         fechaModificacion: new Date(),
-  //       },
-  //     });
-
-  //     return updated;
-  //   } catch (error) {
-  //     this.logger.error(`Error al actualizar objetivo con ID ${id}:`, error);
-  //     throw new InternalServerErrorException(
-  //       'No se pudo actualizar el objetivo.',
-  //     );
-  //   }
-  // }
-
   async update(id: number, user: AuthUser, dto: UpdateObjetivoDto) {
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         const objetivo = await tx.objetivo.findUnique({
           where: { idObjetivo: id, estado: true },
         });
@@ -122,37 +86,30 @@ export class ObjetivoService {
         });
 
         // Si se envían detalles, insertarlos
-        if (dto.objetivoDetalles && Array.isArray(dto.objetivoDetalles)) {
-          // Insertar nuevos detalles
-          let secuencial = 1;
-          for (const detalle of dto.objetivoDetalles) {
-            await tx.objetivoDetalle.create({
-              data: {
-                idObjetivo: id,
-                secuencial,
-                descripcion: detalle.descripcion,
-                descripcionIniciativa: detalle.descripcionIniciativa,
-                unidadMedida: detalle.unidadMedida,
-                pesoEspecifico: detalle.pesoEspecifico,
-                metaObjetivo: detalle.metaObjetivo,
-                creadoPorId: user.idUsuario,
-                actualizadoPorId: user.idUsuario,
-              },
-            });
-            secuencial++;
-          }
-
+        if (dto.objetivoDetalles) {
+          await tx.objetivoDetalle.createMany({
+            data: dto.objetivoDetalles.map((detalle, index) => ({
+              idObjetivo: id,
+              secuencial: index + 1,
+              descripcion: detalle.descripcion,
+              descripcionIniciativa: detalle.descripcionIniciativa,
+              unidadMedida: detalle.unidadMedida,
+              pesoEspecifico: detalle.pesoEspecifico,
+              metaObjetivo: detalle.metaObjetivo,
+              metaAlcanzada: detalle.metaAlcanzada,
+              creadoPorId: user.idUsuario,
+              actualizadoPorId: user.idUsuario,
+            })),
+          });
           // Retornar actualizado con detalles
           const objetivoCompleto = await tx.objetivo.findUnique({
             where: { idObjetivo: id },
             include: { objetivoDetalles: true },
           });
-
+          console.log('Detalles recibidos:', objetivoCompleto);
           return objetivoCompleto;
         }
       });
-
-      return result;
     } catch (error) {
       console.error(error);
       throw new InternalServerErrorException('Error al actualizar el objetivo');
@@ -202,42 +159,32 @@ export class ObjetivoService {
           data: {
             idEmpleado: dto.idEmpleado,
             creadoPorId: user.idUsuario,
-          },
-        });
-
-        const detallesCreados = await Promise.all(
-          dto.detalles.map((detalle, index) =>
-            tx.objetivoDetalle.create({
-              data: {
-                idObjetivo: objetivo.idObjetivo,
-                secuencial: index + 1, // 👈 genera secuencial automáticamente desde 1
-                descripcion: detalle.descripcion,
-                descripcionIniciativa: detalle.descripcionIniciativa,
-                unidadMedida: detalle.unidadMedida,
-                pesoEspecifico: detalle.pesoEspecifico,
-                metaObjetivo: detalle.metaObjetivo,
-                creadoPorId: user.idUsuario,
-              },
-            }),
-          ),
-        );
-
-        const empleado = await this.prisma.empleado.findUnique({
-          where: { idEmpleado: objetivo.idEmpleado, estado: true },
-          include: {
-            objetivo: {
-              include: {
-                objetivoDetalles: true,
+            objetivoDetalles: {
+              createMany: {
+                data: dto.detalles.map((detalle, index) => ({
+                  secuencial: index + 1,
+                  descripcion: detalle.descripcion,
+                  descripcionIniciativa: detalle.descripcionIniciativa,
+                  unidadMedida: detalle.unidadMedida,
+                  pesoEspecifico: detalle.pesoEspecifico,
+                  metaObjetivo: detalle.metaObjetivo,
+                  creadoPorId: user.idUsuario,
+                })),
               },
             },
           },
         });
 
-        // return { objetivo, detalles: detallesCreados };
-        return empleado;
+        const objetivoCompleto = await tx.objetivo.findUnique({
+          where: { idObjetivo: objetivo.idObjetivo },
+          include: { objetivoDetalles: true },
+        });
+
+        return objetivoCompleto;
       });
     } catch (error) {
       this.logger.error('Error creando objetivo con detalles:', error);
+
       throw new InternalServerErrorException(
         'No se pudo crear el objetivo con sus detalles.',
       );

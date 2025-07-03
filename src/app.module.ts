@@ -12,6 +12,7 @@ import { ObjetivoDetalleModule } from './objetivo-detalle/objetivo-detalle.modul
 import { GerenciaEmpleadoraModule } from './gerencia-empleadora/gerencia-empleadora.module';
 import { UnidadOcupacionalEmpleadoraModule } from './unidad-ocupacional-empleadora/unidad-ocupacional-empleadora.module';
 import { AreaEmpleadoraModule } from './area-empleadora/area-empleadora.module';
+import { CompetenciaModule } from './competencia/competencia.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AreaEmpleadoraModule } from './area-empleadora/area-empleadora.module';
     GerenciaEmpleadoraModule,
     UnidadOcupacionalEmpleadoraModule,
     AreaEmpleadoraModule,
+    CompetenciaModule,
   ],
   controllers: [AppController],
   providers: [AppService],

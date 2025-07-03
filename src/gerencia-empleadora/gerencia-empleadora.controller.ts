@@ -9,10 +9,13 @@ import {
   Delete,
   ParseIntPipe,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -31,7 +34,7 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 @Controller('gerencia-empleadora')
 export class GerenciaEmpleadoraController {
   constructor(
-    private readonly unidadEmpleadoraService: GerenciaEmpleadoraService,
+    private readonly gerenciaEmpleadoraService: GerenciaEmpleadoraService,
   ) {}
 
   @Post()
@@ -44,7 +47,7 @@ export class GerenciaEmpleadoraController {
     @User() user: AuthUser,
     @Body() dto: CreateGerenciaEmpleadoraDto,
   ) {
-    const unidad = await this.unidadEmpleadoraService.create(user, dto);
+    const unidad = await this.gerenciaEmpleadoraService.create(user, dto);
     return {
       message: 'Gerencia empleadora creada exitosamente.',
       data: { unidad },
@@ -55,7 +58,7 @@ export class GerenciaEmpleadoraController {
   @ApiOperation({ summary: 'Listar todas las gerencias empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de gerencias empleadoras.' })
   async findAll() {
-    const unidades = await this.unidadEmpleadoraService.findAll();
+    const unidades = await this.gerenciaEmpleadoraService.findAll();
     return {
       message: 'Lista de gerencias empleadoras.',
       data: { unidades },
@@ -67,7 +70,7 @@ export class GerenciaEmpleadoraController {
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
   @ApiResponse({ status: 200, description: 'Gerencia empleadora encontrada.' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
-    const unidad = await this.unidadEmpleadoraService.findOne(id);
+    const unidad = await this.gerenciaEmpleadoraService.findOne(id);
     return {
       message: 'Gerencia empleadora encontrada.',
       data: { unidad },
@@ -86,7 +89,7 @@ export class GerenciaEmpleadoraController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateGerenciaEmpleadoraDto,
   ) {
-    const unidad = await this.unidadEmpleadoraService.update(user, id, dto);
+    const unidad = await this.gerenciaEmpleadoraService.update(user, id, dto);
     return {
       message: `Gerencia empleadora con ID ${id} actualizada correctamente.`,
       data: { unidad },
@@ -101,10 +104,30 @@ export class GerenciaEmpleadoraController {
     description: 'Gerencia empleadora eliminada correctamente.',
   })
   async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    const unidad = await this.unidadEmpleadoraService.remove(user, id);
+    const unidad = await this.gerenciaEmpleadoraService.remove(user, id);
     return {
       message: `Gerencia empleadora con ID ${id} eliminada correctamente.`,
       data: { unidad },
+    };
+  }
+
+  @Post('import')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiBody({ type: [CreateGerenciaEmpleadoraDto] })
+  @ApiOperation({ summary: 'Importar Gerencia empleadora' })
+  @ApiResponse({
+    status: 201,
+    description: 'Importacion de gerencia empleadora creada exitosamente.',
+  })
+  async importExcelData(
+    @User() user: AuthUser,
+    @Body() data: CreateGerenciaEmpleadoraDto[],
+  ) {
+    const importGerenciaEmpleadora =
+      await this.gerenciaEmpleadoraService.importData(user, data);
+    return {
+      message: 'Gerencia empleadora creadas exitosamente.',
+      data: { importGerenciaEmpleadora },
     };
   }
 }
