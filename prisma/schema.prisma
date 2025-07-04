@@ -140,16 +140,17 @@ model GerenciaEmpleadora {
 }
 
 model UnidadOcupacionalEmpleadora {
-  idUnidadOcupacionalEmpleadora Int               @id @default(autoincrement()) @map("id_unidad_ocupacional_empleadora")
+  idUnidadOcupacionalEmpleadora Int                                      @id @default(autoincrement()) @map("id_unidad_ocupacional_empleadora")
   descripcion                   String
-  idEmpresaEmpleadora           Int               @map("id_empresa_empleadora")
-  empresaEmpleadora             EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
-  estado                        Boolean           @default(true)
-  creadoPorId                   Int               @map("creado_por_id")
-  actualizadoPorId              Int?              @map("actualizado_por_id")
-  fechaCreacion                 DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion             DateTime?         @map("fecha_modificacion")
+  idEmpresaEmpleadora           Int                                      @map("id_empresa_empleadora")
+  empresaEmpleadora             EmpresaEmpleadora                        @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
+  estado                        Boolean                                  @default(true)
+  creadoPorId                   Int                                      @map("creado_por_id")
+  actualizadoPorId              Int?                                     @map("actualizado_por_id")
+  fechaCreacion                 DateTime                                 @default(now()) @map("fecha_creacion")
+  fechaModificacion             DateTime?                                @map("fecha_modificacion")
   empleados                     Empleado[]
+  competencias                  UnidadOcupacionalEmpleadoraCompetencia[]
 
   @@map("unidad_ocupacional_empleadora")
 }
@@ -189,16 +190,17 @@ model ObjetivoDetalle {
 }
 
 model Competencia {
-  idCompetencia       Int                  @id @default(autoincrement()) @map("id_competencia")
-  codigo              String
-  titulo              String
-  nivel               Int
-  estado              Boolean              @default(true)
-  creadoPorId         Int                  @map("creado_por_id")
-  actualizadoPorId    Int?                 @map("actualizado_por_id")
-  fechaCreacion       DateTime             @default(now()) @map("fecha_creacion")
-  fechaModificacion   DateTime?            @map("fecha_modificacion")
-  competenciaDetalles CompetenciaDetalle[]
+  idCompetencia         Int                                      @id @default(autoincrement()) @map("id_competencia")
+  codigo                String
+  titulo                String
+  nivel                 Int
+  estado                Boolean                                  @default(true)
+  creadoPorId           Int                                      @map("creado_por_id")
+  actualizadoPorId      Int?                                     @map("actualizado_por_id")
+  fechaCreacion         DateTime                                 @default(now()) @map("fecha_creacion")
+  fechaModificacion     DateTime?                                @map("fecha_modificacion")
+  competenciaDetalles   CompetenciaDetalle[]
+  unidadesOcupacionales UnidadOcupacionalEmpleadoraCompetencia[]
 
   @@map("competencia")
 }
@@ -209,12 +211,28 @@ model CompetenciaDetalle {
   secuencial           Int
   competencia          Competencia @relation(fields: [idCompetencia], references: [idCompetencia])
   descripcion          String
+  estado               Boolean     @default(true)
   creadoPorId          Int         @map("creado_por_id")
   actualizadoPorId     Int?        @map("actualizado_por_id")
   fechaCreacion        DateTime    @default(now()) @map("fecha_creacion")
   fechaModificacion    DateTime?   @map("fecha_modificacion")
 
   @@map("competencia_detalle")
+}
+
+model UnidadOcupacionalEmpleadoraCompetencia {
+  idUnidadOcupacionalEmpleadora Int
+  idCompetencia                 Int
+  estado                        Boolean                     @default(true)
+  creadoPorId                   Int                         @map("creado_por_id")
+  actualizadoPorId              Int?                        @map("actualizado_por_id")
+  fechaCreacion                 DateTime                    @default(now()) @map("fecha_creacion")
+  fechaModificacion             DateTime?                   @map("fecha_modificacion")
+  unidadOcupacionalEmpleadora   UnidadOcupacionalEmpleadora @relation(fields: [idUnidadOcupacionalEmpleadora], references: [idUnidadOcupacionalEmpleadora])
+  competencia                   Competencia                 @relation(fields: [idCompetencia], references: [idCompetencia])
+
+  @@id([idUnidadOcupacionalEmpleadora, idCompetencia])
+  @@map("unidad_ocupacional_empleadora_competencia")
 }
 
 model TablaMaestra {

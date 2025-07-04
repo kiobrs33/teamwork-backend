@@ -15,6 +15,7 @@ import { UpdateUnidadOcupacionalEmpleadoraDto } from './dto/update-unidad-ocupac
 
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -23,6 +24,7 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { AsignarCompetenciasLoteDto } from './dto/asignar-competencias-a-unidad-ocupacional-empleadora.dto';
 
 @ApiTags('Unidad Ocupacional Empleadora')
 @ApiBearerAuth()
@@ -133,6 +135,29 @@ export class UnidadOcupacionalEmpleadoraController {
     return {
       message: `Unidad ocupacional empleadora con ID ${id} eliminada correctamente.`,
       data: { unidad },
+    };
+  }
+
+  @Post('asignar-competencias')
+  @ApiOperation({
+    summary: 'Asignar competencias a unidad ocupacional empleadora',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Importacion de gerencia empleadora creada exitosamente.',
+  })
+  async asignarCompetenciasLote(
+    @User() user: AuthUser,
+    @Body() dto: AsignarCompetenciasLoteDto,
+  ) {
+    const asignacionCompetencia =
+      await this.unidadOcupacionalEmpleadoraService.asignarCompetenciasLote(
+        user,
+        dto,
+      );
+    return {
+      message: 'Gerencia empleadora creadas exitosamente.',
+      data: { asignacionCompetencia },
     };
   }
 }

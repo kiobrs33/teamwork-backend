@@ -8,6 +8,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUnidadOcupacionalEmpleadoraDto } from './dto/create-unidad-ocupacional-empleadora.dto';
 import { UpdateUnidadOcupacionalEmpleadoraDto } from './dto/update-unidad-ocupacional-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { AsignarCompetenciasLoteDto } from './dto/asignar-competencias-a-unidad-ocupacional-empleadora.dto';
+import { CreateGerenciaEmpleadoraDto } from 'src/gerencia-empleadora/dto/create-gerencia-empleadora.dto';
 
 @Injectable()
 export class UnidadOcupacionalEmpleadoraService {
@@ -129,6 +131,34 @@ export class UnidadOcupacionalEmpleadoraService {
       console.error('Error al eliminar la unidad ocupacional:', error);
       throw new InternalServerErrorException(
         'No se pudo eliminar la unidad ocupacional.',
+      );
+    }
+  }
+
+  async asignarCompetenciasLote(
+    user: AuthUser,
+    dto: AsignarCompetenciasLoteDto,
+  ) {
+    try {
+      const asignacion = dto.asignaciones.map((item) => ({
+        idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
+        idCompetencia: item.idCompetencia,
+        creadoPorId: user.idUsuario,
+      }));
+
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.unidadOcupacionalEmpleadoraCompetencia.createMany({
+          data: asignacion,
+        });
+        return {
+          message: 'Asignaciones realizadas con éxito',
+          cantidadInsertada: asignacion.length,
+        };
+      });
+    } catch (error) {
+      console.error('Error en asignarCompetenciasLote:', error);
+      throw new InternalServerErrorException(
+        'Ocurrió un error al asignar competencias. Detalles: ' + error.message,
       );
     }
   }
