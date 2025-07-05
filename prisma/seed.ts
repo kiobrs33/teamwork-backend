@@ -6,7 +6,7 @@ import { hash } from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const hashedPassword = await hash('123456', 10);
+  const hashedPassword = await hash('12345678', 10);
 
   const admin = await prisma.usuario.create({
     data: {
@@ -14,6 +14,24 @@ async function main() {
       correoElectronico: faker.internet.email(),
       contrasena: hashedPassword,
       rol: 'ADMIN',
+    },
+  });
+
+  await prisma.usuario.create({
+    data: {
+      codigoUsuario: "AU001",
+      correoElectronico: faker.internet.email(),
+      contrasena: hashedPassword,
+      rol: 'JEFE',
+    },
+  });
+
+  await prisma.usuario.create({
+    data: {
+      codigoUsuario: "AU002",
+      correoElectronico: faker.internet.email(),
+      contrasena: hashedPassword,
+      rol: 'EMPLEADO',
     },
   });
 
