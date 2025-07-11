@@ -18,9 +18,9 @@ export class AreaEmpleadoraService {
       const area = await this.prisma.areaEmpleadora.create({
         data: {
           ...dto,
-          fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
       return area;
     } catch (error) {
@@ -82,6 +82,7 @@ export class AreaEmpleadoraService {
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
       return updatedArea;
     } catch (error) {

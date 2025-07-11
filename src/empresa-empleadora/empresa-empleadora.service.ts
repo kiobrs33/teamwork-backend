@@ -18,8 +18,6 @@ export class EmpresaEmpleadoraService {
       const empresa = await this.prisma.empresaEmpleadora.create({
         data: {
           ...dto,
-          fechaVigenciaInicio: new Date(dto.fechaVigenciaInicio),
-          fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
           creadoPorId: user.idUsuario,
         },
       });
@@ -33,16 +31,17 @@ export class EmpresaEmpleadoraService {
   async findAll() {
     try {
       const empresas = await this.prisma.empresaEmpleadora.findMany({
-        include: {
-          areaEmpleadoras: true,
-          puestoEmpleadoras: true,
-          gerenciaEmpleadoras: true,
-        },
         where: {
           estado: true,
         },
         orderBy: {
           fechaCreacion: 'desc',
+        },
+        include: {
+          gerenciaEmpleadoras: true,
+          areaEmpleadoras: true,
+          puestoEmpleadoras: true,
+          unidadOcupacionalEmpleadoras: true,
         },
       });
       return empresas;
@@ -57,11 +56,6 @@ export class EmpresaEmpleadoraService {
   async findOne(id: number) {
     const empresa = await this.prisma.empresaEmpleadora.findUnique({
       where: { idEmpresaEmpleadora: id, estado: true },
-      include: {
-        areaEmpleadoras: true,
-        puestoEmpleadoras: true,
-        gerenciaEmpleadoras: true,
-      },
     });
 
     if (!empresa) {

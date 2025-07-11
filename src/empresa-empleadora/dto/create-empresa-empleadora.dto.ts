@@ -3,10 +3,8 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsEmail,
   Matches,
   Length,
-  IsPhoneNumber,
   IsDateString,
 } from 'class-validator';
 
@@ -55,7 +53,7 @@ export class CreateEmpresaEmpleadoraDto {
   urlLogo: string;
 
   @ApiProperty({
-    example: '90, 180 y 90/180',
+    example: '90',
     description: 'Modelo Empresa',
   })
   @IsString()
@@ -63,15 +61,15 @@ export class CreateEmpresaEmpleadoraDto {
   modeloEmpresa: string;
 
   @ApiProperty({
-    example: '2, 3 o 4',
-    description: 'Obejetivo Empresa',
+    example: '2',
+    description: 'Objetivo Empresa',
   })
   @IsString()
   @IsNotEmpty({ message: 'El objetivo empresa es obligatorio.' })
   cantidadObjetivos: string;
 
   @ApiProperty({
-    example: '2024-01-01',
+    example: '2025-07-10T17:30:07.811Z',
     description: 'Fecha de inicio de vigencia (ISO 8601)',
   })
   @IsDateString(
@@ -83,7 +81,7 @@ export class CreateEmpresaEmpleadoraDto {
   fechaVigenciaInicio: string;
 
   @ApiProperty({
-    example: '2099-12-31',
+    example: '2025-07-10T17:30:07.811Z',
     description: 'Fecha fin de vigencia (ISO 8601)',
   })
   @IsDateString(
@@ -93,4 +91,27 @@ export class CreateEmpresaEmpleadoraDto {
     },
   )
   fechaVigenciaFin: string;
+  @ApiProperty({
+    example: '2025-07-10T17:30:07.811Z',
+    description: 'Fecha de inicio de vigencia de objetivos (ISO 8601)',
+    required: false,
+  })
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de inicio de objetivos debe tener formato ISO 8601.' },
+  )
+  fechaVigenciaInicioObjetivo?: string | null;
+
+  @ApiProperty({
+    example: '2025-07-10T17:30:07.811Z',
+    description: 'Fecha fin de vigencia de objetivos (ISO 8601)',
+    required: false,
+  })
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha fin de objetivos debe tener formato ISO 8601.' },
+  )
+  fechaVigenciaFinObjetivo?: string | null;
 }

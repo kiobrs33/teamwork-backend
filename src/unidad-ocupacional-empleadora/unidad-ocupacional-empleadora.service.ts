@@ -20,9 +20,9 @@ export class UnidadOcupacionalEmpleadoraService {
       const unidad = await this.prisma.unidadOcupacionalEmpleadora.create({
         data: {
           ...dto,
-          fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
       return unidad;
     } catch (error) {
@@ -93,6 +93,7 @@ export class UnidadOcupacionalEmpleadoraService {
             fechaModificacion: new Date(),
             actualizadoPorId: user.idUsuario,
           },
+          include: { empresaEmpleadora: true },
         });
       return updatedUnidad;
     } catch (error) {
