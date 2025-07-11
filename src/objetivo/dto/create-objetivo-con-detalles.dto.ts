@@ -1,12 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
-  IsDateString,
   IsInt,
   IsNumber,
   IsOptional,
   MaxLength,
-  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -38,7 +36,6 @@ export class ObjetivoDetalleDto {
   @IsNumber()
   metaObjetivo: number;
 
-  @ApiProperty({ example: 0.5 })
   @IsOptional()
   metaAlcanzada?: number;
 }

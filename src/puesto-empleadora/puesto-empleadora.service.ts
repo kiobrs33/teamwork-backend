@@ -18,9 +18,9 @@ export class PuestoEmpleadoraService {
       const puesto = await this.prisma.puestoEmpleadora.create({
         data: {
           ...dto,
-          fechaCreacion: new Date(),
           creadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
       return puesto;
     } catch (error) {
@@ -86,6 +86,7 @@ export class PuestoEmpleadoraService {
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
     } catch (error) {
       console.error('Error al actualizar el puesto:', error);

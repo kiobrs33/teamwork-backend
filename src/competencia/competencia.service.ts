@@ -67,11 +67,18 @@ export class CompetenciaService {
         await tx.competencia.update({
           where: { idCompetencia: id },
           data: {
+            codigo: dto.codigo,
+            titulo: dto.titulo,
+            nivel: dto.nivel,
             actualizadoPorId: user.idUsuario,
             fechaModificacion: new Date(),
           },
         });
-
+        if (!dto.competenciaDetalles || dto.competenciaDetalles.length === 0) {
+          throw new BadRequestException(
+            'competenciaDetalles no puede estar vacío',
+          );
+        }
         await tx.competenciaDetalle.deleteMany({
           where: { idCompetencia: id },
         });
@@ -83,13 +90,14 @@ export class CompetenciaService {
               secuencial: index + 1,
               descripcion: detalle.descripcion,
               creadoPorId: user.idUsuario,
-              actualizadoPorId: user.idUsuario,
             })),
           });
           const competenciaCompleto = await tx.competencia.findUnique({
             where: { idCompetencia: id },
             include: { competenciaDetalles: true },
           });
+
+          console.log(competenciaCompleto);
           return competenciaCompleto;
         }
       });
@@ -110,14 +118,25 @@ export class CompetenciaService {
         throw new NotFoundException(`Competencia con ID ${id} no encontrada.`);
       }
 
-      return await this.prisma.competencia.update({
+      const removed = await this.prisma.competencia.update({
         where: { idCompetencia: id },
         data: {
           estado: false,
           actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
+          competenciaDetalles: {
+            updateMany: {
+              where: {
+                idCompetencia: id,
+              },
+              data: {
+                estado: false,
+              },
+            },
+          },
         },
       });
+      return removed;
     } catch (error) {
       this.logger.error(`Error al eliminar competencia con ID ${id}:`, error);
       throw new InternalServerErrorException(
