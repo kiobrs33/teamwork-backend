@@ -68,7 +68,7 @@ export class CompetenciaController {
     const competencia = await this.competenciaService.update(id, user, dto);
     return {
       message: `Competencia con ID ${id} actualizada correctamente.`,
-      data: competencia,
+      data: { competencia },
     };
   }
 

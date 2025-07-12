@@ -96,5 +96,5 @@ export class CreateEmpleadoDto {
   @IsInt({
     message: 'El ID de la gerencia empleadora debe ser un número entero.',
   })
-  unidadOcupacionalEmpleadora: number;
+  idUnidadOcupacionalEmpleadora: number;
 }

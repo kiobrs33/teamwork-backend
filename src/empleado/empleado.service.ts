@@ -49,7 +49,7 @@ export class EmpleadoService {
             idAreaEmpleadora: body.idAreaEmpleadora,
             idPuestoEmpleadora: body.idPuestoEmpleadora,
             idGerenciaEmpleadora: body.idGerenciaEmpleadora,
-            idUnidadOcupacionalEmpleadora: body.unidadOcupacionalEmpleadora,
+            idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
             idUsuario: usuario.idUsuario,
             creadoPorId: user.idUsuario,
           },
@@ -58,6 +58,7 @@ export class EmpleadoService {
             areaEmpleadora: true,
             puestoEmpleadora: true,
             gerenciaEmpleadora: true,
+            unidadOcupacionalEmpleadora: true,
             usuario: true,
             objetivo: {
               include: {
@@ -83,6 +84,7 @@ export class EmpleadoService {
           areaEmpleadora: true,
           puestoEmpleadora: true,
           gerenciaEmpleadora: true,
+          unidadOcupacionalEmpleadora: true,
           usuario: true,
         },
         orderBy: {
@@ -190,7 +192,7 @@ export class EmpleadoService {
         idAreaEmpleadora: body.idAreaEmpleadora,
         idPuestoEmpleadora: body.idPuestoEmpleadora,
         idGerenciaEmpleadora: body.idGerenciaEmpleadora,
-        idUnidadOcupacionalEmpleadora: body.unidadOcupacionalEmpleadora,
+        idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
         idUsuario: existEmpleado.idUsuario,
         fechaCreacion: new Date(),
         creadoPorId: user.idUsuario,
