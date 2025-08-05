@@ -41,6 +41,17 @@ export class CompetenciaController {
     };
   }
 
+  @Get('por-codigo')
+  @ApiOperation({ summary: 'Lista de competencias agrupadas por codigo' })
+  @ApiResponse({ status: 200, description: 'Lista de competencias.' })
+  async findAllByCodigo() {
+    const competencias = await this.competenciaService.findAllByCodigo();
+    return {
+      message: 'Lista de competencias.',
+      data: { competencias },
+    };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener competencia por ID' })
   @ApiParam({ name: 'id', description: 'ID de la competencia' })

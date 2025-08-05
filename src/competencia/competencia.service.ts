@@ -191,4 +191,43 @@ export class CompetenciaService {
       );
     }
   }
+
+  async findAllByCodigo() {
+    try {
+      const competencias = await this.prisma.competencia.findMany({
+        select: {
+          idCompetencia: true,
+          codigo: true,
+          titulo: true,
+          nivel: true,
+        },
+        orderBy: {
+          codigo: 'asc',
+        },
+      });
+
+      const agrupado = Object.values(
+        competencias.reduce((acc, competencia) => {
+          const { codigo } = competencia;
+
+          if (!acc[codigo]) {
+            acc[codigo] = {
+              codigo,
+              competencias: [],
+            };
+          }
+
+          acc[codigo].competencias.push(competencia);
+          return acc;
+        }, {}),
+      );
+
+      return agrupado;
+    } catch (error) {
+      this.logger.error('Error al obtener competencias por codigo:', error);
+      throw new InternalServerErrorException(
+        'No se pudieron obtener las competencias por codigo.',
+      );
+    }
+  }
 }
