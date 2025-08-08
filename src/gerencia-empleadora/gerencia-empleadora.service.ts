@@ -21,6 +21,7 @@ export class GerenciaEmpleadoraService {
           ...dto,
           creadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
       return gerencia;
     } catch (error) {
@@ -84,6 +85,7 @@ export class GerenciaEmpleadoraService {
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
         },
+        include: { empresaEmpleadora: true },
       });
     } catch (error) {
       console.error('Error al actualizar la gerencia:', error);

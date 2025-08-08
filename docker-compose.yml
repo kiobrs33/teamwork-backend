@@ -1,0 +1,29 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    ports:
+      - "5050:5432"
+    environment:
+      POSTGRES_USER: teamworkuser
+      POSTGRES_PASSWORD: teamworkpass
+      POSTGRES_DB: teamworkdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: teamwork_app
+    restart: always
+    ports:
+      - "3050:3000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+volumes:
+  pgdata:

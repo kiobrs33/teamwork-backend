@@ -47,10 +47,10 @@ export class GerenciaEmpleadoraController {
     @User() user: AuthUser,
     @Body() dto: CreateGerenciaEmpleadoraDto,
   ) {
-    const unidad = await this.gerenciaEmpleadoraService.create(user, dto);
+    const gerencia = await this.gerenciaEmpleadoraService.create(user, dto);
     return {
       message: 'Gerencia empleadora creada exitosamente.',
-      data: { unidad },
+      data: { gerencia },
     };
   }
 
@@ -58,10 +58,10 @@ export class GerenciaEmpleadoraController {
   @ApiOperation({ summary: 'Listar todas las gerencias empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de gerencias empleadoras.' })
   async findAll() {
-    const unidades = await this.gerenciaEmpleadoraService.findAll();
+    const gerencias = await this.gerenciaEmpleadoraService.findAll();
     return {
       message: 'Lista de gerencias empleadoras.',
-      data: { unidades },
+      data: { gerencias },
     };
   }
 
@@ -70,10 +70,10 @@ export class GerenciaEmpleadoraController {
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
   @ApiResponse({ status: 200, description: 'Gerencia empleadora encontrada.' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
-    const unidad = await this.gerenciaEmpleadoraService.findOne(id);
+    const gerencia = await this.gerenciaEmpleadoraService.findOne(id);
     return {
       message: 'Gerencia empleadora encontrada.',
-      data: { unidad },
+      data: { gerencia },
     };
   }
 
@@ -89,10 +89,10 @@ export class GerenciaEmpleadoraController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateGerenciaEmpleadoraDto,
   ) {
-    const unidad = await this.gerenciaEmpleadoraService.update(user, id, dto);
+    const gerencia = await this.gerenciaEmpleadoraService.update(user, id, dto);
     return {
       message: `Gerencia empleadora con ID ${id} actualizada correctamente.`,
-      data: { unidad },
+      data: { gerencia },
     };
   }
 
@@ -104,10 +104,10 @@ export class GerenciaEmpleadoraController {
     description: 'Gerencia empleadora eliminada correctamente.',
   })
   async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    const unidad = await this.gerenciaEmpleadoraService.remove(user, id);
+    const gerencia = await this.gerenciaEmpleadoraService.remove(user, id);
     return {
       message: `Gerencia empleadora con ID ${id} eliminada correctamente.`,
-      data: { unidad },
+      data: { gerencia },
     };
   }
 

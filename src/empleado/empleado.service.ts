@@ -98,6 +98,33 @@ export class EmpleadoService {
     }
   }
 
+  // async findAllCompetencias(id: number) {
+  //   try {
+  //     const empleados = await this.prisma.empleado.findMany({
+  //       where: { idEmpleado: id, estado: true },
+  //       // include: {
+  //       //   objetivo: {
+  //       //     where: { estado: true },
+  //       //     include: {
+  //       //       objetivoDetalles: true,
+  //       //     },
+  //       //   },
+  //       // },
+  //       include: {
+  //       },
+  //       orderBy: {
+  //         fechaCreacion: 'desc',
+  //       },
+  //     });
+  //     return empleados;
+  //   } catch (error) {
+  //     this.logger.error('Error al obtener los empleados:', error);
+  //     throw new InternalServerErrorException(
+  //       'No se pudieron obtener los empleados.',
+  //     );
+  //   }
+  // }
+
   async findOne(id: number) {
     try {
       const empleado = await this.prisma.empleado.findUnique({

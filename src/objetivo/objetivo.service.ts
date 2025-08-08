@@ -131,6 +131,16 @@ export class ObjetivoService {
           estado: false,
           actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
+          objetivoDetalles: {
+            updateMany: {
+              where: {
+                idObjetivo: id,
+              },
+              data: {
+                estado: false,
+              },
+            },
+          },
         },
       });
 
@@ -147,10 +157,8 @@ export class ObjetivoService {
    * Crea un objetivo con entre 2 y 4 detalles asociados en una transacción.
    */
   async createConDetalles(user: AuthUser, dto: CreateObjetivoConDetallesDto) {
-    if (dto.detalles.length < 2 || dto.detalles.length > 4) {
-      throw new BadRequestException(
-        'Debe enviar entre 2 y 4 detalles para el objetivo.',
-      );
+    if (dto.detalles.length < 1) {
+      throw new BadRequestException('Debe enviar como mínimo un objetivo');
     }
 
     try {
