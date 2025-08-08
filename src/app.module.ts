@@ -13,6 +13,7 @@ import { GerenciaEmpleadoraModule } from './gerencia-empleadora/gerencia-emplead
 import { UnidadOcupacionalEmpleadoraModule } from './unidad-ocupacional-empleadora/unidad-ocupacional-empleadora.module';
 import { AreaEmpleadoraModule } from './area-empleadora/area-empleadora.module';
 import { CompetenciaModule } from './competencia/competencia.module';
+import { EmpleoModule } from './empleo/empleo.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { CompetenciaModule } from './competencia/competencia.module';
     UnidadOcupacionalEmpleadoraModule,
     AreaEmpleadoraModule,
     CompetenciaModule,
+    EmpleoModule,
   ],
   controllers: [AppController],
   providers: [AppService],

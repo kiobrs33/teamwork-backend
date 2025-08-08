@@ -262,3 +262,42 @@ model TablaMaestraDetalle {
 
   @@map("tabla_maestra_detalle")
 }
+
+model Empleo {
+  idEmpleo            Int          @id @default(autoincrement()) @map("id_empleo")
+  titulo              String
+  descripcion         String?
+  nombreEmpresa       String       @map("nombre_empresa")
+  ubicacion           String
+  tipoEmpleo          String       @map("tipo_empleo")
+  modalidad           String?
+  fechaPublicacion    DateTime     @map("fecha_publicacion")
+  fechaFinPublicacion DateTime     @map("fecha_fin_publicacion")
+  tiempoExperiencia   String       @map("tiempo_experiencia")
+  numeroVacantes      String       @map("numero_vacantes")
+  salario             String?
+  estado              Boolean      @default(true)
+  creadoPorId         Int          @map("creado_por_id")
+  actualizadoPorId    Int?         @map("actualizado_por_id")
+  fechaCreacion       DateTime     @default(now()) @map("fecha_creacion")
+  fechaModificacion   DateTime?    @map("fecha_modificacion")
+  comunicados         Comunicado[]
+
+  @@map("empleo")
+}
+
+model Comunicado {
+  idComunicado      Int       @id @default(autoincrement()) @map("id_comunicado")
+  titulo            String
+  url               String?
+  estadoDisponible  Boolean   @default(true) @map("estado_disponible")
+  idEmpleo          Int       @map("id_empleo")
+  empleo            Empleo    @relation(fields: [idEmpleo], references: [idEmpleo])
+  estado            Boolean   @default(true)
+  creadoPorId       Int       @map("creado_por_id")
+  actualizadoPorId  Int?      @map("actualizado_por_id")
+  fechaCreacion     DateTime  @default(now()) @map("fecha_creacion")
+  fechaModificacion DateTime? @map("fecha_modificacion")
+
+  @@map("comunicado")
+}

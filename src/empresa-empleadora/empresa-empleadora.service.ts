@@ -87,6 +87,11 @@ export class EmpresaEmpleadoraService {
       return updated;
     } catch (error) {
       console.error('Error al actualizar empresa:', error);
+
+      if (error instanceof NotFoundException) {
+        throw error; // Lo reenvías tal cual
+      }
+
       throw new InternalServerErrorException(
         'No se pudo actualizar la empresa.',
       );
@@ -115,6 +120,11 @@ export class EmpresaEmpleadoraService {
       return removed;
     } catch (error) {
       console.error('Error al eliminar empresa:', error);
+
+      if (error instanceof NotFoundException) {
+        throw error; // Lo reenvías tal cual
+      }
+
       throw new InternalServerErrorException('No se pudo eliminar la empresa.');
     }
   }
