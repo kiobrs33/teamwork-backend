@@ -7,7 +7,7 @@ export class LoginAuthDto {
   @IsString()
   codigoUsuario: string;
 
-  @ApiProperty({ example: '12345678' })
+  @ApiProperty({ example: '123456' })
   @IsString()
   contrasena: string;
 }

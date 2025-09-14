@@ -1,24 +1,24 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  ParseIntPipe,
-  UseGuards,
+    Controller,
+    Get,
+    Post,
+    Body,
+    Patch,
+    Param,
+    Delete,
+    ParseIntPipe,
+    UseGuards, UsePipes, ValidationPipe,
 } from '@nestjs/common';
 import { PuestoEmpleadoraService } from './puesto-empleadora.service';
 import { CreatePuestoEmpleadoraDto } from './dto/create-puesto-empleadora.dto';
 import { UpdatePuestoEmpleadoraDto } from './dto/update-puesto-empleadora.dto';
 
 import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
+    ApiBearerAuth, ApiBody,
+    ApiOperation,
+    ApiParam,
+    ApiResponse,
+    ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
@@ -103,4 +103,24 @@ export class PuestoEmpleadoraController {
       data: { puesto },
     };
   }
+
+    @Post('import')
+    @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+    @ApiBody({ type: [CreatePuestoEmpleadoraDto] })
+    @ApiOperation({ summary: 'Importar Area empleadora' })
+    @ApiResponse({
+        status: 201,
+        description: 'Importacion de area empleadora creada exitosamente.',
+    })
+    async importExcelData(
+        @User() user: AuthUser,
+        @Body() data: CreatePuestoEmpleadoraDto[],
+    ) {
+        const importPuestoEmpleadora =
+            await this.puestoEmpleadoraService.importData(user, data);
+        return {
+            message: 'Areas empleadora creadas exitosamente.',
+            data: { importPuestoEmpleadora },
+        };
+    }
 }

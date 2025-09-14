@@ -119,4 +119,30 @@ export class PuestoEmpleadoraService {
       throw new InternalServerErrorException('No se pudo eliminar el puesto.');
     }
   }
+
+    async importData(user: AuthUser, data: CreatePuestoEmpleadoraDto[]) {
+        try {
+            const registros = data.map((row) => ({
+                descripcion: row.descripcion,
+                idEmpresaEmpleadora: row.idEmpresaEmpleadora,
+                creadoPorId: user.idUsuario,
+            }));
+
+            return await this.prisma.$transaction(async (tx) => {
+                await tx.puestoEmpleadora.createMany({
+                    data: registros,
+                });
+
+                return {
+                    message: 'Datos importados correctamente',
+                    count: registros.length,
+                };
+            });
+        } catch (error) {
+            console.error('Error al importar datos:', error);
+            throw new InternalServerErrorException(
+                'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+            );
+        }
+    }
 }

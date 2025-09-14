@@ -10,6 +10,7 @@ import { UpdateUnidadOcupacionalEmpleadoraDto } from './dto/update-unidad-ocupac
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { AsignarCompetenciasLoteDto } from './dto/asignar-competencias-a-unidad-ocupacional-empleadora.dto';
 import { CreateGerenciaEmpleadoraDto } from 'src/gerencia-empleadora/dto/create-gerencia-empleadora.dto';
+import {CreateAreaEmpleadoraDto} from "../area-empleadora/dto/create-area-empleadora.dto";
 
 @Injectable()
 export class UnidadOcupacionalEmpleadoraService {
@@ -163,4 +164,30 @@ export class UnidadOcupacionalEmpleadoraService {
       );
     }
   }
+    async importData(user: AuthUser, data: CreateUnidadOcupacionalEmpleadoraDto[]) {
+        try {
+            const registros = data.map((row) => ({
+                descripcion: row.descripcion,
+                idEmpresaEmpleadora: row.idEmpresaEmpleadora,
+                creadoPorId: user.idUsuario,
+            }));
+
+            return await this.prisma.$transaction(async (tx) => {
+                await tx.unidadOcupacionalEmpleadora.createMany({
+                    data: registros,
+                });
+
+                return {
+                    message: 'Datos importados correctamente',
+                    count: registros.length,
+                };
+            });
+        } catch (error) {
+            console.error('Error al importar datos:', error);
+            throw new InternalServerErrorException(
+                'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+            );
+        }
+    }
+
 }

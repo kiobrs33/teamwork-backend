@@ -10,6 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateCompetenciaDto } from './dto/update-competencia.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
+import {CreatePuestoEmpleadoraDto} from "../puesto-empleadora/dto/create-puesto-empleadora.dto";
 
 @Injectable()
 export class CompetenciaService {
@@ -191,4 +192,46 @@ export class CompetenciaService {
       );
     }
   }
+
+    async importData(user: AuthUser, data: CreateCompetenciaConDetallesDto[]) {
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const registros = await Promise.all(
+                    data.map((row) =>
+                        tx.competencia.create({
+                            data: {
+                                codigo: row.codigo,
+                                titulo: row.titulo,
+                                nivel: row.nivel,
+                                creadoPorId: user.idUsuario,
+                                competenciaDetalles: {
+                                    createMany: {
+                                        data: row.competenciaDetalles.map((detalle, index) => ({
+                                            secuencial: index + 1,
+                                            descripcion: detalle.descripcion,
+                                            creadoPorId: user.idUsuario,
+                                        })),
+                                    },
+                                },
+                            },
+                            include: {
+                                competenciaDetalles: true,
+                            },
+                        }),
+                    ),
+                );
+
+                return {
+                    message: 'Datos importados correctamente',
+                    count: registros.length,
+                };
+            });
+        } catch (error) {
+            console.error('Error al importar datos:', error);
+            throw new InternalServerErrorException(
+                'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+            );
+        }
+    }
+
 }

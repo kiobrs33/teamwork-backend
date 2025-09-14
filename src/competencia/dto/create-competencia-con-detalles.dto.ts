@@ -30,15 +30,16 @@ export class CreateCompetenciaConDetallesDto {
   @IsInt({ message: 'El nivel debe ser un número entero.' })
   nivel: number;
 
-  @ApiProperty({
-    type: [CompetenciaDetalleDto],
-    description:
-      'Lista de detalles asociados a la competencia (1 a 10 detalles)',
-    minItems: 1,
-    maxItems: 10,
-  })
-  @IsArray({ message: 'Debe enviar un arreglo de detalles.' })
-  @ValidateNested({ each: true })
-  @Type(() => CompetenciaDetalleDto)
-  competenciaDetalles: CompetenciaDetalleDto[];
+    @ApiProperty({
+        type: CompetenciaDetalleDto,
+        isArray: true,
+        description:
+            'Lista de detalles asociados a la competencia (1 a 10 detalles)',
+        minItems: 1,
+        maxItems: 10,
+    })
+    @IsArray({ message: 'Debe enviar un arreglo de detalles.' })
+    @ValidateNested({ each: true })
+    @Type(() => CompetenciaDetalleDto)
+    competenciaDetalles: CompetenciaDetalleDto[];
 }

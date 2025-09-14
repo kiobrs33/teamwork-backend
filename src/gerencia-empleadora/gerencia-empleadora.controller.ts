@@ -126,7 +126,7 @@ export class GerenciaEmpleadoraController {
     const importGerenciaEmpleadora =
       await this.gerenciaEmpleadoraService.importData(user, data);
     return {
-      message: 'Gerencia empleadora creadas exitosamente.',
+      message: 'Gerencias empleadora creadas exitosamente.',
       data: { importGerenciaEmpleadora },
     };
   }

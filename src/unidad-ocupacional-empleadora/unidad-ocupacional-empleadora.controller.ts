@@ -1,13 +1,13 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  ParseIntPipe,
-  UseGuards,
+    Controller,
+    Get,
+    Post,
+    Body,
+    Patch,
+    Param,
+    Delete,
+    ParseIntPipe,
+    UseGuards, UsePipes, ValidationPipe,
 } from '@nestjs/common';
 import { UnidadOcupacionalEmpleadoraService } from './unidad-ocupacional-empleadora.service';
 import { CreateUnidadOcupacionalEmpleadoraDto } from './dto/create-unidad-ocupacional-empleadora.dto';
@@ -25,6 +25,7 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { AsignarCompetenciasLoteDto } from './dto/asignar-competencias-a-unidad-ocupacional-empleadora.dto';
+import {CreateAreaEmpleadoraDto} from "../area-empleadora/dto/create-area-empleadora.dto";
 
 @ApiTags('Unidad Ocupacional Empleadora')
 @ApiBearerAuth()
@@ -160,4 +161,24 @@ export class UnidadOcupacionalEmpleadoraController {
       data: { asignacionCompetencia },
     };
   }
+
+    @Post('import')
+    @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+    @ApiBody({ type: [CreateUnidadOcupacionalEmpleadoraDto] })
+    @ApiOperation({ summary: 'Importar unidad ocupacional empleadora' })
+    @ApiResponse({
+        status: 201,
+        description: 'Importacion de unidad ocupacional empleadora creada exitosamente.',
+    })
+    async importExcelData(
+        @User() user: AuthUser,
+        @Body() data: CreateUnidadOcupacionalEmpleadoraDto[],
+    ) {
+        const importUnidadOcupacionalEmpleadora =
+            await this.unidadOcupacionalEmpleadoraService.importData(user, data);
+        return {
+            message: 'Unidades Ocupacionales empleadora creadas exitosamente.',
+            data: { importUnidadOcupacionalEmpleadora },
+        };
+    }
 }
