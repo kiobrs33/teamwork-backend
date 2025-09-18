@@ -10,7 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateCompetenciaDto } from './dto/update-competencia.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
-import {CreatePuestoEmpleadoraDto} from "../puesto-empleadora/dto/create-puesto-empleadora.dto";
+import { CreatePuestoEmpleadoraDto } from '../puesto-empleadora/dto/create-puesto-empleadora.dto';
 
 @Injectable()
 export class CompetenciaService {
@@ -98,7 +98,6 @@ export class CompetenciaService {
             include: { competenciaDetalles: true },
           });
 
-          console.log(competenciaCompleto);
           return competenciaCompleto;
         }
       });
@@ -193,45 +192,106 @@ export class CompetenciaService {
     }
   }
 
-    async importData(user: AuthUser, data: CreateCompetenciaConDetallesDto[]) {
-        try {
-            return await this.prisma.$transaction(async (tx) => {
-                const registros = await Promise.all(
-                    data.map((row) =>
-                        tx.competencia.create({
-                            data: {
-                                codigo: row.codigo,
-                                titulo: row.titulo,
-                                nivel: row.nivel,
-                                creadoPorId: user.idUsuario,
-                                competenciaDetalles: {
-                                    createMany: {
-                                        data: row.competenciaDetalles.map((detalle, index) => ({
-                                            secuencial: index + 1,
-                                            descripcion: detalle.descripcion,
-                                            creadoPorId: user.idUsuario,
-                                        })),
-                                    },
-                                },
-                            },
-                            include: {
-                                competenciaDetalles: true,
-                            },
-                        }),
-                    ),
-                );
+  async importData(user: AuthUser, data: CreateCompetenciaConDetallesDto[]) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const registros = await Promise.all(
+          data.map((row) =>
+            tx.competencia.create({
+              data: {
+                codigo: row.codigo,
+                titulo: row.titulo,
+                nivel: row.nivel,
+                creadoPorId: user.idUsuario,
+                competenciaDetalles: {
+                  createMany: {
+                    data: row.competenciaDetalles.map((detalle, index) => ({
+                      secuencial: index + 1,
+                      descripcion: detalle.descripcion,
+                      creadoPorId: user.idUsuario,
+                    })),
+                  },
+                },
+              },
+              include: {
+                competenciaDetalles: true,
+              },
+            }),
+          ),
+        );
 
-                return {
-                    message: 'Datos importados correctamente',
-                    count: registros.length,
-                };
-            });
-        } catch (error) {
-            console.error('Error al importar datos:', error);
-            throw new InternalServerErrorException(
-                'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
-            );
-        }
+        return {
+          message: 'Datos importados correctamente',
+          count: registros.length,
+        };
+      });
+    } catch (error) {
+      console.error('Error al importar datos:', error);
+      throw new InternalServerErrorException(
+        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+      );
     }
+  }
 
+  async findAllConCompetencias() {
+    try {
+      // 1. Obtener todos los puestos activos
+      const puestos = await this.prisma.puestoEmpleadora.findMany({
+        where: { estado: true },
+        include: { empresaEmpleadora: true },
+        orderBy: { fechaCreacion: 'desc' },
+      });
+
+      // 2. Obtener todas las competencias activas
+      const competencias = await this.prisma.competencia.findMany({
+        where: { estado: true },
+        orderBy: { fechaCreacion: 'desc' },
+        select: {
+          codigo: true,
+          titulo: true,
+          nivel: true,
+        },
+      });
+
+      // 3. Armar la respuesta fusionada
+      const resultado = puestos.map((puesto) => {
+        // Agrupar competencias por código
+        const competenciasAgrupadas = competencias.reduce(
+          (
+            acc: {
+              codigo: string;
+              niveles: { titulo: string; nivel: number }[];
+            }[],
+            comp,
+          ) => {
+            let competencia = acc.find((c) => c.codigo === comp.codigo);
+            if (!competencia) {
+              competencia = { codigo: comp.codigo, niveles: [] };
+              acc.push(competencia);
+            }
+            competencia.niveles.push({
+              titulo: comp.titulo,
+              nivel: comp.nivel,
+            });
+            return acc;
+          },
+          [],
+        );
+
+        return {
+          idPuestoEmpleadora: puesto.idPuestoEmpleadora,
+          descripcion: puesto.descripcion,
+          idEmpresaEmpleadora: puesto.idEmpresaEmpleadora,
+          competencias: competenciasAgrupadas,
+        };
+      });
+
+      return resultado;
+    } catch (error) {
+      this.logger.error('Error al obtener puestos con competencias:', error);
+      throw new InternalServerErrorException(
+        'No se pudieron obtener los puestos con competencias.',
+      );
+    }
+  }
 }

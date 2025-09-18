@@ -1,20 +1,23 @@
 import {
-    Controller,
-    Get,
-    Post,
-    Body,
-    Patch,
-    Param,
-    Delete,
-    ParseIntPipe,
-    UseGuards, UsePipes, ValidationPipe,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseIntPipe,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
-    ApiBearerAuth, ApiBody,
-    ApiOperation,
-    ApiParam,
-    ApiResponse,
-    ApiTags,
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
@@ -22,7 +25,7 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CompetenciaService } from './competencia.service';
 import { UpdateCompetenciaDto } from './dto/update-competencia.dto';
 import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
-import {CreateAreaEmpleadoraDto} from "../area-empleadora/dto/create-area-empleadora.dto";
+import { CreateAreaEmpleadoraDto } from '../area-empleadora/dto/create-area-empleadora.dto';
 
 @ApiTags('Competencia')
 @ApiBearerAuth()
@@ -38,6 +41,17 @@ export class CompetenciaController {
     const competencias = await this.competenciaService.findAll();
     return {
       message: 'Lista de competencias.',
+      data: { competencias },
+    };
+  }
+
+  @Get('con-puestos')
+  @ApiOperation({ summary: 'Listar todas las competencias y puestos' })
+  @ApiResponse({ status: 200, description: 'Lista de competencias.' })
+  async findAllConCompetencias() {
+    const competencias = await this.competenciaService.findAllConCompetencias();
+    return {
+      message: 'Unidades y competencias.',
       data: { competencias },
     };
   }
@@ -69,7 +83,7 @@ export class CompetenciaController {
     const competencia = await this.competenciaService.update(id, user, dto);
     return {
       message: `Competencia con ID ${id} actualizada correctamente.`,
-      data: competencia,
+      data: { competencia },
     };
   }
 
@@ -108,23 +122,25 @@ export class CompetenciaController {
     };
   }
 
-    @Post('import')
-    @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-    @ApiBody({ type: [CreateCompetenciaConDetallesDto] })
-    @ApiOperation({ summary: 'Importar Competencias ' })
-    @ApiResponse({
-        status: 201,
-        description: 'Importacion de competencias creada exitosamente.',
-    })
-    async importExcelData(
-        @User() user: AuthUser,
-        @Body() data: CreateCompetenciaConDetallesDto[],
-    ) {
-        const importCompetencia =
-            await this.competenciaService.importData(user, data);
-        return {
-            message: 'Competencias  creadas exitosamente.',
-            data: { importCompetencia },
-        };
-    }
+  @Post('import')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiBody({ type: [CreateCompetenciaConDetallesDto] })
+  @ApiOperation({ summary: 'Importar Competencias ' })
+  @ApiResponse({
+    status: 201,
+    description: 'Importacion de competencias creada exitosamente.',
+  })
+  async importExcelData(
+    @User() user: AuthUser,
+    @Body() data: CreateCompetenciaConDetallesDto[],
+  ) {
+    const importCompetencia = await this.competenciaService.importData(
+      user,
+      data,
+    );
+    return {
+      message: 'Competencias  creadas exitosamente.',
+      data: { importCompetencia },
+    };
+  }
 }
