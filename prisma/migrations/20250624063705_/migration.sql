@@ -6,9 +6,11 @@
 
 */
 -- AlterTable
-ALTER TABLE "empresa_empleadora" ADD COLUMN     "fecha_vigencia_fin_objetivo" TIMESTAMP(3),
+ALTER TABLE "empresa_empleadora"
+    ADD COLUMN "fecha_vigencia_fin_objetivo" TIMESTAMP(3),
 ADD COLUMN     "fecha_vigencia_inicio_objetivo" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "objetivo" DROP COLUMN "fecha_vigencia_fin",
-DROP COLUMN "fecha_vigencia_inicia";
+DROP
+COLUMN "fecha_vigencia_inicia";

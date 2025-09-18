@@ -1,1 +1,2 @@
-export class GerenciaEmpleadora {}
+export class GerenciaEmpleadora {
+}

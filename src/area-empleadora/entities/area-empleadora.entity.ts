@@ -1,1 +1,2 @@
-export class AreaEmpleadora {}
+export class AreaEmpleadora {
+}

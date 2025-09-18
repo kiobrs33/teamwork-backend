@@ -31,22 +31,29 @@ ALTER TABLE "equipo_empleadora" DROP CONSTRAINT "equipo_empleadora_id_empresa_em
 ALTER TABLE "unidad_empleadora" DROP CONSTRAINT "unidad_empleadora_id_empresa_empleadora_fkey";
 
 -- AlterTable
-ALTER TABLE "empleado" ADD COLUMN     "documento" INTEGER NOT NULL,
+ALTER TABLE "empleado"
+    ADD COLUMN "documento" INTEGER NOT NULL,
 ADD COLUMN     "id_unidad_ocupacional_empleadora" INTEGER NOT NULL,
 ADD COLUMN     "sede" TEXT NOT NULL,
 ADD COLUMN     "tiempo_empresa_unidad" TEXT NOT NULL,
 ADD COLUMN     "tiempo_empresa_valor" INTEGER NOT NULL;
 
 -- AlterTable
-ALTER TABLE "empresa_empleadora" ADD COLUMN     "modeloEmpresa" TEXT NOT NULL,
+ALTER TABLE "empresa_empleadora"
+    ADD COLUMN "modeloEmpresa" TEXT NOT NULL,
 ADD COLUMN     "objetivoEmpresa" TEXT NOT NULL;
 
 -- AlterTable
-ALTER TABLE "objetivo_detalle" ADD COLUMN     "ponderacion" DOUBLE PRECISION NOT NULL,
-ALTER COLUMN "descripcion" SET NOT NULL,
-ALTER COLUMN "descripcion_iniciativa" SET NOT NULL,
-ALTER COLUMN "unidad_medida" SET NOT NULL,
-ALTER COLUMN "peso_especifico" SET NOT NULL;
+ALTER TABLE "objetivo_detalle"
+    ADD COLUMN "ponderacion" DOUBLE PRECISION NOT NULL,
+ALTER
+COLUMN "descripcion" SET NOT NULL,
+ALTER
+COLUMN "descripcion_iniciativa" SET NOT NULL,
+ALTER
+COLUMN "unidad_medida" SET NOT NULL,
+ALTER
+COLUMN "peso_especifico" SET NOT NULL;
 
 -- AlterTable
 ALTER TABLE "usuario" DROP COLUMN "correo_electronico";
@@ -58,61 +65,70 @@ DROP TABLE "equipo_empleadora";
 DROP TABLE "unidad_empleadora";
 
 -- CreateTable
-CREATE TABLE "area_empleadora" (
-    "id_equipo_empleadora" SERIAL NOT NULL,
-    "descripcion" TEXT NOT NULL,
-    "id_empresa_empleadora" INTEGER NOT NULL,
-    "estado" BOOLEAN NOT NULL DEFAULT true,
-    "creado_por_id" INTEGER NOT NULL,
-    "actualizado_por_id" INTEGER,
-    "fecha_creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "fecha_modificacion" TIMESTAMP(3),
+CREATE TABLE "area_empleadora"
+(
+    "id_equipo_empleadora"  SERIAL       NOT NULL,
+    "descripcion"           TEXT         NOT NULL,
+    "id_empresa_empleadora" INTEGER      NOT NULL,
+    "estado"                BOOLEAN      NOT NULL DEFAULT true,
+    "creado_por_id"         INTEGER      NOT NULL,
+    "actualizado_por_id"    INTEGER,
+    "fecha_creacion"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "fecha_modificacion"    TIMESTAMP(3),
 
     CONSTRAINT "area_empleadora_pkey" PRIMARY KEY ("id_equipo_empleadora")
 );
 
 -- CreateTable
-CREATE TABLE "gerencia_empleadora" (
-    "id_unidad_empleadora" SERIAL NOT NULL,
-    "descripcion" TEXT NOT NULL,
-    "id_empresa_empleadora" INTEGER NOT NULL,
-    "estado" BOOLEAN NOT NULL DEFAULT true,
-    "creado_por_id" INTEGER NOT NULL,
-    "actualizado_por_id" INTEGER,
-    "fecha_creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "fecha_modificacion" TIMESTAMP(3),
+CREATE TABLE "gerencia_empleadora"
+(
+    "id_unidad_empleadora"  SERIAL       NOT NULL,
+    "descripcion"           TEXT         NOT NULL,
+    "id_empresa_empleadora" INTEGER      NOT NULL,
+    "estado"                BOOLEAN      NOT NULL DEFAULT true,
+    "creado_por_id"         INTEGER      NOT NULL,
+    "actualizado_por_id"    INTEGER,
+    "fecha_creacion"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "fecha_modificacion"    TIMESTAMP(3),
 
     CONSTRAINT "gerencia_empleadora_pkey" PRIMARY KEY ("id_unidad_empleadora")
 );
 
 -- CreateTable
-CREATE TABLE "unidad_ocupacional_empleadora" (
-    "id_unidad_ocupacional_empleadora" SERIAL NOT NULL,
-    "descripcion" TEXT NOT NULL,
-    "id_empresa_empleadora" INTEGER NOT NULL,
-    "estado" BOOLEAN NOT NULL DEFAULT true,
-    "creado_por_id" INTEGER NOT NULL,
-    "actualizado_por_id" INTEGER,
-    "fecha_creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "fecha_modificacion" TIMESTAMP(3),
+CREATE TABLE "unidad_ocupacional_empleadora"
+(
+    "id_unidad_ocupacional_empleadora" SERIAL       NOT NULL,
+    "descripcion"                      TEXT         NOT NULL,
+    "id_empresa_empleadora"            INTEGER      NOT NULL,
+    "estado"                           BOOLEAN      NOT NULL DEFAULT true,
+    "creado_por_id"                    INTEGER      NOT NULL,
+    "actualizado_por_id"               INTEGER,
+    "fecha_creacion"                   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "fecha_modificacion"               TIMESTAMP(3),
 
     CONSTRAINT "unidad_ocupacional_empleadora_pkey" PRIMARY KEY ("id_unidad_ocupacional_empleadora")
 );
 
 -- AddForeignKey
-ALTER TABLE "empleado" ADD CONSTRAINT "empleado_id_equipo_empleadora_fkey" FOREIGN KEY ("id_equipo_empleadora") REFERENCES "area_empleadora"("id_equipo_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "empleado"
+    ADD CONSTRAINT "empleado_id_equipo_empleadora_fkey" FOREIGN KEY ("id_equipo_empleadora") REFERENCES "area_empleadora" ("id_equipo_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "empleado" ADD CONSTRAINT "empleado_id_unidad_empleadora_fkey" FOREIGN KEY ("id_unidad_empleadora") REFERENCES "gerencia_empleadora"("id_unidad_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "empleado"
+    ADD CONSTRAINT "empleado_id_unidad_empleadora_fkey" FOREIGN KEY ("id_unidad_empleadora") REFERENCES "gerencia_empleadora" ("id_unidad_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "empleado" ADD CONSTRAINT "empleado_id_unidad_ocupacional_empleadora_fkey" FOREIGN KEY ("id_unidad_ocupacional_empleadora") REFERENCES "unidad_ocupacional_empleadora"("id_unidad_ocupacional_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "empleado"
+    ADD CONSTRAINT "empleado_id_unidad_ocupacional_empleadora_fkey" FOREIGN KEY ("id_unidad_ocupacional_empleadora") REFERENCES "unidad_ocupacional_empleadora" ("id_unidad_ocupacional_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "area_empleadora" ADD CONSTRAINT "area_empleadora_id_empresa_empleadora_fkey" FOREIGN KEY ("id_empresa_empleadora") REFERENCES "empresa_empleadora"("id_empresa_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "area_empleadora"
+    ADD CONSTRAINT "area_empleadora_id_empresa_empleadora_fkey" FOREIGN KEY ("id_empresa_empleadora") REFERENCES "empresa_empleadora" ("id_empresa_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "gerencia_empleadora" ADD CONSTRAINT "gerencia_empleadora_id_empresa_empleadora_fkey" FOREIGN KEY ("id_empresa_empleadora") REFERENCES "empresa_empleadora"("id_empresa_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "gerencia_empleadora"
+    ADD CONSTRAINT "gerencia_empleadora_id_empresa_empleadora_fkey" FOREIGN KEY ("id_empresa_empleadora") REFERENCES "empresa_empleadora" ("id_empresa_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "unidad_ocupacional_empleadora" ADD CONSTRAINT "unidad_ocupacional_empleadora_id_empresa_empleadora_fkey" FOREIGN KEY ("id_empresa_empleadora") REFERENCES "empresa_empleadora"("id_empresa_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "unidad_ocupacional_empleadora"
+    ADD CONSTRAINT "unidad_ocupacional_empleadora_id_empresa_empleadora_fkey" FOREIGN KEY ("id_empresa_empleadora") REFERENCES "empresa_empleadora" ("id_empresa_empleadora") ON DELETE RESTRICT ON UPDATE CASCADE;

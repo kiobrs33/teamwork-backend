@@ -21,7 +21,7 @@ services:
     ports:
       - "3050:3000"
     env_file:
-      - .env
+      - .env.deploy
     depends_on:
       - db
 

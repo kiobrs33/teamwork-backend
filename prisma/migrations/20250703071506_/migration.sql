@@ -5,4 +5,5 @@
 
 */
 -- AlterTable
-ALTER TABLE "competencia_detalle" ADD COLUMN     "secuencial" INTEGER NOT NULL;
+ALTER TABLE "competencia_detalle"
+    ADD COLUMN "secuencial" INTEGER NOT NULL;

@@ -1,1 +1,2 @@
-export class Competencia {}
+export class Competencia {
+}

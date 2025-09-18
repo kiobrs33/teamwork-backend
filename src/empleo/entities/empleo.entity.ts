@@ -1,1 +1,2 @@
-export class Empleo {}
+export class Empleo {
+}
