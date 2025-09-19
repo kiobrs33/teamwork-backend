@@ -55,15 +55,21 @@ export class CompetenciaService {
   }
 
   async update(id: number, user: AuthUser, dto: UpdateCompetenciaDto) {
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const competencia = await tx.competencia.findUnique({
-          where: { idCompetencia: id, estado: true },
-        });
 
-        if (!competencia) {
+      const competencia = await this.prisma.competencia.findUnique({
+          where: { idCompetencia: id, estado: true },
+      });
+
+      if (!competencia) {
           throw new NotFoundException('Competencia no encontrada');
-        }
+      }
+      if (!dto.competenciaDetalles || dto.competenciaDetalles.length === 0) {
+          throw new BadRequestException(
+              'competenciaDetalles no puede estar vacío',
+          );
+      }
+      try {
+      return await this.prisma.$transaction(async (tx) => {
 
         await tx.competencia.update({
           where: { idCompetencia: id },
@@ -75,11 +81,7 @@ export class CompetenciaService {
             fechaModificacion: new Date(),
           },
         });
-        if (!dto.competenciaDetalles || dto.competenciaDetalles.length === 0) {
-          throw new BadRequestException(
-            'competenciaDetalles no puede estar vacío',
-          );
-        }
+
         await tx.competenciaDetalle.deleteMany({
           where: { idCompetencia: id },
         });
@@ -236,7 +238,7 @@ export class CompetenciaService {
   async findAllConCompetencias() {
     try {
       // 1. Obtener todos los puestos activos
-      const puestos = await this.prisma.puestoEmpleadora.findMany({
+      const unidades = await this.prisma.unidadOcupacionalEmpleadora.findMany({
         where: { estado: true },
         include: { empresaEmpleadora: true },
         orderBy: { fechaCreacion: 'desc' },
@@ -254,19 +256,20 @@ export class CompetenciaService {
       });
 
       // 3. Armar la respuesta fusionada
-      const resultado = puestos.map((puesto) => {
+      const resultado = unidades.map((unidad) => {
         // Agrupar competencias por código
         const competenciasAgrupadas = competencias.reduce(
           (
             acc: {
               codigo: string;
+              titulo: string;
               niveles: { titulo: string; nivel: number }[];
             }[],
             comp,
           ) => {
-            let competencia = acc.find((c) => c.codigo === comp.codigo);
+            let competencia = acc.find((c) => c.titulo === comp.codigo);
             if (!competencia) {
-              competencia = { codigo: comp.codigo, niveles: [] };
+              competencia = { codigo: comp.codigo, titulo: comp.titulo, niveles: [] };
               acc.push(competencia);
             }
             competencia.niveles.push({
@@ -279,9 +282,9 @@ export class CompetenciaService {
         );
 
         return {
-          idPuestoEmpleadora: puesto.idPuestoEmpleadora,
-          descripcion: puesto.descripcion,
-          idEmpresaEmpleadora: puesto.idEmpresaEmpleadora,
+          idUnidadOcupacionalEmpleadora: unidad.idUnidadOcupacionalEmpleadora,
+          descripcion: unidad.descripcion,
+          idEmpresaEmpleadora: unidad.idEmpresaEmpleadora,
           competencias: competenciasAgrupadas,
         };
       });
