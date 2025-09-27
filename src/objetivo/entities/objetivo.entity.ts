@@ -1,2 +1,1 @@
-export class Objetivo {
-}
+export class Objetivo {}

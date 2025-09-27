@@ -55,22 +55,18 @@ export class CompetenciaService {
   }
 
   async update(id: number, user: AuthUser, dto: UpdateCompetenciaDto) {
+    const competencia = await this.prisma.competencia.findUnique({
+      where: { idCompetencia: id, estado: true },
+    });
 
-      const competencia = await this.prisma.competencia.findUnique({
-          where: { idCompetencia: id, estado: true },
-      });
-
-      if (!competencia) {
-          throw new NotFoundException('Competencia no encontrada');
-      }
-      if (!dto.competenciaDetalles || dto.competenciaDetalles.length === 0) {
-          throw new BadRequestException(
-              'competenciaDetalles no puede estar vacío',
-          );
-      }
-      try {
+    if (!competencia) {
+      throw new NotFoundException('Competencia no encontrada');
+    }
+    if (!dto.competenciaDetalles || dto.competenciaDetalles.length === 0) {
+      throw new BadRequestException('competenciaDetalles no puede estar vacío');
+    }
+    try {
       return await this.prisma.$transaction(async (tx) => {
-
         await tx.competencia.update({
           where: { idCompetencia: id },
           data: {
@@ -249,6 +245,7 @@ export class CompetenciaService {
         where: { estado: true },
         orderBy: { fechaCreacion: 'desc' },
         select: {
+          idCompetencia: true,
           codigo: true,
           titulo: true,
           nivel: true,
@@ -261,6 +258,7 @@ export class CompetenciaService {
         const competenciasAgrupadas = competencias.reduce(
           (
             acc: {
+              idCompetencia: number;
               codigo: string;
               titulo: string;
               niveles: { titulo: string; nivel: number }[];
@@ -269,7 +267,12 @@ export class CompetenciaService {
           ) => {
             let competencia = acc.find((c) => c.titulo === comp.codigo);
             if (!competencia) {
-              competencia = { codigo: comp.codigo, titulo: comp.titulo, niveles: [] };
+              competencia = {
+                idCompetencia: comp.idCompetencia,
+                codigo: comp.codigo,
+                titulo: comp.titulo,
+                niveles: [],
+              };
               acc.push(competencia);
             }
             competencia.niveles.push({

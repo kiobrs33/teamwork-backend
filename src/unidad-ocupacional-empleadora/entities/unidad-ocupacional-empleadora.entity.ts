@@ -1,2 +1,1 @@
-export class UnidadOcupacionalEmpleadora {
-}
+export class UnidadOcupacionalEmpleadora {}

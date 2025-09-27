@@ -1,2 +1,1 @@
-export class ObjetivoDetalle {
-}
+export class ObjetivoDetalle {}

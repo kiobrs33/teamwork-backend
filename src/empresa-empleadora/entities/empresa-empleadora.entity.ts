@@ -1,2 +1,1 @@
-export class EmpresaEmpleadora {
-}
+export class EmpresaEmpleadora {}

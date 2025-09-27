@@ -1,102 +1,113 @@
 import {
-    Controller,
-    Get,
-    Post,
-    Body,
-    Patch,
-    Param,
-    Delete,
-    ParseIntPipe,
-    UseGuards,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
-import {EmpleadoService} from './empleado.service';
-import {CreateEmpleadoDto} from './dto/create-empleado.dto';
-import {UpdateEmpleadoDto} from './dto/update-empleado.dto';
+import { EmpleadoService } from './empleado.service';
+import { CreateEmpleadoDto } from './dto/create-empleado.dto';
+import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 
 import {
-    ApiBearerAuth,
-    ApiOperation,
-    ApiParam,
-    ApiResponse,
-    ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import {JwtAuthGuard} from 'src/auth/jwt.guard';
-import {User} from 'src/auth/auth.decorator';
-import {AuthUser} from 'src/common/interfaces/auth-user.interface';
+import { JwtAuthGuard } from 'src/auth/jwt.guard';
+import { User } from 'src/auth/auth.decorator';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
 @ApiTags('Empleados')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('empleado')
 export class EmpleadoController {
-    constructor(private readonly empleadoService: EmpleadoService) {
-    }
+  constructor(private readonly empleadoService: EmpleadoService) {}
 
-    @Post()
-    @ApiOperation({summary: 'Crear un nuevo empleado'})
-    @ApiResponse({status: 201, description: 'Empleado creado exitosamente.'})
-    async create(@User() user: AuthUser, @Body() body: CreateEmpleadoDto) {
-        const empleado = await this.empleadoService.create(user, body);
-        return {
-            message: 'Empleado creado exitosamente.',
-            data: {empleado},
-        };
-    }
+  @Post()
+  @ApiOperation({ summary: 'Crear un nuevo empleado' })
+  @ApiResponse({ status: 201, description: 'Empleado creado exitosamente.' })
+  async create(@User() user: AuthUser, @Body() body: CreateEmpleadoDto) {
+    const empleado = await this.empleadoService.create(user, body);
+    return {
+      message: 'Empleado creado exitosamente.',
+      data: { empleado },
+    };
+  }
 
-    @Get()
-    @ApiOperation({summary: 'Listar todos los empleados'})
-    @ApiResponse({status: 200, description: 'Lista de empleados.'})
-    async findAll() {
-        const empleados = await this.empleadoService.findAll();
-        return {
-            message: 'Lista de empleados.',
-            data: {empleados},
-        };
-    }
+  @Get()
+  @ApiOperation({ summary: 'Listar todos los empleados' })
+  @ApiResponse({ status: 200, description: 'Lista de empleados.' })
+  async findAll() {
+    const empleados = await this.empleadoService.findAll();
+    return {
+      message: 'Lista de empleados.',
+      data: { empleados },
+    };
+  }
 
-    @Get(':id')
-    @ApiOperation({summary: 'Obtener empleado por ID'})
-    @ApiParam({name: 'id', description: 'ID del empleado'})
-    @ApiResponse({status: 200, description: 'Empleado encontrado.'})
-    async findOne(@Param('id', ParseIntPipe) id: number) {
-        const empleado = await this.empleadoService.findOne(id);
-        return {
-            message: 'Empleado encontrado.',
-            data: {empleado},
-        };
-    }
+  @Get(':id')
+  @ApiOperation({ summary: 'Obtener empleado por ID' })
+  @ApiParam({ name: 'id', description: 'ID del empleado' })
+  @ApiResponse({ status: 200, description: 'Empleado encontrado.' })
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const empleado = await this.empleadoService.findOne(id);
+    return {
+      message: 'Empleado encontrado.',
+      data: { empleado },
+    };
+  }
 
-    @Patch(':id')
-    @ApiOperation({summary: 'Actualizar empleado'})
-    @ApiParam({name: 'id', description: 'ID del empleado'})
-    @ApiResponse({
-        status: 200,
-        description: 'Empleado actualizado correctamente.',
-    })
-    async update(
-        @User() user: AuthUser,
-        @Param('id', ParseIntPipe) id: number,
-        @Body() dto: UpdateEmpleadoDto,
-    ) {
-        const empleado = await this.empleadoService.update(user, id, dto);
-        return {
-            message: `Empleado con ID ${id} actualizado correctamente.`,
-            data: {empleado},
-        };
-    }
+  @Get('by-user/:id')
+  @ApiOperation({ summary: 'Obtener empleado por Id user' })
+  @ApiParam({ name: 'id', description: 'ID del usuario' })
+  @ApiResponse({ status: 200, description: 'Empleado encontrado.' })
+  async findOneByUsuario(@Param('id', ParseIntPipe) id: number) {
+    const empleado = await this.empleadoService.findOneByUsuario(id);
+    return {
+      message: 'Empleado encontrado.',
+      data: { empleado },
+    };
+  }
 
-    @Delete(':id')
-    @ApiOperation({summary: 'Eliminar empleado (soft delete)'})
-    @ApiParam({name: 'id', description: 'ID del empleado'})
-    @ApiResponse({
-        status: 200,
-        description: 'Empleado eliminado correctamente.',
-    })
-    async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-        const empleado = await this.empleadoService.remove(user, id);
-        return {
-            message: `Empleado con ID ${id} eliminado correctamente.`,
-            data: {empleado},
-        };
-    }
+  @Patch(':id')
+  @ApiOperation({ summary: 'Actualizar empleado' })
+  @ApiParam({ name: 'id', description: 'ID del empleado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Empleado actualizado correctamente.',
+  })
+  async update(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateEmpleadoDto,
+  ) {
+    const empleado = await this.empleadoService.update(user, id, dto);
+    return {
+      message: `Empleado con ID ${id} actualizado correctamente.`,
+      data: { empleado },
+    };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar empleado (soft delete)' })
+  @ApiParam({ name: 'id', description: 'ID del empleado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Empleado eliminado correctamente.',
+  })
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    const empleado = await this.empleadoService.remove(user, id);
+    return {
+      message: `Empleado con ID ${id} eliminado correctamente.`,
+      data: { empleado },
+    };
+  }
 }
