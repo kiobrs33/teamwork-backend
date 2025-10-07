@@ -39,8 +39,7 @@ export class EmpleadoService {
         const empleado = await tx.empleado.create({
           data: {
             nombres: body.nombres,
-            apellidoPaterno: body.apellidoPaterno,
-            apellidoMaterno: body.apellidoMaterno,
+            apellidos: body.apellidos,
             documento: body.documento,
             sede: body.sede,
             tiempoEmpresaValor: body.tiempoEmpresaValor,
@@ -51,6 +50,7 @@ export class EmpleadoService {
             idGerenciaEmpleadora: body.idGerenciaEmpleadora,
             idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
             idUsuario: usuario.idUsuario,
+            idJefe: body.idJefe,
             creadoPorId: user.idUsuario,
           },
           include: {
@@ -206,8 +206,7 @@ export class EmpleadoService {
 
       const empleadoUpdateData = {
         nombres: body.nombres,
-        apellidoPaterno: body.apellidoPaterno,
-        apellidoMaterno: body.apellidoMaterno,
+        apellidos: body.apellidos,
         documento: body.documento,
         sede: body.sede,
         tiempoEmpresaValor: body.tiempoEmpresaValor,
@@ -218,6 +217,7 @@ export class EmpleadoService {
         idGerenciaEmpleadora: body.idGerenciaEmpleadora,
         idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
         idUsuario: existEmpleado.idUsuario,
+        idJefe: body.idJefe,
         fechaCreacion: new Date(),
         creadoPorId: user.idUsuario,
       };

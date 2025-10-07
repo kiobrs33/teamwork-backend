@@ -40,15 +40,10 @@ export class CreateEmpleadoDto {
   @IsNotEmpty({ message: 'El nombre es obligatorio.' })
   nombres: string;
 
-  @ApiProperty({ example: 'Pérez' })
-  @IsString({ message: 'El apellido paterno debe ser una cadena de texto.' })
-  @IsNotEmpty({ message: 'El apellido paterno es obligatorio.' })
-  apellidoPaterno: string;
-
-  @ApiProperty({ example: 'Gómez' })
-  @IsString({ message: 'El apellido materno debe ser una cadena de texto.' })
-  @IsNotEmpty({ message: 'El apellido materno es obligatorio.' })
-  apellidoMaterno: string;
+  @ApiProperty({ example: 'Pérez Lopéz' })
+  @IsString({ message: 'Los apellidos deben ser una cadena de texto.' })
+  @IsNotEmpty({ message: 'Los apellidos son obligatorios.' })
+  apellidos: string;
 
   @ApiProperty({ example: '12345678' })
   @IsInt({ message: 'El documento debe ser un número entero.' })
@@ -98,4 +93,11 @@ export class CreateEmpleadoDto {
       'El ID de la unidad ocupacional empleadora debe ser un número entero.',
   })
   idUnidadOcupacionalEmpleadora: number;
+
+  @ApiProperty({ example: 1, description: 'ID del jefe' })
+  @IsOptional()
+  @IsInt({
+    message: 'El ID del jefe debe ser un número entero.',
+  })
+  idJefe: number;
 }

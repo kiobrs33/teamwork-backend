@@ -16,10 +16,10 @@ datasource db {
 model Empleado {
   idEmpleado                    Int                         @id @default(autoincrement()) @map("id_empleado")
   nombres                       String
-  apellidoPaterno               String                      @map("apellido_paterno")
-  apellidoMaterno               String                      @map("apellido_materno")
+  apellidos                     String
   documento                     Int
   sede                          String
+  idJefe                        Int?                        @map("id_jefe")
   tiempoEmpresaValor            Int                         @map("tiempo_empresa_valor")
   tiempoEmpresaUnidad           String                      @map("tiempo_empresa_unidad")
   idEmpresaEmpleadora           Int                         @map("id_empresa_empleadora")
