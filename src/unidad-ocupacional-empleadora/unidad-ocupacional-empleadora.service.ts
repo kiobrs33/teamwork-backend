@@ -137,23 +137,63 @@ export class UnidadOcupacionalEmpleadoraService {
     }
   }
 
+  // async asignarCompetenciasLote(
+  //   user: AuthUser,
+  //   dto: AsignarCompetenciasLoteDto,
+  // ) {
+  //   try {
+  //     const asignacion = dto.asignaciones.map((item) => ({
+  //       idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
+  //       idCompetencia: item.idCompetencia,
+  //       creadoPorId: user.idUsuario,
+  //     }));
+
+  //     return await this.prisma.$transaction(async (tx) => {
+  //       await tx.unidadOcupacionalEmpleadoraCompetencia.createMany({
+  //         data: asignacion,
+  //       });
+  //       return {
+  //         message: 'Asignaciones realizadas con éxito',
+  //         cantidadInsertada: asignacion.length,
+  //       };
+  //     });
+  //   } catch (error) {
+  //     console.error('Error en asignarCompetenciasLote:', error);
+  //     throw new InternalServerErrorException(
+  //       'Ocurrió un error al asignar competencias. Detalles: ' + error.message,
+  //     );
+  //   }
+  // }
+
   async asignarCompetenciasLote(
     user: AuthUser,
     dto: AsignarCompetenciasLoteDto,
   ) {
     try {
-      const asignacion = dto.asignaciones.map((item) => ({
-        idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
-        idCompetencia: item.idCompetencia,
-        creadoPorId: user.idUsuario,
-      }));
-
       return await this.prisma.$transaction(async (tx) => {
+        // 1. Eliminar asignaciones previas
+        await tx.unidadOcupacionalEmpleadoraCompetencia.deleteMany({
+          where: {
+            idUnidadOcupacionalEmpleadora: {
+              in: dto.asignaciones.map((a) => a.idUnidadOcupacionalEmpleadora),
+            },
+          },
+        });
+
+        // 2. Preparar nuevas asignaciones
+        const asignacion = dto.asignaciones.map((item) => ({
+          idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
+          idCompetencia: item.idCompetencia,
+          creadoPorId: user.idUsuario,
+        }));
+
+        // 3. Insertar nuevas
         await tx.unidadOcupacionalEmpleadoraCompetencia.createMany({
           data: asignacion,
         });
+
         return {
-          message: 'Asignaciones realizadas con éxito',
+          message: 'Asignaciones sobrescritas con éxito',
           cantidadInsertada: asignacion.length,
         };
       });
