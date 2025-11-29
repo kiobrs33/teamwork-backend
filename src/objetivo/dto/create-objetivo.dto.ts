@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsInt, ValidateNested } from 'class-validator';
-import { ObjetivoDetalleDto } from './create-objetivo-con-detalles.dto';
+import { ObjetivoDetalleDto } from './create-objetivo-detalle.dto';
 
 export class CreateObjetivoDto {
   @ApiProperty({

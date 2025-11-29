@@ -16,7 +16,7 @@ export class CreateEmpresaEmpleadoraDto {
   @IsString()
   @IsNotEmpty({ message: 'El nombre de la empresa es obligatorio.' })
   @Length(1, 100, {
-    message: 'El nombre debe tener entre 3 y 100 caracteres.',
+    message: 'El nombre debe tener entre 1 y 100 caracteres.',
   })
   nombreEmpresa: string;
 
@@ -39,7 +39,7 @@ export class CreateEmpresaEmpleadoraDto {
   })
   @IsOptional()
   @IsString({ message: 'La dirección debe ser un texto.' })
-  @Length(1, 200, {
+  @Length(5, 200, {
     message: 'La dirección debe tener entre 5 y 200 caracteres.',
   })
   direccionEmpresa?: string;
@@ -54,19 +54,10 @@ export class CreateEmpresaEmpleadoraDto {
 
   @ApiProperty({
     example: '90',
-    description: 'Modelo Empresa',
+    description: 'Modelo de empresa (90 o 180)',
   })
   @IsString()
-  @IsNotEmpty({ message: 'El modelo empresa es obligatorio.' })
   modeloEmpresa: string;
-
-  @ApiProperty({
-    example: '2',
-    description: 'Objetivo Empresa',
-  })
-  @IsString()
-  @IsNotEmpty({ message: 'El objetivo empresa es obligatorio.' })
-  cantidadObjetivos: string;
 
   @ApiProperty({
     example: '2025-07-10T17:30:07.811Z',
@@ -91,6 +82,7 @@ export class CreateEmpresaEmpleadoraDto {
     },
   )
   fechaVigenciaFin: string;
+
   @ApiProperty({
     example: '2025-07-10T17:30:07.811Z',
     description: 'Fecha de inicio de vigencia de objetivos (ISO 8601)',
@@ -99,7 +91,9 @@ export class CreateEmpresaEmpleadoraDto {
   @IsOptional()
   @IsDateString(
     {},
-    { message: 'La fecha de inicio de objetivos debe tener formato ISO 8601.' },
+    {
+      message: 'La fecha de inicio de objetivos debe tener formato ISO 8601.',
+    },
   )
   fechaVigenciaInicioObjetivo?: string | null;
 
@@ -111,7 +105,9 @@ export class CreateEmpresaEmpleadoraDto {
   @IsOptional()
   @IsDateString(
     {},
-    { message: 'La fecha fin de objetivos debe tener formato ISO 8601.' },
+    {
+      message: 'La fecha fin de objetivos debe tener formato ISO 8601.',
+    },
   )
   fechaVigenciaFinObjetivo?: string | null;
 }

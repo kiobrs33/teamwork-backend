@@ -1,6 +1,4 @@
 import {
-  IsBoolean,
-  IsEmail,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -9,15 +7,17 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Rol } from '../types/empleadoTypes';
+import { Rol, TiempoEmpresaUnidad } from '../types/empleadoTypes';
 
 export class CreateEmpleadoDto {
+  // ==================== USUARIO ====================
+
   @ApiProperty({ example: 'ABC123' })
-  @IsString({ message: 'El codigo de usuario debe ser una cadena de texto.' })
-  @IsNotEmpty({ message: 'El codigo usuario es obligatorio.' })
+  @IsString({ message: 'El código de usuario debe ser una cadena de texto.' })
+  @IsNotEmpty({ message: 'El código de usuario es obligatorio.' })
   codigoUsuario: string;
 
-  @ApiProperty({ example: '12345678' })
+  @ApiProperty({ example: 'password123' })
   @IsString({ message: 'La contraseña debe ser una cadena de texto.' })
   @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
   @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
@@ -30,74 +30,110 @@ export class CreateEmpleadoDto {
   })
   @IsEnum(Rol, {
     message:
-      'El rol debe ser uno de los siguientes valores: ADMIN, SUBADMIN, JEFE o EMPLEADO.',
+      'El rol debe ser uno de los siguientes valores válidos: ADMIN, JEFE o EMPLEADO.',
   })
-  @IsOptional() // Si deseas que el campo sea opcional; quítalo si es obligatorio
   rol: Rol;
+
+  // ==================== EMPLEADO ====================
+
+  @ApiProperty({
+    example: 'EMP001',
+    description: 'Código único del empleado',
+  })
+  @IsString({ message: 'El código del empleado debe ser una cadena de texto.' })
+  @IsNotEmpty({ message: 'El código del empleado es obligatorio.' })
+  codigoEmpleado: string;
 
   @ApiProperty({ example: 'Juan Carlos' })
   @IsString({ message: 'El nombre debe ser una cadena de texto.' })
   @IsNotEmpty({ message: 'El nombre es obligatorio.' })
   nombres: string;
 
-  @ApiProperty({ example: 'Pérez Lopéz' })
+  @ApiProperty({ example: 'Pérez López' })
   @IsString({ message: 'Los apellidos deben ser una cadena de texto.' })
   @IsNotEmpty({ message: 'Los apellidos son obligatorios.' })
   apellidos: string;
 
-  @ApiProperty({ example: '12345678' })
-  @IsInt({ message: 'El documento debe ser un número entero.' })
-  @IsNotEmpty({ message: 'El documento es obligatorio.' })
-  documento: number;
+  @ApiPropertyOptional({ example: '12345678' })
+  @IsOptional()
+  @IsString({ message: 'El documento debe ser una cadena de texto.' })
+  documento?: string;
 
   @ApiProperty({ example: 'Arequipa' })
+  @IsOptional()
   @IsString({ message: 'La sede debe ser una cadena de texto.' })
-  @IsNotEmpty({ message: 'La sede es obligatorio.' })
-  sede: string;
+  sede?: string;
 
-  @ApiProperty({ example: '1' })
+  @ApiProperty({ example: 1 })
+  @IsOptional()
   @IsInt({ message: 'El tiempo empresa valor debe ser un número entero.' })
-  @IsNotEmpty({ message: 'El tiempo empresa valor es obligatorio.' })
-  tiempoEmpresaValor: number;
+  tiempoEmpresaValor?: number;
 
-  @ApiProperty({ example: 'mes' })
-  @IsString({
-    message: 'El tiempo empresa unidad debe ser una cadena de texto.',
+  @ApiProperty({
+    example: TiempoEmpresaUnidad.DIAS,
+    enum: TiempoEmpresaUnidad,
+    description: 'Unidad del tiempo en la empresa',
   })
-  @IsNotEmpty({ message: 'El tiempo empresa unidad obligatorio.' })
-  tiempoEmpresaUnidad: string;
+  @IsEnum(TiempoEmpresaUnidad, {
+    message:
+      'La unidad del tiempo debe ser uno de los siguientes valores válidos: DIAS, MESES o AÑOS.',
+  })
+  @IsOptional()
+  tiempoEmpresaUnidad?: TiempoEmpresaUnidad;
 
-  @ApiProperty({ example: 1, description: 'ID de la empresa empleadora' })
+  @ApiProperty({
+    example: 1,
+    description: 'ID de la empresa empleadora',
+  })
   @IsInt({
     message: 'El ID de la empresa empleadora debe ser un número entero.',
   })
   idEmpresaEmpleadora: number;
 
-  @ApiProperty({ example: 1, description: 'ID del equipo empleador' })
-  @IsInt({ message: 'El ID del area empleador debe ser un número entero.' })
+  @ApiProperty({
+    example: 1,
+    description: 'ID del área empleadora',
+  })
+  @IsInt({
+    message: 'El ID del área empleadora debe ser un número entero.',
+  })
   idAreaEmpleadora: number;
 
-  @ApiProperty({ example: 1, description: 'ID del puesto empleador' })
-  @IsInt({ message: 'El ID del puesto empleador debe ser un número entero.' })
+  @ApiProperty({
+    example: 1,
+    description: 'ID del puesto empleador',
+  })
+  @IsInt({
+    message: 'El ID del puesto empleador debe ser un número entero.',
+  })
   idPuestoEmpleadora: number;
 
-  @ApiProperty({ example: 1, description: 'ID de la gerencia empleadora' })
+  @ApiProperty({
+    example: 1,
+    description: 'ID de la gerencia empleadora',
+  })
   @IsInt({
     message: 'El ID de la gerencia empleadora debe ser un número entero.',
   })
   idGerenciaEmpleadora: number;
 
-  @ApiProperty({ example: 1, description: 'ID de la unidad empleadora' })
+  @ApiProperty({
+    example: 1,
+    description: 'ID de la unidad ocupacional empleadora',
+  })
   @IsInt({
     message:
       'El ID de la unidad ocupacional empleadora debe ser un número entero.',
   })
   idUnidadOcupacionalEmpleadora: number;
 
-  @ApiProperty({ example: 1, description: 'ID del jefe' })
-  @IsOptional()
-  @IsInt({
-    message: 'El ID del jefe debe ser un número entero.',
+  @ApiPropertyOptional({
+    example: 'EMP002',
+    description: 'Código del empleado jefe',
   })
-  idJefe: number;
+  @IsOptional()
+  @IsString({
+    message: 'El código del jefe debe ser una cadena de texto.',
+  })
+  codigoEmpleadoJefe?: string;
 }

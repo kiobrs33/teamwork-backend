@@ -9,8 +9,10 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateCompetenciaDto } from './dto/update-competencia.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
-import { CreatePuestoEmpleadoraDto } from '../puesto-empleadora/dto/create-puesto-empleadora.dto';
+import { CreateCompetenciaNivelesItemsDto } from './dto/create-competencia-nivel-item.dto';
+import { IniciarEvaluacionDto } from './dto/init-evaluation.dto';
+import { UpdateEvaluacionDto } from './dto/update-evaluation-item.dto';
+// import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
 
 @Injectable()
 export class CompetenciaService {
@@ -18,12 +20,19 @@ export class CompetenciaService {
 
   constructor(private prisma: PrismaService) {}
 
+  // ======================================================
+  //                 GET ALL COMPETENCIAS
+  // ======================================================
   async findAll() {
     try {
       return await this.prisma.competencia.findMany({
         where: { estado: true },
         orderBy: { fechaCreacion: 'desc' },
-        include: { competenciaDetalles: true },
+        include: {
+          niveles: {
+            include: { items: true },
+          },
+        },
       });
     } catch (error) {
       this.logger.error('Error al obtener competencias:', error);
@@ -33,11 +42,18 @@ export class CompetenciaService {
     }
   }
 
+  // ======================================================
+  //                 GET ONE BY ID
+  // ======================================================
   async findOne(id: number) {
     try {
       const competencia = await this.prisma.competencia.findFirst({
         where: { idCompetencia: id, estado: true },
-        include: { competenciaDetalles: true },
+        include: {
+          niveles: {
+            include: { items: true },
+          },
+        },
       });
       if (!competencia) {
         throw new NotFoundException(`Competencia con ID ${id} no encontrada.`);
@@ -54,50 +70,72 @@ export class CompetenciaService {
     }
   }
 
+  // ======================================================
+  //                      UPDATE
+  // ======================================================
   async update(id: number, user: AuthUser, dto: UpdateCompetenciaDto) {
     const competencia = await this.prisma.competencia.findUnique({
       where: { idCompetencia: id, estado: true },
     });
 
-    if (!competencia) {
-      throw new NotFoundException('Competencia no encontrada');
+    if (!competencia) throw new NotFoundException('Competencia no encontrada');
+
+    if (!dto.niveles || dto.niveles.length === 0) {
+      throw new BadRequestException('niveles no puede estar vacío');
     }
-    if (!dto.competenciaDetalles || dto.competenciaDetalles.length === 0) {
-      throw new BadRequestException('competenciaDetalles no puede estar vacío');
-    }
+
+    const niveles = dto.niveles;
+
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // 1. Actualizar competencia
         await tx.competencia.update({
           where: { idCompetencia: id },
           data: {
-            codigo: dto.codigo,
+            nombre: dto.nombre,
             titulo: dto.titulo,
-            nivel: dto.nivel,
+            codigo: dto.codigo,
+            idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
             actualizadoPorId: user.idUsuario,
             fechaModificacion: new Date(),
           },
         });
 
-        await tx.competenciaDetalle.deleteMany({
+        // 2. Eliminar niveles e items previos
+        await tx.competenciaNivelItem.deleteMany({
+          where: { nivel: { idCompetencia: id } },
+        });
+
+        await tx.competenciaNivel.deleteMany({
           where: { idCompetencia: id },
         });
 
-        if (dto.competenciaDetalles) {
-          await tx.competenciaDetalle.createMany({
-            data: dto.competenciaDetalles.map((detalle, index) => ({
+        // 3. Crear los nuevos niveles e items
+        for (const nivel of niveles) {
+          const nuevoNivel = await tx.competenciaNivel.create({
+            data: {
               idCompetencia: id,
+              nivel: nivel.nivel,
+              creadoPorId: user.idUsuario,
+            },
+          });
+
+          await tx.competenciaNivelItem.createMany({
+            data: nivel.items.map((item, index) => ({
+              idCompetenciaNivel: nuevoNivel.idCompetenciaNivel,
+              enunciado: item.enunciado,
               secuencial: index + 1,
-              descripcion: detalle.descripcion,
               creadoPorId: user.idUsuario,
             })),
           });
-          const competenciaCompleto = await tx.competencia.findUnique({
-            where: { idCompetencia: id },
-            include: { competenciaDetalles: true },
-          });
-
-          return competenciaCompleto;
         }
+
+        return await tx.competencia.findUnique({
+          where: { idCompetencia: id },
+          include: {
+            niveles: { include: { items: true } },
+          },
+        });
       });
     } catch (error) {
       console.error(error);
@@ -107,34 +145,33 @@ export class CompetenciaService {
     }
   }
 
+  // ======================================================
+  //                      DELETE
+  // ======================================================
   async remove(user: AuthUser, id: number) {
     try {
-      const existCompetencia = await this.prisma.competencia.findFirst({
+      const competencia = await this.prisma.competencia.findFirst({
         where: { idCompetencia: id },
       });
-      if (!existCompetencia || !existCompetencia.estado) {
+
+      if (!competencia || !competencia.estado) {
         throw new NotFoundException(`Competencia con ID ${id} no encontrada.`);
       }
 
-      const removed = await this.prisma.competencia.update({
+      return await this.prisma.competencia.update({
         where: { idCompetencia: id },
         data: {
           estado: false,
           actualizadoPorId: user.idUsuario,
           fechaModificacion: new Date(),
-          competenciaDetalles: {
+          niveles: {
             updateMany: {
-              where: {
-                idCompetencia: id,
-              },
-              data: {
-                estado: false,
-              },
+              where: { idCompetencia: id },
+              data: { estado: false },
             },
           },
         },
       });
-      return removed;
     } catch (error) {
       this.logger.error(`Error al eliminar competencia con ID ${id}:`, error);
       throw new InternalServerErrorException(
@@ -143,161 +180,313 @@ export class CompetenciaService {
     }
   }
 
+  // ======================================================
+  //            CREATE CON NIVELES E ITEMS
+  // ======================================================
   async createConDetalles(
     user: AuthUser,
-    dto: CreateCompetenciaConDetallesDto,
+    dto: CreateCompetenciaNivelesItemsDto,
   ) {
-    if (
-      dto.competenciaDetalles.length < 1 ||
-      dto.competenciaDetalles.length > 10
-    ) {
-      throw new BadRequestException(
-        'Debe enviar entre 1 y 10 detalles para la competencia.',
-      );
-    }
-
-    try {
-      return await this.prisma.$transaction(async (tx: PrismaService) => {
-        const competencia = await tx.competencia.create({
-          data: {
-            codigo: dto.codigo,
-            titulo: dto.titulo,
-            nivel: dto.nivel,
-            creadoPorId: user.idUsuario,
-            competenciaDetalles: {
-              createMany: {
-                data: dto.competenciaDetalles.map((detalle, index) => ({
-                  secuencial: index + 1,
-                  descripcion: detalle.descripcion,
-                  creadoPorId: user.idUsuario,
-                })),
-              },
-            },
-          },
-        });
-
-        const competenciaCompleto = await tx.competencia.findUnique({
-          where: { idCompetencia: competencia.idCompetencia },
-          include: { competenciaDetalles: true },
-        });
-        return competenciaCompleto;
-      });
-    } catch (error) {
-      this.logger.error('Error creando competencia con detalles:', error);
-      throw new InternalServerErrorException(
-        'No se pudo crear la competencia con sus detalles.',
-      );
-    }
-  }
-
-  async importData(user: AuthUser, data: CreateCompetenciaConDetallesDto[]) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const registros = await Promise.all(
-          data.map((row) =>
-            tx.competencia.create({
-              data: {
-                codigo: row.codigo,
-                titulo: row.titulo,
-                nivel: row.nivel,
+        const nueva = await tx.competencia.create({
+          data: {
+            nombre: dto.nombre,
+            titulo: dto.titulo,
+            codigo: dto.codigo,
+            idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
+            creadoPorId: user.idUsuario,
+            niveles: {
+              create: dto.niveles.map((nivel) => ({
+                nivel: nivel.nivel,
                 creadoPorId: user.idUsuario,
-                competenciaDetalles: {
+                items: {
                   createMany: {
-                    data: row.competenciaDetalles.map((detalle, index) => ({
+                    data: nivel.items.map((item, index) => ({
+                      enunciado: item.enunciado,
                       secuencial: index + 1,
-                      descripcion: detalle.descripcion,
                       creadoPorId: user.idUsuario,
                     })),
                   },
                 },
-              },
-              include: {
-                competenciaDetalles: true,
-              },
-            }),
-          ),
-        );
+              })),
+            },
+          },
+          include: {
+            niveles: { include: { items: true } },
+          },
+        });
 
-        return {
-          message: 'Datos importados correctamente',
-          count: registros.length,
-        };
+        return nueva;
       });
     } catch (error) {
-      console.error('Error al importar datos:', error);
+      this.logger.error('Error creando competencia con niveles:', error);
       throw new InternalServerErrorException(
-        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+        'No se pudo crear la competencia.',
       );
     }
   }
 
-  async findAllConCompetencias() {
+  // ======================================================
+  //       IMPORTAR MUCHAS COMPETENCIAS COMPLETAS
+  // ======================================================
+  async importData(user: AuthUser, data: CreateCompetenciaNivelesItemsDto[]) {
     try {
-      // 1. Obtener todos los puestos activos
-      const unidades = await this.prisma.unidadOcupacionalEmpleadora.findMany({
-        where: { estado: true },
-        include: { empresaEmpleadora: true },
-        orderBy: { fechaCreacion: 'desc' },
+      return await this.prisma.$transaction(async (tx) => {
+        return await Promise.all(
+          data.map((row) =>
+            tx.competencia.create({
+              data: {
+                nombre: row.nombre,
+                titulo: row.titulo,
+                codigo: row.codigo,
+                idEmpresaEmpleadora: row.idEmpresaEmpleadora,
+                creadoPorId: user.idUsuario,
+                niveles: {
+                  create: row.niveles.map((nivel) => ({
+                    nivel: nivel.nivel,
+                    creadoPorId: user.idUsuario,
+                    items: {
+                      createMany: {
+                        data: nivel.items.map((item, index) => ({
+                          enunciado: item.enunciado,
+                          secuencial: index + 1,
+                          creadoPorId: user.idUsuario,
+                        })),
+                      },
+                    },
+                  })),
+                },
+              },
+              include: {
+                niveles: { include: { items: true } },
+              },
+            }),
+          ),
+        );
       });
+    } catch (error) {
+      console.error('Error al importar datos:', error);
+      throw new InternalServerErrorException('Error al importar los datos.');
+    }
+  }
 
-      // 2. Obtener todas las competencias activas
+  async findAllByCompany(id: number) {
+    try {
       const competencias = await this.prisma.competencia.findMany({
-        where: { estado: true },
-        orderBy: { fechaCreacion: 'desc' },
-        select: {
-          idCompetencia: true,
-          codigo: true,
-          titulo: true,
-          nivel: true,
+        where: { estado: true, idEmpresaEmpleadora: id },
+        include: {
+          niveles: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+      return competencias;
+    } catch (error) {
+      console.error('Error al obtener unidades ocupacionales:', error);
+      throw new InternalServerErrorException(
+        'No se pudieron obtener las unidades ocupacionales.',
+      );
+    }
+  }
+
+  // POST /evaluaciones/iniciar
+  // GET /evaluaciones/:id
+  // PUT /evaluaciones/:id
+  // PATCH /evaluaciones/:id/cerrar
+  // PATCH /evaluaciones/:id/anular
+
+  // ======================================================
+  //                  INICIAR EVALUACIÓN
+  // ======================================================
+  async iniciarEvaluacion(user: AuthUser, dto: IniciarEvaluacionDto) {
+    const { idEvaluado, idEvaluador, idCompetencia, idCompetenciaNivel } = dto;
+
+    try {
+      // 1) Buscar una evaluación en PROCESO
+      let evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
+        where: {
+          idEvaluado,
+          idEvaluador,
+          idCompetencia,
+          idCompetenciaNivel,
+          estadoEvaluacion: 'PROCESO',
+          estado: true,
+        },
+        include: {
+          itemsEvaluados: { include: { item: true } },
         },
       });
 
-      // 3. Armar la respuesta fusionada
-      const resultado = unidades.map((unidad) => {
-        // Agrupar competencias por código
-        const competenciasAgrupadas = competencias.reduce(
-          (
-            acc: {
-              idCompetencia: number;
-              codigo: string;
-              titulo: string;
-              niveles: { titulo: string; nivel: number }[];
-            }[],
-            comp,
-          ) => {
-            let competencia = acc.find((c) => c.titulo === comp.codigo);
-            if (!competencia) {
-              competencia = {
-                idCompetencia: comp.idCompetencia,
-                codigo: comp.codigo,
-                titulo: comp.titulo,
-                niveles: [],
-              };
-              acc.push(competencia);
-            }
-            competencia.niveles.push({
-              titulo: comp.titulo,
-              nivel: comp.nivel,
-            });
-            return acc;
-          },
-          [],
-        );
+      if (evaluacion) return evaluacion;
 
-        return {
-          idUnidadOcupacionalEmpleadora: unidad.idUnidadOcupacionalEmpleadora,
-          descripcion: unidad.descripcion,
-          idEmpresaEmpleadora: unidad.idEmpresaEmpleadora,
-          competencias: competenciasAgrupadas,
-        };
+      // 2) Validar que el nivel pertenece a la competencia
+      const nivel = await this.prisma.competenciaNivel.findFirst({
+        where: {
+          idCompetenciaNivel,
+          idCompetencia,
+          estado: true,
+        },
+        include: { items: true },
       });
 
-      return resultado;
+      if (!nivel) {
+        throw new BadRequestException('Nivel de competencia no válido.');
+      }
+
+      // 3) Crear la evaluación
+      evaluacion = await this.prisma.evaluacionCompetencia.create({
+        data: {
+          idEvaluado,
+          idEvaluador,
+          idCompetencia,
+          idCompetenciaNivel,
+          estadoEvaluacion: 'PROCESO',
+          creadoPorId: user.idUsuario,
+        },
+        include: {
+          itemsEvaluados: { include: { item: true } },
+        },
+      });
+
+      // 4) Crear ítems evaluados con snapshot
+      await this.prisma.evaluacionCompetenciaItem.createMany({
+        data: nivel.items.map((it) => ({
+          idEvaluacionCompetencia: evaluacion.idEvaluacionCompetencia,
+          idCompetenciaNivelItem: it.idCompetenciaNivelItem,
+          textoItemEvaluado: it.enunciado,
+          calificacion: null,
+          creadoPorId: user.idUsuario,
+        })),
+      });
+
+      return this.obtenerEvaluacion(evaluacion.idEvaluacionCompetencia);
     } catch (error) {
-      this.logger.error('Error al obtener puestos con competencias:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los puestos con competencias.',
+      console.error(error);
+      throw new InternalServerErrorException('Error al iniciar la evaluación.');
+    }
+  }
+
+  // ======================================================
+  //                OBTENER EVALUACIÓN COMPLETA
+  // ======================================================
+  async obtenerEvaluacion(id: number) {
+    const evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
+      where: { idEvaluacionCompetencia: id, estado: true },
+      include: {
+        evaluado: true,
+        evaluador: true,
+        competencia: true,
+        nivel: true,
+        itemsEvaluados: { include: { item: true } },
+      },
+    });
+
+    if (!evaluacion) throw new NotFoundException('Evaluación no encontrada.');
+
+    return evaluacion;
+  }
+
+  // ======================================================
+  //                ACTUALIZAR EVALUACIÓN
+  // ======================================================
+  async actualizarEvaluacion(
+    user: AuthUser,
+    idEvaluacion: number,
+    dto: UpdateEvaluacionDto,
+  ) {
+    const evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
+      where: { idEvaluacionCompetencia: idEvaluacion, estado: true },
+    });
+
+    if (!evaluacion) throw new NotFoundException('Evaluación no encontrada.');
+
+    if (evaluacion.estadoEvaluacion !== 'PROCESO') {
+      throw new BadRequestException(
+        'La evaluación está cerrada y no puede ser modificada.',
       );
     }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // 1) Actualizar comentario general si existe
+        if (dto.comentarioGeneral !== undefined) {
+          await tx.evaluacionCompetencia.update({
+            where: { idEvaluacionCompetencia: idEvaluacion },
+            data: {
+              comentarioGeneral: dto.comentarioGeneral,
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion: new Date(),
+            },
+          });
+        }
+
+        // 2) Actualizar calificación por ítem
+        for (const it of dto.items) {
+          await tx.evaluacionCompetenciaItem.update({
+            where: {
+              idEvaluacionCompetenciaItem: it.idEvaluacionCompetenciaItem,
+            },
+            data: {
+              calificacion: it.calificacion,
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion: new Date(),
+            },
+          });
+        }
+
+        return this.obtenerEvaluacion(idEvaluacion);
+      });
+    } catch (error) {
+      console.error(error);
+      throw new InternalServerErrorException(
+        'Error al actualizar la evaluación.',
+      );
+    }
+  }
+
+  // ======================================================
+  //                    CERRAR EVALUACIÓN
+  // ======================================================
+  async cerrarEvaluacion(id: number, user: AuthUser) {
+    const evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
+      where: { idEvaluacionCompetencia: id, estado: true },
+    });
+
+    if (!evaluacion) throw new NotFoundException('Evaluación no encontrada.');
+
+    if (evaluacion.estadoEvaluacion === 'CERRADA') {
+      throw new BadRequestException('La evaluación ya está cerrada.');
+    }
+
+    return await this.prisma.evaluacionCompetencia.update({
+      where: { idEvaluacionCompetencia: id },
+      data: {
+        estadoEvaluacion: 'CERRADA',
+        actualizadoPorId: user.idUsuario,
+        fechaModificacion: new Date(),
+      },
+    });
+  }
+
+  // ======================================================
+  //                    ANULAR EVALUACIÓN
+  // ======================================================
+  async anularEvaluacion(id: number, user: AuthUser) {
+    const evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
+      where: { idEvaluacionCompetencia: id, estado: true },
+    });
+
+    if (!evaluacion) throw new NotFoundException('Evaluación no encontrada.');
+
+    return await this.prisma.evaluacionCompetencia.update({
+      where: { idEvaluacionCompetencia: id },
+      data: {
+        estadoEvaluacion: 'ANULADA',
+        actualizadoPorId: user.idUsuario,
+        fechaModificacion: new Date(),
+      },
+    });
   }
 }

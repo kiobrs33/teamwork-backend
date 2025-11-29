@@ -25,7 +25,6 @@ import { AreaEmpleadoraService } from './area-empleadora.service';
 import { CreateAreaEmpleadoraDto } from './dto/create-area-empleadora.dto';
 import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-import { CreateGerenciaEmpleadoraDto } from '../gerencia-empleadora/dto/create-gerencia-empleadora.dto';
 
 @ApiTags('Área Empleadora')
 @ApiBearerAuth()
@@ -55,6 +54,21 @@ export class AreaEmpleadoraController {
     const areas = await this.areaEmpleadoraService.findAll();
     return {
       message: 'Lista de áreas empleadoras.',
+      data: { areas },
+    };
+  }
+
+  @Get('empresa/:id')
+  @ApiOperation({ summary: 'Listar areas empleadoras de una empresa' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de areas de la empresa especificada.',
+  })
+  async findByEmpresa(@Param('id') id: string) {
+    const areas = await this.areaEmpleadoraService.findByEmpresaId(Number(id));
+
+    return {
+      message: 'Lista de areas empleadoras de la empresa.',
       data: { areas },
     };
   }
@@ -117,13 +131,10 @@ export class AreaEmpleadoraController {
     @User() user: AuthUser,
     @Body() data: CreateAreaEmpleadoraDto[],
   ) {
-    const importAreaEmpleadora = await this.areaEmpleadoraService.importData(
-      user,
-      data,
-    );
+    const { count } = await this.areaEmpleadoraService.importData(user, data);
     return {
       message: 'Areas empleadora creadas exitosamente.',
-      data: { importAreaEmpleadora },
+      data: { count },
     };
   }
 }

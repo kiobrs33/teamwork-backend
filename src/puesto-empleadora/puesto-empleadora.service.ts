@@ -129,19 +129,33 @@ export class PuestoEmpleadoraService {
       }));
 
       return await this.prisma.$transaction(async (tx) => {
-        await tx.puestoEmpleadora.createMany({
+        return await tx.puestoEmpleadora.createMany({
           data: registros,
         });
-
-        return {
-          message: 'Datos importados correctamente',
-          count: registros.length,
-        };
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
       throw new InternalServerErrorException(
         'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+      );
+    }
+  }
+
+  async findByEmpresaId(id: number) {
+    try {
+      return await this.prisma.puestoEmpleadora.findMany({
+        where: {
+          estado: true,
+          idEmpresaEmpleadora: id,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+    } catch (error) {
+      console.error('Error al obtener puestos por empresa:', error);
+      throw new InternalServerErrorException(
+        'No se pudieron obtener las puestos de esta empresa.',
       );
     }
   }

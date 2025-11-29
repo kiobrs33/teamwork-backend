@@ -8,8 +8,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
-import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-con-detalles.dto';
+import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-detalle.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { CreateObjetivosMasivosDto } from './dto/create-objetivo-masivo.dto';
 
 @Injectable()
 export class ObjetivoService {
@@ -17,19 +18,19 @@ export class ObjetivoService {
 
   constructor(private prisma: PrismaService) {}
 
+  // ======================================================
+  // GET ALL
+  // ======================================================
   async findAll() {
     try {
-      const objetivos = await this.prisma.objetivo.findMany({
+      return await this.prisma.objetivo.findMany({
         where: { estado: true },
-        orderBy: {
-          fechaCreacion: 'desc',
-        },
+        orderBy: { fechaCreacion: 'desc' },
         include: {
           empleado: true,
           objetivoDetalles: true,
         },
       });
-      return objetivos;
     } catch (error) {
       this.logger.error('Error al obtener objetivos:', error);
       throw new InternalServerErrorException(
@@ -38,6 +39,9 @@ export class ObjetivoService {
     }
   }
 
+  // ======================================================
+  // GET ONE
+  // ======================================================
   async findOne(id: number) {
     try {
       const objetivo = await this.prisma.objetivo.findFirst({
@@ -47,85 +51,83 @@ export class ObjetivoService {
           objetivoDetalles: true,
         },
       });
-      if (!objetivo) {
+
+      if (!objetivo)
         throw new NotFoundException(`Objetivo con ID ${id} no encontrado.`);
-      }
+
       return objetivo;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      this.logger.error(`Error al obtener objetivo con ID ${id}:`, error);
+      if (error instanceof HttpException) throw error;
+
+      this.logger.error(`Error al obtener objetivo ${id}:`, error);
       throw new InternalServerErrorException('No se pudo obtener el objetivo.');
     }
   }
 
+  // ======================================================
+  // UPDATE OBJETIVO + DETALLES (CORREGIDO)
+  // ======================================================
   async update(id: number, user: AuthUser, dto: UpdateObjetivoDto) {
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const objetivo = await tx.objetivo.findUnique({
-          where: { idObjetivo: id, estado: true },
-        });
-
-        if (!objetivo) {
-          throw new NotFoundException('Objetivo no encontrado');
-        }
-
-        // Actualizar datos del objetivo
-        await tx.objetivo.update({
-          where: { idObjetivo: id },
-          data: {
-            actualizadoPorId: user.idUsuario,
-            fechaModificacion: new Date(),
-          },
-        });
-
-        // Eliminar detalles antiguos
-        await tx.objetivoDetalle.deleteMany({
-          where: { idObjetivo: id },
-        });
-
-        // Si se envían detalles, insertarlos
-        if (dto.objetivoDetalles) {
-          await tx.objetivoDetalle.createMany({
-            data: dto.objetivoDetalles.map((detalle, index) => ({
-              idObjetivo: id,
-              secuencial: index + 1,
-              descripcion: detalle.descripcion,
-              descripcionIniciativa: detalle.descripcionIniciativa,
-              unidadMedida: detalle.unidadMedida,
-              pesoEspecifico: detalle.pesoEspecifico,
-              metaObjetivo: detalle.metaObjetivo,
-              metaAlcanzada: detalle.metaAlcanzada,
-              creadoPorId: user.idUsuario,
-              actualizadoPorId: user.idUsuario,
-            })),
-          });
-          // Retornar actualizado con detalles
-          const objetivoCompleto = await tx.objetivo.findUnique({
-            where: { idObjetivo: id },
-            include: { objetivoDetalles: true },
-          });
-          console.log('Detalles recibidos:', objetivoCompleto);
-          return objetivoCompleto;
-        }
-      });
-    } catch (error) {
-      console.error(error);
-      throw new InternalServerErrorException('Error al actualizar el objetivo');
-    }
-  }
-
-  async remove(user: AuthUser, id: number) {
-    try {
-      const existObjetivo = await this.prisma.objetivo.findFirst({
+    return await this.prisma.$transaction(async (tx) => {
+      const objetivo = await tx.objetivo.findUnique({
         where: { idObjetivo: id },
       });
-      if (!existObjetivo || !existObjetivo.estado) {
-        throw new NotFoundException(`Objetivo con ID ${id} no encontrado.`);
-      }
 
-      const removed = await this.prisma.objetivo.update({
+      if (!objetivo || !objetivo.estado)
+        throw new NotFoundException('Objetivo no encontrado');
+
+      await tx.objetivo.update({
+        where: { idObjetivo: id },
+        data: {
+          actualizadoPorId: user.idUsuario,
+          fechaModificacion: new Date(),
+        },
+      });
+
+      await tx.objetivoDetalle.deleteMany({
+        where: { idObjetivo: id },
+      });
+
+      await tx.objetivoDetalle.createMany({
+        data:
+          dto.objetivoDetalles?.map((d, i) => ({
+            idObjetivo: id,
+            secuencial: i + 1,
+            tipoCalculo: d.tipoCalculo,
+            descripcion: d.descripcion,
+            descripcionIniciativa: d.descripcionIniciativa || null,
+            unidadMedida: d.unidadMedida,
+            pesoEspecifico: d.pesoEspecifico,
+            metaObjetivo: d.metaObjetivo,
+            metaAlcanzada: d.metaAlcanzada ?? null,
+            fechaCulminacion: new Date(d.fechaCulminacion),
+            porcentajeLogrado: d.porcentajeLogrado ?? null,
+            estado: true,
+            creadoPorId: user.idUsuario,
+            actualizadoPorId: user.idUsuario,
+          })) ?? [],
+      });
+
+      return await tx.objetivo.findUnique({
+        where: { idObjetivo: id },
+        include: { objetivoDetalles: true, empleado: true },
+      });
+    });
+  }
+
+  // ======================================================
+  // SOFT DELETE
+  // ======================================================
+  async remove(user: AuthUser, id: number) {
+    try {
+      const exist = await this.prisma.objetivo.findFirst({
+        where: { idObjetivo: id },
+      });
+
+      if (!exist || !exist.estado)
+        throw new NotFoundException(`Objetivo con ID ${id} no encontrado.`);
+
+      return await this.prisma.objetivo.update({
         where: { idObjetivo: id },
         data: {
           estado: false,
@@ -133,68 +135,183 @@ export class ObjetivoService {
           fechaModificacion: new Date(),
           objetivoDetalles: {
             updateMany: {
-              where: {
-                idObjetivo: id,
-              },
-              data: {
-                estado: false,
-              },
+              where: { idObjetivo: id },
+              data: { estado: false },
             },
           },
         },
       });
-
-      return removed;
     } catch (error) {
-      this.logger.error(`Error al eliminar objetivo con ID ${id}:`, error);
+      this.logger.error(`Error al eliminar objetivo ${id}:`, error);
       throw new InternalServerErrorException(
         'No se pudo eliminar el objetivo.',
       );
     }
   }
 
-  /**
-   * Crea un objetivo con entre 2 y 4 detalles asociados en una transacción.
-   */
+  // ======================================================
+  // CREATE OBJETIVO + DETALLES
+  // ======================================================
   async createConDetalles(user: AuthUser, dto: CreateObjetivoConDetallesDto) {
-    if (dto.detalles.length < 1) {
-      throw new BadRequestException('Debe enviar como mínimo un objetivo');
-    }
+    if (dto.objetivoDetalles.length < 1)
+      throw new BadRequestException('Debe enviar al menos un detalle.');
 
     try {
-      return await this.prisma.$transaction(async (tx: PrismaService) => {
+      return await this.prisma.$transaction(async (tx) => {
         const objetivo = await tx.objetivo.create({
           data: {
             idEmpleado: dto.idEmpleado,
             creadoPorId: user.idUsuario,
+            estado: true,
             objetivoDetalles: {
-              createMany: {
-                data: dto.detalles.map((detalle, index) => ({
-                  secuencial: index + 1,
-                  descripcion: detalle.descripcion,
-                  descripcionIniciativa: detalle.descripcionIniciativa,
-                  unidadMedida: detalle.unidadMedida,
-                  pesoEspecifico: detalle.pesoEspecifico,
-                  metaObjetivo: detalle.metaObjetivo,
-                  creadoPorId: user.idUsuario,
-                })),
-              },
+              create: dto.objetivoDetalles.map((detalle, index) => ({
+                secuencial: index + 1,
+                tipoCalculo: detalle.tipoCalculo,
+                descripcion: detalle.descripcion,
+                descripcionIniciativa: detalle.descripcionIniciativa || null,
+                unidadMedida: detalle.unidadMedida,
+                pesoEspecifico: detalle.pesoEspecifico,
+                metaObjetivo: detalle.metaObjetivo,
+                metaAlcanzada: detalle.metaAlcanzada ?? null,
+                fechaCulminacion: new Date(detalle.fechaCulminacion), // ← FIX CLAVE
+                porcentajeLogrado: detalle.porcentajeLogrado ?? null,
+                estado: true,
+                creadoPorId: user.idUsuario,
+              })),
             },
           },
         });
 
-        const objetivoCompleto = await tx.objetivo.findUnique({
+        return await tx.objetivo.findUnique({
           where: { idObjetivo: objetivo.idObjetivo },
-          include: { objetivoDetalles: true },
+          include: { objetivoDetalles: true, empleado: true },
         });
-
-        return objetivoCompleto;
       });
     } catch (error) {
-      this.logger.error('Error creando objetivo con detalles:', error);
-
+      this.logger.error('Error creando objetivo:', error);
       throw new InternalServerErrorException(
-        'No se pudo crear el objetivo con sus detalles.',
+        'No se pudo crear el objetivo con detalles.',
+      );
+    }
+  }
+
+  // ======================================================
+  // ⭐ CREAR OBJETIVOS MASIVOS (usando codigoEmpleado)
+  // ======================================================
+  async createMasivo(user: AuthUser, dto: CreateObjetivosMasivosDto) {
+    if (!dto.objetivos?.length)
+      throw new BadRequestException('Debe enviar un arreglo con objetivos.');
+
+    return await this.prisma.$transaction(async (tx) => {
+      const results: any[] = [];
+
+      for (const item of dto.objetivos) {
+        if (!item.objetivoDetalles?.length)
+          throw new BadRequestException(
+            `Debe enviar al menos un detalle para el código ${item.codigoEmpleado}`,
+          );
+
+        const empleado = await tx.empleado.findFirst({
+          where: { codigoEmpleado: item.codigoEmpleado },
+        });
+
+        if (!empleado)
+          throw new NotFoundException(
+            `Empleado ${item.codigoEmpleado} no existe`,
+          );
+
+        const objetivo = await tx.objetivo.create({
+          data: {
+            idEmpleado: empleado.idEmpleado,
+            creadoPorId: user.idUsuario,
+            estado: true,
+            objetivoDetalles: {
+              create: item.objetivoDetalles.map((d, i) => ({
+                secuencial: i + 1,
+                tipoCalculo: d.tipoCalculo,
+                descripcion: d.descripcion,
+                descripcionIniciativa: d.descripcionIniciativa || null,
+                unidadMedida: d.unidadMedida,
+                pesoEspecifico: d.pesoEspecifico,
+                metaObjetivo: d.metaObjetivo,
+                metaAlcanzada: d.metaAlcanzada ?? null,
+                fechaCulminacion: new Date(d.fechaCulminacion),
+                porcentajeLogrado: d.porcentajeLogrado ?? null,
+                estado: true,
+                creadoPorId: user.idUsuario,
+              })),
+            },
+          },
+        });
+
+        results.push(
+          await tx.objetivo.findUnique({
+            where: { idObjetivo: objetivo.idObjetivo },
+            include: { empleado: true, objetivoDetalles: true },
+          }),
+        );
+      }
+
+      return results;
+    });
+  }
+
+  // ============================================================
+  // GET ALL BY JEFE (OBJETIVOS DE SUBORDINADOS)
+  // ============================================================
+  async findAllByJefe(idEmpleadoJefe: number) {
+    try {
+      // 1. Validar que exista el jefe
+      const jefe = await this.prisma.empleado.findUnique({
+        where: { idEmpleado: idEmpleadoJefe, estado: true },
+        select: { codigoEmpleado: true },
+      });
+
+      if (!jefe) {
+        throw new NotFoundException(
+          `El empleado jefe con ID ${idEmpleadoJefe} no existe.`,
+        );
+      }
+
+      if (!jefe.codigoEmpleado) {
+        throw new BadRequestException(
+          `El empleado jefe con ID ${idEmpleadoJefe} no tiene un código de empleado válido.`,
+        );
+      }
+
+      // 2. Obtener subordinados del jefe
+      const subordinados = await this.prisma.empleado.findMany({
+        where: {
+          codigoEmpleadoJefe: jefe.codigoEmpleado,
+          estado: true,
+        },
+        select: { idEmpleado: true },
+      });
+
+      if (subordinados.length === 0) {
+        return [];
+      }
+
+      const subordinadosIds = subordinados.map((s) => s.idEmpleado);
+
+      // 3. Obtener objetivos de los subordinados
+      return await this.prisma.objetivo.findMany({
+        where: {
+          estado: true,
+          idEmpleado: { in: subordinadosIds },
+        },
+        orderBy: { fechaCreacion: 'desc' },
+        include: {
+          empleado: true,
+          objetivoDetalles: true,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Error al obtener objetivos de subordinados:', error);
+
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException(
+        'No se pudieron obtener los objetivos de subordinados.',
       );
     }
   }

@@ -1,4 +1,3 @@
-// empresa-empleadora.service.ts
 import {
   Injectable,
   InternalServerErrorException,
@@ -13,38 +12,32 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 export class EmpresaEmpleadoraService {
   constructor(private prisma: PrismaService) {}
 
+  // ======================================================
+  // CREATE
+  // ======================================================
   async create(user: AuthUser, dto: CreateEmpresaEmpleadoraDto) {
     try {
-      const empresa = await this.prisma.empresaEmpleadora.create({
+      return await this.prisma.empresaEmpleadora.create({
         data: {
           ...dto,
           creadoPorId: user.idUsuario,
         },
       });
-      return empresa;
     } catch (error) {
       console.error('Error al crear empresa:', error);
       throw new InternalServerErrorException('No se pudo crear la empresa.');
     }
   }
 
+  // ======================================================
+  // FIND ALL
+  // ======================================================
   async findAll() {
     try {
-      const empresas = await this.prisma.empresaEmpleadora.findMany({
-        where: {
-          estado: true,
-        },
-        orderBy: {
-          fechaCreacion: 'desc',
-        },
-        include: {
-          gerenciaEmpleadoras: true,
-          areaEmpleadoras: true,
-          puestoEmpleadoras: true,
-          unidadOcupacionalEmpleadoras: true,
-        },
+      return await this.prisma.empresaEmpleadora.findMany({
+        where: { estado: true },
+        orderBy: { fechaCreacion: 'desc' },
       });
-      return empresas;
     } catch (error) {
       console.error('Error al obtener empresas:', error);
       throw new InternalServerErrorException(
@@ -53,9 +46,15 @@ export class EmpresaEmpleadoraService {
     }
   }
 
+  // ======================================================
+  // FIND ONE
+  // ======================================================
   async findOne(id: number) {
-    const empresa = await this.prisma.empresaEmpleadora.findUnique({
-      where: { idEmpresaEmpleadora: id, estado: true },
+    const empresa = await this.prisma.empresaEmpleadora.findFirst({
+      where: {
+        idEmpresaEmpleadora: id,
+        estado: true,
+      },
     });
 
     if (!empresa) {
@@ -65,17 +64,23 @@ export class EmpresaEmpleadoraService {
     return empresa;
   }
 
+  // ======================================================
+  // UPDATE
+  // ======================================================
   async update(user: AuthUser, id: number, dto: UpdateEmpresaEmpleadoraDto) {
     try {
-      const existEmpresa = await this.prisma.empresaEmpleadora.findUnique({
-        where: { idEmpresaEmpleadora: id, estado: true },
+      const empresa = await this.prisma.empresaEmpleadora.findFirst({
+        where: {
+          idEmpresaEmpleadora: id,
+          estado: true,
+        },
       });
 
-      if (!existEmpresa) {
+      if (!empresa) {
         throw new NotFoundException('Empresa no encontrada');
       }
 
-      const updated = await this.prisma.empresaEmpleadora.update({
+      return await this.prisma.empresaEmpleadora.update({
         where: { idEmpresaEmpleadora: id },
         data: {
           ...dto,
@@ -83,14 +88,10 @@ export class EmpresaEmpleadoraService {
           actualizadoPorId: user.idUsuario,
         },
       });
-
-      return updated;
     } catch (error) {
       console.error('Error al actualizar empresa:', error);
 
-      if (error instanceof NotFoundException) {
-        throw error; // Lo reenvías tal cual
-      }
+      if (error instanceof NotFoundException) throw error;
 
       throw new InternalServerErrorException(
         'No se pudo actualizar la empresa.',
@@ -98,17 +99,23 @@ export class EmpresaEmpleadoraService {
     }
   }
 
+  // ======================================================
+  // REMOVE (soft delete)
+  // ======================================================
   async remove(user: AuthUser, id: number) {
     try {
-      const existEmpresa = await this.prisma.empresaEmpleadora.findUnique({
-        where: { idEmpresaEmpleadora: id, estado: true },
+      const empresa = await this.prisma.empresaEmpleadora.findFirst({
+        where: {
+          idEmpresaEmpleadora: id,
+          estado: true,
+        },
       });
 
-      if (!existEmpresa) {
+      if (!empresa) {
         throw new NotFoundException('Empresa no encontrada');
       }
 
-      const removed = await this.prisma.empresaEmpleadora.update({
+      return await this.prisma.empresaEmpleadora.update({
         where: { idEmpresaEmpleadora: id },
         data: {
           estado: false,
@@ -116,14 +123,10 @@ export class EmpresaEmpleadoraService {
           actualizadoPorId: user.idUsuario,
         },
       });
-
-      return removed;
     } catch (error) {
       console.error('Error al eliminar empresa:', error);
 
-      if (error instanceof NotFoundException) {
-        throw error; // Lo reenvías tal cual
-      }
+      if (error instanceof NotFoundException) throw error;
 
       throw new InternalServerErrorException('No se pudo eliminar la empresa.');
     }

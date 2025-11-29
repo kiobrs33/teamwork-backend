@@ -65,6 +65,23 @@ export class GerenciaEmpleadoraController {
     };
   }
 
+  @Get('empresa/:id')
+  @ApiOperation({ summary: 'Listar gerencias empleadoras de una empresa' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de gerencias de la empresa especificada.',
+  })
+  async findByEmpresa(@Param('id') id: string) {
+    const gerencias = await this.gerenciaEmpleadoraService.findByEmpresaId(
+      Number(id),
+    );
+
+    return {
+      message: 'Lista de gerencias empleadoras de la empresa.',
+      data: { gerencias },
+    };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener gerencia empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
@@ -123,11 +140,13 @@ export class GerenciaEmpleadoraController {
     @User() user: AuthUser,
     @Body() data: CreateGerenciaEmpleadoraDto[],
   ) {
-    const importGerenciaEmpleadora =
-      await this.gerenciaEmpleadoraService.importData(user, data);
+    const { count } = await this.gerenciaEmpleadoraService.importData(
+      user,
+      data,
+    );
     return {
       message: 'Gerencias empleadora creadas exitosamente.',
-      data: { importGerenciaEmpleadora },
+      data: { count },
     };
   }
 }

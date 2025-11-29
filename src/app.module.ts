@@ -8,7 +8,6 @@ import { AuthModule } from './auth/auth.module';
 import { EmpresaEmpleadoraModule } from './empresa-empleadora/empresa-empleadora.module';
 import { PuestoEmpleadoraModule } from './puesto-empleadora/puesto-empleadora.module';
 import { ObjetivoModule } from './objetivo/objetivo.module';
-import { ObjetivoDetalleModule } from './objetivo-detalle/objetivo-detalle.module';
 import { GerenciaEmpleadoraModule } from './gerencia-empleadora/gerencia-empleadora.module';
 import { UnidadOcupacionalEmpleadoraModule } from './unidad-ocupacional-empleadora/unidad-ocupacional-empleadora.module';
 import { AreaEmpleadoraModule } from './area-empleadora/area-empleadora.module';
@@ -40,7 +39,6 @@ import { LoggerModule } from 'nestjs-pino';
     EmpresaEmpleadoraModule,
     PuestoEmpleadoraModule,
     ObjetivoModule,
-    ObjetivoDetalleModule,
     GerenciaEmpleadoraModule,
     UnidadOcupacionalEmpleadoraModule,
     AreaEmpleadoraModule,

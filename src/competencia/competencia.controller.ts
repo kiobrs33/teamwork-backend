@@ -10,6 +10,7 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Put,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -24,8 +25,9 @@ import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CompetenciaService } from './competencia.service';
 import { UpdateCompetenciaDto } from './dto/update-competencia.dto';
-import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
-import { CreateAreaEmpleadoraDto } from '../area-empleadora/dto/create-area-empleadora.dto';
+import { CreateCompetenciaNivelesItemsDto } from './dto/create-competencia-nivel-item.dto';
+import { IniciarEvaluacionDto } from './dto/init-evaluation.dto';
+import { UpdateEvaluacionDto } from './dto/update-evaluation-item.dto';
 
 @ApiTags('Competencia')
 @ApiBearerAuth()
@@ -34,6 +36,9 @@ import { CreateAreaEmpleadoraDto } from '../area-empleadora/dto/create-area-empl
 export class CompetenciaController {
   constructor(private readonly competenciaService: CompetenciaService) {}
 
+  // ======================================================
+  //                GET ALL COMPETENCIAS
+  // ======================================================
   @Get()
   @ApiOperation({ summary: 'Listar todas las competencias' })
   @ApiResponse({ status: 200, description: 'Lista de competencias.' })
@@ -45,17 +50,42 @@ export class CompetenciaController {
     };
   }
 
-  @Get('con-puestos')
-  @ApiOperation({ summary: 'Listar todas las competencias y puestos' })
-  @ApiResponse({ status: 200, description: 'Lista de competencias.' })
-  async findAllConCompetencias() {
-    const competencias = await this.competenciaService.findAllConCompetencias();
+  @Get('company/:id')
+  @ApiOperation({
+    summary: 'Listar todas las competencias por Empres',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de competencias por Empresa.',
+  })
+  async findAllByCompany(@Param('id', ParseIntPipe) id: number) {
+    const competencias = await this.competenciaService.findAllByCompany(id);
     return {
-      message: 'Unidades y competencias.',
+      message: 'Lista de competencias por Empresa.',
       data: { competencias },
     };
   }
 
+  // ======================================================
+  //     LISTAR COMPETENCIAS AGRUPADAS POR UNIDAD/PUESTO
+  // ======================================================
+  // @Get('con-puestos/:id')
+  // @ApiOperation({
+  //   summary: 'Listar unidades ocupacionales con sus competencias asignadas',
+  // })
+  // @ApiResponse({ status: 200, description: 'Unidades y competencias.' })
+  // async findAllConCompetencias(@Param('id', ParseIntPipe) id: number) {
+  //   const competencias =
+  //     await this.competenciaService.findAllConCompetencias(id);
+  //   return {
+  //     message: 'Unidades y competencias.',
+  //     data: { competencias },
+  //   };
+  // }
+
+  // ======================================================
+  //                GET COMPETENCIA BY ID
+  // ======================================================
   @Get(':id')
   @ApiOperation({ summary: 'Obtener competencia por ID' })
   @ApiParam({ name: 'id', description: 'ID de la competencia' })
@@ -68,12 +98,17 @@ export class CompetenciaController {
     };
   }
 
+  // ======================================================
+  //                     UPDATE
+  // ======================================================
   @Patch(':id')
-  @ApiOperation({ summary: 'Actualizar competencia y sus detalles' })
+  @ApiOperation({
+    summary: 'Actualizar competencia con sus niveles e items',
+  })
   @ApiParam({ name: 'id', description: 'ID de la competencia a actualizar' })
   @ApiResponse({
     status: 200,
-    description: 'Competencia actualizada correctamente con sus detalles.',
+    description: 'Competencia actualizada correctamente con sus niveles.',
   })
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -87,6 +122,9 @@ export class CompetenciaController {
     };
   }
 
+  // ======================================================
+  //                     DELETE
+  // ======================================================
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar competencia (soft delete)' })
   @ApiParam({ name: 'id', description: 'ID de la competencia' })
@@ -102,45 +140,169 @@ export class CompetenciaController {
     };
   }
 
-  @Post('con-detalles')
-  @ApiOperation({ summary: 'Crear competencia con detalles asociados' })
+  // ======================================================
+  //                CREATE CON NIVELES E ITEMS
+  // ======================================================
+  @Post('con-niveles')
+  @ApiOperation({
+    summary: 'Crear competencia con sus niveles e items',
+  })
   @ApiResponse({
     status: 201,
-    description: 'Competencia y detalles creados exitosamente.',
+    description: 'Competencia creada exitosamente.',
   })
-  async createConDetalles(
+  async createConNiveles(
     @User() user: AuthUser,
-    @Body() dto: CreateCompetenciaConDetallesDto,
+    @Body() dto: CreateCompetenciaNivelesItemsDto,
   ) {
     const competencia = await this.competenciaService.createConDetalles(
       user,
       dto,
     );
+
     return {
-      message: 'Competencia y detalles creados exitosamente.',
+      message: 'Competencia creada exitosamente con sus niveles.',
       data: { competencia },
     };
   }
 
+  // ======================================================
+  //                IMPORTAR MASIVAMENTE
+  // ======================================================
   @Post('import')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-  @ApiBody({ type: [CreateCompetenciaConDetallesDto] })
-  @ApiOperation({ summary: 'Importar Competencias ' })
+  @ApiBody({ type: [CreateCompetenciaNivelesItemsDto] })
+  @ApiOperation({ summary: 'Importar competencias con niveles e items' })
   @ApiResponse({
     status: 201,
-    description: 'Importacion de competencias creada exitosamente.',
+    description: 'Competencias importadas exitosamente.',
   })
   async importExcelData(
     @User() user: AuthUser,
-    @Body() data: CreateCompetenciaConDetallesDto[],
+    @Body() data: CreateCompetenciaNivelesItemsDto[],
   ) {
-    const importCompetencia = await this.competenciaService.importData(
-      user,
-      data,
-    );
+    const competencias = await this.competenciaService.importData(user, data);
     return {
-      message: 'Competencias  creadas exitosamente.',
-      data: { importCompetencia },
+      message: 'Competencias creadas exitosamente.',
+      data: { competencias },
+    };
+  }
+
+  // TODO: EVALUACIONES - REVISAR
+  // ======================================================
+  //   POST /competencia/evaluaciones/iniciar
+  // ======================================================
+  @Post('evaluaciones/iniciar')
+  @ApiOperation({ summary: 'Iniciar evaluación (crea si no existe)' })
+  @ApiBody({ type: IniciarEvaluacionDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Evaluación iniciada o evaluación existente en PROCESO.',
+  })
+  async iniciarEvaluacion(
+    @User() user: AuthUser,
+    @Body() dto: IniciarEvaluacionDto,
+  ) {
+    const evaluacion = await this.competenciaService.iniciarEvaluacion(
+      user,
+      dto,
+    );
+
+    return {
+      message: 'Evaluación iniciada correctamente.',
+      data: { evaluacion },
+    };
+  }
+
+  // ======================================================
+  //     GET /competencia/evaluaciones/:id
+  // ======================================================
+  @Get('evaluaciones/:id')
+  @ApiOperation({ summary: 'Obtener evaluación completa por ID' })
+  @ApiParam({ name: 'id', description: 'ID de la evaluación' })
+  @ApiResponse({ status: 200, description: 'Evaluación encontrada.' })
+  async obtenerEvaluacion(@Param('id', ParseIntPipe) id: number) {
+    const evaluacion = await this.competenciaService.obtenerEvaluacion(id);
+
+    return {
+      message: 'Evaluación encontrada.',
+      data: { evaluacion },
+    };
+  }
+
+  // ======================================================
+  //     PUT /competencia/evaluaciones/:id
+  // ======================================================
+  @Put('evaluaciones/:id')
+  @ApiOperation({
+    summary: 'Actualizar evaluación (solo si está en PROCESO)',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la evaluación' })
+  @ApiBody({ type: UpdateEvaluacionDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Evaluación actualizada correctamente.',
+  })
+  async actualizarEvaluacion(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateEvaluacionDto,
+  ) {
+    const evaluacion = await this.competenciaService.actualizarEvaluacion(
+      user,
+      id,
+      dto,
+    );
+
+    return {
+      message: 'Evaluación actualizada correctamente.',
+      data: { evaluacion },
+    };
+  }
+
+  // ======================================================
+  //  PATCH /competencia/evaluaciones/:id/cerrar
+  // ======================================================
+  @Patch('evaluaciones/:id/cerrar')
+  @ApiOperation({ summary: 'Cerrar evaluación (bloquea edición)' })
+  @ApiParam({ name: 'id', description: 'ID de la evaluación' })
+  @ApiResponse({
+    status: 200,
+    description: 'Evaluación cerrada correctamente.',
+  })
+  async cerrarEvaluacion(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const evaluacion = await this.competenciaService.cerrarEvaluacion(id, user);
+
+    return {
+      message: 'Evaluación cerrada correctamente.',
+      data: { evaluacion },
+    };
+  }
+
+  // ======================================================
+  //  PATCH /competencia/evaluaciones/:id/anular
+  // ======================================================
+  @Patch('evaluaciones/:id/anular')
+  @ApiOperation({
+    summary: 'Anular evaluación (mantiene histórico, no borra)',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la evaluación' })
+  @ApiResponse({
+    status: 200,
+    description: 'Evaluación anulada correctamente.',
+  })
+  async anularEvaluacion(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const evaluacion = await this.competenciaService.anularEvaluacion(id, user);
+
+    return {
+      message: 'Evaluación anulada correctamente.',
+      data: { evaluacion },
     };
   }
 }

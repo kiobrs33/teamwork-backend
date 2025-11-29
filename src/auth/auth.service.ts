@@ -13,6 +13,7 @@ export class AuthService {
   async validateUser(codigoUsuario: string, contrasena: string) {
     const usuario = await this.prisma.usuario.findFirst({
       where: { codigoUsuario },
+      include: { empleado: true },
     });
 
     if (!usuario || !usuario.estado) {
@@ -46,6 +47,7 @@ export class AuthService {
         idUsuario: usuario.idUsuario,
         codigoUsuario: usuario.codigoUsuario,
         rol: usuario.rol,
+        empleado: usuario.empleado,
       },
     };
   }

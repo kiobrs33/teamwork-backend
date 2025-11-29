@@ -8,7 +8,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateAreaEmpleadoraDto } from './dto/create-area-empleadora.dto';
 import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-import { CreateGerenciaEmpleadoraDto } from '../gerencia-empleadora/dto/create-gerencia-empleadora.dto';
 
 @Injectable()
 export class AreaEmpleadoraService {
@@ -130,19 +129,33 @@ export class AreaEmpleadoraService {
       }));
 
       return await this.prisma.$transaction(async (tx) => {
-        await tx.areaEmpleadora.createMany({
+        return await tx.areaEmpleadora.createMany({
           data: registros,
         });
-
-        return {
-          message: 'Datos importados correctamente',
-          count: registros.length,
-        };
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
       throw new InternalServerErrorException(
         'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
+      );
+    }
+  }
+
+  async findByEmpresaId(id: number) {
+    try {
+      return await this.prisma.areaEmpleadora.findMany({
+        where: {
+          estado: true,
+          idEmpresaEmpleadora: id,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+    } catch (error) {
+      console.error('Error al obtener areas por empresa:', error);
+      throw new InternalServerErrorException(
+        'No se pudieron obtener las areas de esta empresa.',
       );
     }
   }

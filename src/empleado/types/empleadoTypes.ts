@@ -1,6 +1,11 @@
 export enum Rol {
   ADMIN = 'ADMIN',
-  SUBADMIN = 'SUBADMIN',
   JEFE = 'JEFE',
   EMPLEADO = 'EMPLEADO',
+}
+
+export enum TiempoEmpresaUnidad {
+  DIAS = 'DIAS',
+  MESES = 'MESES',
+  ANOS = 'AÑOS',
 }

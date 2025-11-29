@@ -31,12 +31,18 @@ export class CreateCompetenciaConDetallesDto {
   nivel: number;
 
   @ApiProperty({
+    example: 5,
+    description:
+      'ID de la empresa empleadora a la que pertenece la competencia',
+  })
+  @IsInt({ message: 'El ID de la empresa debe ser un número entero.' })
+  idEmpresaEmpleadora: number;
+
+  @ApiProperty({
     type: CompetenciaDetalleDto,
     isArray: true,
     description:
       'Lista de detalles asociados a la competencia (1 a 10 detalles)',
-    minItems: 1,
-    maxItems: 10,
   })
   @IsArray({ message: 'Debe enviar un arreglo de detalles.' })
   @ValidateNested({ each: true })

@@ -1,7 +1,6 @@
 import { PartialType } from '@nestjs/swagger';
-import { CreateCompetenciaDto } from './create-competencia.dto';
-import { CreateCompetenciaConDetallesDto } from './create-competencia-con-detalles.dto';
+import { CreateCompetenciaNivelesItemsDto } from './create-competencia-nivel-item.dto';
 
 export class UpdateCompetenciaDto extends PartialType(
-  CreateCompetenciaConDetallesDto,
+  CreateCompetenciaNivelesItemsDto,
 ) {}

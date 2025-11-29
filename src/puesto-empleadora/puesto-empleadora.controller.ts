@@ -61,6 +61,22 @@ export class PuestoEmpleadoraController {
     };
   }
 
+  @Get('empresa/:id')
+  @ApiOperation({ summary: 'Listar puestos empleadoras de una empresa' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de los puestos de la empresa especificada.',
+  })
+  async findByEmpresa(@Param('id') id: string) {
+    const puestos = await this.puestoEmpleadoraService.findByEmpresaId(
+      Number(id),
+    );
+    return {
+      message: 'Lista de gerencias empleadoras de la empresa.',
+      data: { puestos },
+    };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener puesto empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID del puesto empleadora' })
@@ -119,11 +135,10 @@ export class PuestoEmpleadoraController {
     @User() user: AuthUser,
     @Body() data: CreatePuestoEmpleadoraDto[],
   ) {
-    const importPuestoEmpleadora =
-      await this.puestoEmpleadoraService.importData(user, data);
+    const { count } = await this.puestoEmpleadoraService.importData(user, data);
     return {
       message: 'Areas empleadora creadas exitosamente.',
-      data: { importPuestoEmpleadora },
+      data: { count },
     };
   }
 }
