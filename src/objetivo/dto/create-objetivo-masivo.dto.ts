@@ -25,12 +25,10 @@ export class ObjetivoDetalleMasivoDto {
   tipoCalculo: string;
 
   @ApiProperty({ example: 'Descripción del detalle' })
-  @MaxLength(255)
   descripcion: string;
 
   @ApiProperty({ example: 'Iniciativa relacionada', required: false })
   @IsOptional()
-  @MaxLength(255)
   descripcionIniciativa?: string;
 
   @ApiProperty({

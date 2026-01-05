@@ -196,7 +196,7 @@ export class EmpleadoService {
     try {
       const empleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id, estado: true },
-        include: { usuario: true },
+        include: { usuario: true, empresaEmpleadora: true },
       });
 
       if (!empleado) throw new NotFoundException('Empleado no encontrado');
