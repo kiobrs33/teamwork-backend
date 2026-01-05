@@ -9,6 +9,7 @@ import {
   ArrayMinSize,
   IsIn,
   IsDateString,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -25,6 +26,8 @@ export class ObjetivoDetalleMasivoDto {
   tipoCalculo: string;
 
   @ApiProperty({ example: 'Descripción del detalle' })
+  @IsString({ message: 'La descripción debe ser texto' })
+  @IsNotEmpty({ message: 'La descripción es obligatoria' })
   descripcion: string;
 
   @ApiProperty({ example: 'Iniciativa relacionada', required: false })
