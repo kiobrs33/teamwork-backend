@@ -436,7 +436,17 @@ export class CompetenciaService {
           });
         }
 
-        return this.obtenerEvaluacion(idEvaluacion);
+        // ✅ 3) DEVOLVER DATOS ACTUALIZADOS USANDO TX
+        return await tx.evaluacionCompetencia.findFirst({
+          where: { idEvaluacionCompetencia: idEvaluacion, estado: true },
+          include: {
+            evaluado: true,
+            evaluador: true,
+            competencia: true,
+            nivel: true,
+            itemsEvaluados: { include: { item: true } },
+          },
+        });
       });
     } catch (error) {
       console.error(error);

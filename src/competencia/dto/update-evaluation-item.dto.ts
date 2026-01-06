@@ -24,8 +24,6 @@ export class UpdateEvaluacionItemDto {
     description: 'Calificación asignada al ítem (ejemplo: escala 1 a 5)',
   })
   @IsInt()
-  @Min(0, { message: 'La calificación mínima permitida es 0.' })
-  @Max(10, { message: 'La calificación máxima permitida es 10.' })
   calificacion: number;
 }
 
