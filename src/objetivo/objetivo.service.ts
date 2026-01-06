@@ -11,6 +11,7 @@ import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-detalle.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CreateObjetivosMasivosDto } from './dto/create-objetivo-masivo.dto';
+import { EvaluarObjetivoDto } from './dto/evaluar-objetivo.dto';
 
 @Injectable()
 export class ObjetivoService {
@@ -314,5 +315,101 @@ export class ObjetivoService {
         'No se pudieron obtener los objetivos de subordinados.',
       );
     }
+  }
+
+  // ======================================================
+  // ⭐ EVALUAR OBJETIVO DE SUBORDINADO
+  // ======================================================
+  async evaluarObjetivo(
+    idObjetivo: number,
+    user: AuthUser,
+    dto: EvaluarObjetivoDto,
+  ) {
+    return await this.prisma.$transaction(async (tx) => {
+      // --------------------------------------------------
+      // 1. Obtener objetivo con empleado
+      // --------------------------------------------------
+      const objetivo = await tx.objetivo.findUnique({
+        where: { idObjetivo },
+        include: {
+          empleado: {
+            select: {
+              idEmpleado: true,
+              codigoEmpleado: true,
+              codigoEmpleadoJefe: true,
+            },
+          },
+          objetivoDetalles: {
+            where: { estado: true },
+          },
+        },
+      });
+
+      if (!objetivo || !objetivo.estado)
+        throw new NotFoundException('Objetivo no encontrado');
+
+      // --------------------------------------------------
+      // 2. Validar que el usuario sea JEFE directo
+      // --------------------------------------------------
+      const jefe = await tx.empleado.findUnique({
+        where: { idUsuario: user.idUsuario },
+        select: { codigoEmpleado: true },
+      });
+
+      if (!jefe) throw new BadRequestException('Jefe no válido');
+
+      if (objetivo.empleado.codigoEmpleadoJefe !== jefe.codigoEmpleado)
+        throw new BadRequestException(
+          'No tiene permisos para evaluar este objetivo',
+        );
+
+      // --------------------------------------------------
+      // 3. Validar detalles enviados
+      // --------------------------------------------------
+      if (!dto.detalles?.length)
+        throw new BadRequestException('Debe enviar al menos un detalle');
+
+      const detallesIds = objetivo.objetivoDetalles.map(
+        (d) => d.idObjetivoDetalle,
+      );
+
+      // --------------------------------------------------
+      // 4. Evaluar cada detalle
+      // --------------------------------------------------
+      for (const detalle of dto.detalles) {
+        if (!detallesIds.includes(detalle.idObjetivoDetalle)) {
+          throw new BadRequestException(
+            `El detalle ${detalle.idObjetivoDetalle} no pertenece al objetivo`,
+          );
+        }
+
+        if (detalle.porcentajeLogrado < 0 || detalle.porcentajeLogrado > 100) {
+          throw new BadRequestException(
+            'El porcentaje logrado debe estar entre 0 y 100',
+          );
+        }
+
+        await tx.objetivoDetalle.update({
+          where: { idObjetivoDetalle: detalle.idObjetivoDetalle },
+          data: {
+            metaAlcanzada: detalle.metaAlcanzada,
+            porcentajeLogrado: detalle.porcentajeLogrado,
+            actualizadoPorId: user.idUsuario,
+            fechaModificacion: new Date(),
+          },
+        });
+      }
+
+      // --------------------------------------------------
+      // 5. Retornar objetivo evaluado
+      // --------------------------------------------------
+      return await tx.objetivo.findUnique({
+        where: { idObjetivo },
+        include: {
+          empleado: true,
+          objetivoDetalles: true,
+        },
+      });
+    });
   }
 }

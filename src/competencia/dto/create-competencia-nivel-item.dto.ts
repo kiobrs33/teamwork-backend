@@ -16,9 +16,6 @@ import { Type } from 'class-transformer';
 export class CompetenciaNivelItemDto {
   @ApiProperty({ example: 'Muestra iniciativa en actividades del equipo' })
   @IsString()
-  @MaxLength(255, {
-    message: 'El enunciado no puede exceder 255 caracteres.',
-  })
   enunciado: string;
 }
 
@@ -28,8 +25,6 @@ export class CompetenciaNivelItemDto {
 export class CompetenciaNivelDto {
   @ApiProperty({ example: 1, description: 'Número del nivel (1 - 5)' })
   @IsInt({ message: 'El nivel debe ser un número entero.' })
-  @Min(1, { message: 'El nivel mínimo es 1.' })
-  @Max(10, { message: 'El nivel máximo permitido es 10.' })
   nivel: number;
 
   @ApiProperty({
@@ -48,25 +43,20 @@ export class CompetenciaNivelDto {
 // ======================================================
 export class CreateCompetenciaNivelesItemsDto {
   @ApiProperty({ example: 'COM-001', description: 'Código de la competencia' })
-  @MaxLength(100, {
-    message: 'El código no puede exceder 100 caracteres.',
-  })
   codigo: string;
 
   @ApiProperty({
     example: 'Liderazgo',
     description: 'Título de la competencia',
   })
-  @MaxLength(255, {
-    message: 'El título no puede exceder 255 caracteres.',
-  })
+  @IsString()
   titulo: string;
 
   @ApiProperty({
     example: 'Capacidad de influir y motivar a otros.',
     description: 'Nombre o descripción corta de la competencia',
   })
-  @MaxLength(255, { message: 'El nombre no puede exceder 255 caracteres.' })
+  @IsString()
   nombre: string;
 
   @ApiProperty({

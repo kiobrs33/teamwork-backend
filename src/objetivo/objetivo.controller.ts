@@ -23,6 +23,7 @@ import { User } from 'src/auth/auth.decorator';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-detalle.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CreateObjetivosMasivosDto } from './dto/create-objetivo-masivo.dto';
+import { EvaluarObjetivoDto } from './dto/evaluar-objetivo.dto';
 
 @ApiTags('Objetivo')
 @ApiBearerAuth()
@@ -52,6 +53,28 @@ export class ObjetivoController {
     return {
       message: `Objetivos de subordinados del jefe ${id}`,
       objetivos,
+    };
+  }
+
+  @Patch(':id/evaluar')
+  @ApiOperation({
+    summary: 'Calificar (evaluar) un objetivo de un subordinado',
+  })
+  @ApiParam({ name: 'id', example: 1 })
+  @ApiResponse({
+    status: 200,
+    description: 'Objetivo evaluado correctamente',
+  })
+  async evaluarObjetivo(
+    @Param('id', ParseIntPipe) id: number,
+    @User() user: AuthUser,
+    @Body() dto: EvaluarObjetivoDto,
+  ) {
+    const objetivo = await this.objetivoService.evaluarObjetivo(id, user, dto);
+
+    return {
+      message: `Objetivo ${id} evaluado correctamente`,
+      objetivo,
     };
   }
 

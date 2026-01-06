@@ -37,9 +37,6 @@ export class UpdateEvaluacionDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500, {
-    message: 'El comentario general no puede exceder 500 caracteres.',
-  })
   comentarioGeneral?: string;
 
   @ApiProperty({

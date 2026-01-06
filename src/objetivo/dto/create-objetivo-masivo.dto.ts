@@ -80,7 +80,6 @@ export class ObjetivoMasivoItemDto {
     description: 'Código del empleado (campo: codigoEmpleado)',
   })
   @IsString()
-  @MaxLength(50)
   codigoEmpleado: string;
 
   @ApiProperty({

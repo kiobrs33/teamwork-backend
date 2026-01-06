@@ -19,8 +19,8 @@ export class CreateEmpleadoDto {
 
   @ApiProperty({ example: 'password123' })
   @IsString({ message: 'La contraseña debe ser una cadena de texto.' })
-  @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+  // @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
+  // @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
   contrasena: string;
 
   @ApiProperty({
