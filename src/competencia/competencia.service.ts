@@ -499,4 +499,33 @@ export class CompetenciaService {
       },
     });
   }
+
+  async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
+    const empleados = await this.prisma.evaluacionCompetencia.findMany({
+      where: {
+        estado: true,
+        idEvaluado: { not: null },
+        evaluado: {
+          idEmpresaEmpleadora,
+          estado: true,
+        },
+      },
+      distinct: ['idEvaluado'],
+      select: {
+        evaluado: {
+          select: {
+            idEmpleado: true,
+            nombres: true,
+            apellidos: true,
+            codigoEmpleado: true,
+          },
+        },
+      },
+    });
+
+    return {
+      total: empleados.length,
+      empleados: empleados.map((e) => e.evaluado),
+    };
+  }
 }

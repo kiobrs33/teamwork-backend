@@ -305,4 +305,33 @@ export class CompetenciaController {
       data: { evaluacion },
     };
   }
+
+  // ======================================================
+  //  GET /competencia/evaluaciones/empresa/:idEmpresaEmpleadora/empleados
+  // ======================================================
+  @Get('evaluaciones/empresa/:idEmpresaEmpleadora/empleados')
+  @ApiOperation({
+    summary: 'Obtener empleados evaluados por empresa',
+  })
+  @ApiParam({
+    name: 'idEmpresaEmpleadora',
+    description: 'ID de la empresa empleadora',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de empleados evaluados y total.',
+  })
+  async empleadosEvaluadosPorEmpresa(
+    @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+  ) {
+    const result =
+      await this.competenciaService.empleadosEvaluadosPorEmpresa(
+        idEmpresaEmpleadora,
+      );
+
+    return {
+      message: 'Empleados evaluados por empresa.',
+      data: result, // { total, empleados }
+    };
+  }
 }
