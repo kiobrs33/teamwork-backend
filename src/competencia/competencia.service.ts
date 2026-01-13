@@ -500,8 +500,158 @@ export class CompetenciaService {
     });
   }
 
+  // async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
+  //   const empleados = await this.prisma.evaluacionCompetencia.findMany({
+  //     where: {
+  //       estado: true,
+  //       idEvaluado: { not: null },
+  //       evaluado: {
+  //         idEmpresaEmpleadora,
+  //         estado: true,
+  //       },
+  //     },
+  //     distinct: ['idEvaluado'],
+  //     select: {
+  //       evaluado: {
+  //         select: {
+  //           idEmpleado: true,
+  //           nombres: true,
+  //           apellidos: true,
+  //           codigoEmpleado: true,
+  //         },
+  //       },
+  //     },
+  //   });
+
+  //   return {
+  //     total: empleados.length,
+  //     empleados: empleados.map((e) => e.evaluado),
+  //   };
+  // }
+
+  // async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
+  //   const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+  //     where: {
+  //       estado: true,
+  //       idEvaluado: { not: null },
+  //       evaluado: {
+  //         idEmpresaEmpleadora,
+  //         estado: true,
+  //       },
+  //     },
+  //     include: {
+  //       evaluado: {
+  //         select: {
+  //           idEmpleado: true,
+  //           nombres: true,
+  //           apellidos: true,
+  //           codigoEmpleado: true,
+  //         },
+  //       },
+  //       evaluador: {
+  //         select: {
+  //           idEmpleado: true,
+  //           nombres: true,
+  //           apellidos: true,
+  //           codigoEmpleado: true,
+  //         },
+  //       },
+  //       competencia: {
+  //         select: {
+  //           idCompetencia: true,
+  //           nombre: true,
+  //         },
+  //       },
+  //       nivel: {
+  //         select: {
+  //           idCompetenciaNivel: true,
+  //           nivel: true,
+  //         },
+  //       },
+  //       itemsEvaluados: {
+  //         select: {
+  //           calificacion: true,
+  //         },
+  //       },
+  //     },
+  //     orderBy: {
+  //       fechaCreacion: 'desc',
+  //     },
+  //   });
+
+  //   // ======================================================
+  //   // AGRUPAR POR EMPLEADO EVALUADO
+  //   // ======================================================
+  //   const map = new Map<number, any>();
+
+  //   for (const ev of evaluaciones) {
+  //     const totalItems = ev.itemsEvaluados.length;
+  //     const itemsCalificados = ev.itemsEvaluados.filter(
+  //       (i) => i.calificacion !== null && i.calificacion > 0,
+  //     ).length;
+
+  //     const nivelCalificado = itemsCalificados > 0;
+
+  //     // Determinar tipo de evaluador
+  //     let tipoEvaluador = 'SIN EVALUADOR';
+  //     if (ev.idEvaluador && ev.idEvaluador === ev.idEvaluado) {
+  //       tipoEvaluador = 'AUTOEVALUACIÓN';
+  //     } else if (ev.idEvaluador) {
+  //       tipoEvaluador = 'OTRO EVALUADOR';
+  //     }
+
+  //     const evaluacionDetalle = {
+  //       evaluacionId: ev.idEvaluacionCompetencia,
+
+  //       evaluador: ev.evaluador
+  //         ? {
+  //             idEmpleado: ev.evaluador.idEmpleado,
+  //             nombres: ev.evaluador.nombres,
+  //             apellidos: ev.evaluador.apellidos,
+  //             codigoEmpleado: ev.evaluador.codigoEmpleado,
+  //             tipo: tipoEvaluador,
+  //           }
+  //         : null,
+
+  //       competencia: ev.competencia,
+
+  //       nivel: ev.nivel,
+
+  //       nivelCalificado,
+
+  //       detalleCalificacion: {
+  //         totalItems,
+  //         itemsCalificados,
+  //         itemsSinCalificar: totalItems - itemsCalificados,
+  //       },
+
+  //       estadoEvaluacion: ev.estadoEvaluacion,
+  //       fechaEvaluacion: ev.fechaCreacion,
+  //     };
+
+  //     // Agrupar por evaluado
+  //     if (ev.evaluado && !map.has(ev.evaluado.idEmpleado)) {
+  //       map.set(ev.evaluado.idEmpleado, {
+  //         evaluado: ev.evaluado,
+  //         evaluaciones: [],
+  //       });
+  //     }
+
+  //     if (ev.evaluado) {
+  //       map.get(ev.evaluado.idEmpleado).evaluaciones.push(evaluacionDetalle);
+  //     }
+  //   }
+
+  //   const resultado = Array.from(map.values());
+
+  //   return {
+  //     totalEmpleadosEvaluados: resultado.length,
+  //     empleados: resultado,
+  //   };
+  // }
+
   async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
-    const empleados = await this.prisma.evaluacionCompetencia.findMany({
+    const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
         estado: true,
         idEvaluado: { not: null },
@@ -510,8 +660,7 @@ export class CompetenciaService {
           estado: true,
         },
       },
-      distinct: ['idEvaluado'],
-      select: {
+      include: {
         evaluado: {
           select: {
             idEmpleado: true,
@@ -520,12 +669,125 @@ export class CompetenciaService {
             codigoEmpleado: true,
           },
         },
+        evaluador: {
+          select: {
+            idEmpleado: true,
+            nombres: true,
+            apellidos: true,
+            codigoEmpleado: true,
+          },
+        },
+        competencia: {
+          select: {
+            idCompetencia: true,
+            nombre: true,
+          },
+        },
+        nivel: {
+          select: {
+            idCompetenciaNivel: true,
+            nivel: true,
+          },
+        },
+        itemsEvaluados: {
+          select: {
+            calificacion: true,
+          },
+        },
+      },
+      orderBy: {
+        fechaCreacion: 'desc',
       },
     });
 
+    // ======================================================
+    // AGRUPACIÓN
+    // ======================================================
+    const empleadosMap = new Map<number, any>();
+
+    for (const ev of evaluaciones) {
+      // Skip if evaluado is null
+      if (!ev.evaluado) continue;
+
+      const totalItems = ev.itemsEvaluados.length;
+      const itemsCalificados = ev.itemsEvaluados.filter(
+        (i) => i.calificacion !== null && i.calificacion > 0,
+      ).length;
+
+      const nivelCalificado = itemsCalificados > 0;
+
+      // Tipo de evaluador
+      let tipoEvaluador = 'SIN EVALUADOR';
+      if (ev.idEvaluador && ev.idEvaluador === ev.idEvaluado) {
+        tipoEvaluador = 'AUTOEVALUACIÓN';
+      } else if (ev.idEvaluador) {
+        tipoEvaluador = 'EVALUADOR';
+      }
+
+      // ==============================
+      // ESTRUCTURAS BASE
+      // ==============================
+      if (!empleadosMap.has(ev.evaluado.idEmpleado)) {
+        empleadosMap.set(ev.evaluado.idEmpleado, {
+          evaluado: ev.evaluado,
+          evaluacionesPorEvaluador: new Map<number, any>(),
+        });
+      }
+
+      const empleado = empleadosMap.get(ev.evaluado.idEmpleado);
+
+      const evaluadorId = ev.evaluador?.idEmpleado ?? 0;
+
+      if (!empleado.evaluacionesPorEvaluador.has(evaluadorId)) {
+        empleado.evaluacionesPorEvaluador.set(evaluadorId, {
+          evaluador: ev.evaluador
+            ? { ...ev.evaluador, tipo: tipoEvaluador }
+            : null,
+          niveles: new Map<number, any>(),
+        });
+      }
+
+      const evaluador = empleado.evaluacionesPorEvaluador.get(evaluadorId);
+
+      const nivelId = ev.nivel.idCompetenciaNivel;
+
+      if (!evaluador.niveles.has(nivelId)) {
+        evaluador.niveles.set(nivelId, {
+          nivel: ev.nivel,
+          evaluaciones: [],
+        });
+      }
+
+      evaluador.niveles.get(nivelId).evaluaciones.push({
+        evaluacionId: ev.idEvaluacionCompetencia,
+        competencia: ev.competencia,
+        nivelCalificado,
+        detalleCalificacion: {
+          totalItems,
+          itemsCalificados,
+          itemsSinCalificar: totalItems - itemsCalificados,
+        },
+        estadoEvaluacion: ev.estadoEvaluacion,
+        fechaEvaluacion: ev.fechaCreacion,
+      });
+    }
+
+    // ======================================================
+    // NORMALIZAR MAPS A ARRAYS
+    // ======================================================
+    const empleados = Array.from(empleadosMap.values()).map((emp) => ({
+      evaluado: emp.evaluado,
+      evaluacionesPorEvaluador: Array.from(
+        emp.evaluacionesPorEvaluador.values(),
+      ).map((ev: { evaluador: any; niveles: Map<number, any> }) => ({
+        evaluador: ev.evaluador,
+        niveles: Array.from(ev.niveles.values()),
+      })),
+    }));
+
     return {
-      total: empleados.length,
-      empleados: empleados.map((e) => e.evaluado),
+      totalEmpleadosEvaluados: empleados.length,
+      empleados,
     };
   }
 }

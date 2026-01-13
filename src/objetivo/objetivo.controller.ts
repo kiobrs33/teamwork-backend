@@ -125,4 +125,33 @@ export class ObjetivoController {
     const objetivos = await this.objetivoService.createMasivo(user, dto);
     return { message: 'Objetivos creados masivamente', objetivos };
   }
+
+  @Get('empresa/:idEmpresa/empleados-evaluados')
+  @ApiOperation({
+    summary:
+      'Listar empleados evaluados por empresa con sus objetivos y su jefe evaluador',
+  })
+  @ApiParam({
+    name: 'idEmpresa',
+    description: 'ID de la empresa empleadora',
+    example: 1,
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de empleados evaluados, su evaluador (JEFE) y objetivos',
+  })
+  async empleadosEvaluadosPorEmpresa(
+    @Param('idEmpresa', ParseIntPipe) idEmpresa: number,
+  ) {
+    const resultado =
+      await this.objetivoService.empleadosObjetivosEvaluadosPorEmpresa(
+        idEmpresa,
+      );
+
+    return {
+      message: 'Empleados evaluados por empresa',
+      ...resultado,
+    };
+  }
 }

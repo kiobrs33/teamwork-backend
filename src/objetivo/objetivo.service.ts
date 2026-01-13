@@ -412,4 +412,110 @@ export class ObjetivoService {
       });
     });
   }
+
+  async empleadosObjetivosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
+    // 1️⃣ Obtener empleados con objetivos
+    const empleados = await this.prisma.empleado.findMany({
+      where: {
+        idEmpresaEmpleadora,
+        estado: true,
+        codigoEmpleadoJefe: { not: null },
+      },
+      select: {
+        idEmpleado: true,
+        nombres: true,
+        apellidos: true,
+        codigoEmpleado: true,
+        codigoEmpleadoJefe: true,
+
+        objetivos: {
+          where: { estado: true },
+          select: {
+            idObjetivo: true,
+            objetivoDetalles: {
+              where: { estado: true },
+              select: {
+                idObjetivoDetalle: true,
+                descripcion: true,
+                tipoCalculo: true,
+                unidadMedida: true,
+                pesoEspecifico: true,
+                metaObjetivo: true,
+                metaAlcanzada: true,
+                porcentajeLogrado: true,
+                fechaCulminacion: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // 2️⃣ Mapa para resolver jefes por código
+    const empleadosPorCodigo = new Map(
+      empleados.map((e) => [e.codigoEmpleado, e]),
+    );
+
+    // 3️⃣ Construcción de respuesta final
+    const empleadosEvaluados = empleados
+      .filter((e) => e.objetivos.length > 0)
+      .map((evaluado) => {
+        const jefe = empleadosPorCodigo.get(evaluado.codigoEmpleadoJefe!);
+
+        if (!jefe) return null;
+
+        const objetivos = evaluado.objetivos.map((obj) => {
+          const totalDetalles = obj.objetivoDetalles.length;
+
+          const detallesEvaluados = obj.objetivoDetalles.filter(
+            (d) => d.metaAlcanzada !== null || d.porcentajeLogrado !== null,
+          ).length;
+
+          let estadoEvaluacion = 'PENDIENTE';
+
+          if (totalDetalles === 0) {
+            estadoEvaluacion = 'SIN_DETALLES';
+          } else if (detallesEvaluados === totalDetalles) {
+            estadoEvaluacion = 'EVALUADO';
+          } else if (detallesEvaluados > 0) {
+            estadoEvaluacion = 'PARCIAL';
+          }
+
+          return {
+            idObjetivo: obj.idObjetivo,
+            estadoEvaluacion,
+            resumen: {
+              totalDetalles,
+              detallesEvaluados,
+              detallesPendientes: totalDetalles - detallesEvaluados,
+            },
+            detalles: obj.objetivoDetalles,
+          };
+        });
+
+        return {
+          evaluado: {
+            idEmpleado: evaluado.idEmpleado,
+            nombres: evaluado.nombres,
+            apellidos: evaluado.apellidos,
+            codigoEmpleado: evaluado.codigoEmpleado,
+          },
+          evaluador: {
+            idEmpleado: jefe.idEmpleado,
+            nombres: jefe.nombres,
+            apellidos: jefe.apellidos,
+            codigoEmpleado: jefe.codigoEmpleado,
+            tipo: 'JEFE',
+          },
+          objetivos,
+        };
+      })
+      .filter(Boolean);
+
+    // 4️⃣ Respuesta final
+    return {
+      totalEmpleadosEvaluados: empleadosEvaluados.length,
+      empleados: empleadosEvaluados,
+    };
+  }
 }
