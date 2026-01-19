@@ -23,6 +23,25 @@ export class CompetenciaService {
   // ======================================================
   //                 GET ALL COMPETENCIAS
   // ======================================================
+  // async findAll() {
+  //   try {
+  //     return await this.prisma.competencia.findMany({
+  //       where: { estado: true },
+  //       orderBy: { fechaCreacion: 'desc' },
+  //       include: {
+  //         niveles: {
+  //           include: { items: true },
+  //         },
+  //       },
+  //     });
+  //   } catch (error) {
+  //     this.logger.error('Error al obtener competencias:', error);
+  //     throw new InternalServerErrorException(
+  //       'No se pudieron obtener las competencias.',
+  //     );
+  //   }
+  // }
+
   async findAll() {
     try {
       return await this.prisma.competencia.findMany({
@@ -30,7 +49,14 @@ export class CompetenciaService {
         orderBy: { fechaCreacion: 'desc' },
         include: {
           niveles: {
-            include: { items: true },
+            where: { estado: true },
+            orderBy: { nivel: 'asc' },
+            include: {
+              items: {
+                where: { estado: true },
+                orderBy: { secuencial: 'asc' },
+              },
+            },
           },
         },
       });

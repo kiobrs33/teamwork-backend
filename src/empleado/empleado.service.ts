@@ -555,15 +555,48 @@ export class EmpleadoService {
 
       for (const sub of subordinados) {
         const competencias =
+          // await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+          //   where: {
+          //     idUnidadOcupacionalEmpleadora: sub.idUnidadOcupacionalEmpleadora,
+          //   },
+          //   include: {
+          //     competencia: true,
+          //     competenciaNivel: {
+          //       include: {
+          //         items: true,
+          //       },
+          //     },
+          //   },
+          // });
           await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
             where: {
               idUnidadOcupacionalEmpleadora: sub.idUnidadOcupacionalEmpleadora,
             },
             include: {
-              competencia: true,
+              competencia: {
+                // where: {
+                //   estado: true,
+                // },
+                // orderBy: {
+                //   fechaCreacion: 'desc',
+                // },
+              },
               competenciaNivel: {
+                // where: {
+                //   estado: true,
+                // },
+                // orderBy: {
+                //   nivel: 'asc',
+                // },
                 include: {
-                  items: true,
+                  items: {
+                    where: {
+                      estado: true,
+                    },
+                    orderBy: {
+                      secuencial: 'asc',
+                    },
+                  },
                 },
               },
             },
