@@ -378,13 +378,22 @@ export class CompetenciaService {
 
       // 4) Crear ítems evaluados con snapshot
       await this.prisma.evaluacionCompetenciaItem.createMany({
-        data: nivel.items.map((it) => ({
-          idEvaluacionCompetencia: evaluacion.idEvaluacionCompetencia,
-          idCompetenciaNivelItem: it.idCompetenciaNivelItem,
-          textoItemEvaluado: it.enunciado,
-          calificacion: null,
-          creadoPorId: user.idUsuario,
-        })),
+        // data: nivel.items.map((it) => ({
+        //   idEvaluacionCompetencia: evaluacion.idEvaluacionCompetencia,
+        //   idCompetenciaNivelItem: it.idCompetenciaNivelItem,
+        //   textoItemEvaluado: it.enunciado,
+        //   calificacion: null,
+        //   creadoPorId: user.idUsuario,
+        // })),
+        data: nivel.items
+          .filter((it) => it.estado === true) // 👈 FILTRO AQUÍ
+          .map((it) => ({
+            idEvaluacionCompetencia: evaluacion.idEvaluacionCompetencia,
+            idCompetenciaNivelItem: it.idCompetenciaNivelItem,
+            textoItemEvaluado: it.enunciado,
+            calificacion: null,
+            creadoPorId: user.idUsuario,
+          })),
       });
 
       return this.obtenerEvaluacion(evaluacion.idEvaluacionCompetencia);
