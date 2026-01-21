@@ -14,6 +14,10 @@ import { IniciarEvaluacionDto } from './dto/init-evaluation.dto';
 import { UpdateEvaluacionDto } from './dto/update-evaluation-item.dto';
 // import { CreateCompetenciaConDetallesDto } from './dto/create-competencia-con-detalles.dto';
 
+import * as ExcelJS from 'exceljs';
+import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
+
 @Injectable()
 export class CompetenciaService {
   private readonly logger = new Logger(CompetenciaService.name);
@@ -824,5 +828,612 @@ export class CompetenciaService {
       totalEmpleadosEvaluados: empleados.length,
       empleados,
     };
+  }
+
+  // Resultados Compentecias y Objetivos
+  // async exportarResultadosEmpresaExcel(idEmpresaEmpleadora: number) {
+  //   // ===============================
+  //   // 1️⃣ OBTENER DATA BASE
+  //   // ===============================
+  //   const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+  //     where: {
+  //       estado: true,
+  //       evaluado: {
+  //         idEmpresaEmpleadora,
+  //         estado: true,
+  //       },
+  //     },
+  //     include: {
+  //       evaluado: {
+  //         select: {
+  //           idEmpleado: true,
+  //           nombres: true,
+  //           apellidos: true,
+  //           codigoEmpleado: true,
+  //         },
+  //       },
+  //       competencia: {
+  //         select: { nombre: true },
+  //       },
+  //       itemsEvaluados: {
+  //         select: { calificacion: true },
+  //       },
+  //     },
+  //   });
+
+  //   const objetivos = await this.prisma.objetivo.findMany({
+  //     where: {
+  //       estado: true,
+  //       empleado: {
+  //         idEmpresaEmpleadora,
+  //         estado: true,
+  //       },
+  //     },
+  //     include: {
+  //       empleado: {
+  //         select: {
+  //           idEmpleado: true,
+  //           nombres: true,
+  //           apellidos: true,
+  //           codigoEmpleado: true,
+  //         },
+  //       },
+  //       objetivoDetalles: {
+  //         where: { estado: true },
+  //         select: {
+  //           porcentajeLogrado: true,
+  //           pesoEspecifico: true,
+  //         },
+  //       },
+  //     },
+  //   });
+
+  //   // ===============================
+  //   // 2️⃣ AGRUPAR POR EMPLEADO
+  //   // ===============================
+  //   const empleados = new Map<number, any>();
+
+  //   // ----- COMPETENCIAS -----
+  //   for (const ev of evaluaciones) {
+  //     if (!ev.evaluado) continue;
+
+  //     if (!empleados.has(ev.evaluado.idEmpleado)) {
+  //       empleados.set(ev.evaluado.idEmpleado, {
+  //         empleado: ev.evaluado,
+  //         competencias: [],
+  //         objetivos: [],
+  //       });
+  //     }
+
+  //     const calificaciones = ev.itemsEvaluados
+  //       .map((i) => i.calificacion)
+  //       .filter((n) => n !== null) as number[];
+
+  //     const promedio =
+  //       calificaciones.length > 0
+  //         ? calificaciones.reduce((a, b) => a + b, 0) / calificaciones.length
+  //         : 0;
+
+  //     empleados.get(ev.evaluado.idEmpleado).competencias.push({
+  //       competencia: ev.competencia.nombre,
+  //       promedio,
+  //     });
+  //   }
+
+  //   // ----- OBJETIVOS -----
+  //   for (const obj of objetivos) {
+  //     const emp = empleados.get(obj.empleado.idEmpleado);
+  //     if (!emp) continue;
+
+  //     let totalPeso = 0;
+  //     let acumulado = 0;
+
+  //     for (const det of obj.objetivoDetalles) {
+  //       if (det.porcentajeLogrado !== null) {
+  //         acumulado += det.porcentajeLogrado * det.pesoEspecifico;
+  //         totalPeso += det.pesoEspecifico;
+  //       }
+  //     }
+
+  //     const porcentajeObjetivo = totalPeso > 0 ? acumulado / totalPeso : 0;
+
+  //     emp.objetivos.push(porcentajeObjetivo);
+  //   }
+
+  //   // ===============================
+  //   // 3️⃣ CREAR EXCEL
+  //   // ===============================
+  //   const workbook = new ExcelJS.Workbook();
+  //   const sheet = workbook.addWorksheet('Resultados');
+
+  //   sheet.columns = [
+  //     { header: 'Código', key: 'codigo', width: 15 },
+  //     { header: 'Empleado', key: 'empleado', width: 30 },
+  //     { header: 'Resultado Competencias (%)', key: 'competencias', width: 25 },
+  //     { header: 'Resultado Objetivos (%)', key: 'objetivos', width: 25 },
+  //     { header: 'Resultado Final (%)', key: 'final', width: 20 },
+  //   ];
+
+  //   // ===============================
+  //   // 4️⃣ LLENAR DATA
+  //   // ===============================
+  //   for (const emp of empleados.values()) {
+  //     const promedioCompetencias =
+  //       emp.competencias.length > 0
+  //         ? emp.competencias.reduce((a, b) => a + b.promedio, 0) /
+  //           emp.competencias.length
+  //         : 0;
+
+  //     const promedioObjetivos =
+  //       emp.objetivos.length > 0
+  //         ? emp.objetivos.reduce((a, b) => a + b, 0) / emp.objetivos.length
+  //         : 0;
+
+  //     const resultadoFinal =
+  //       promedioCompetencias * 0.8 + promedioObjetivos * 0.2;
+
+  //     sheet.addRow({
+  //       codigo: emp.empleado.codigoEmpleado,
+  //       empleado: `${emp.empleado.nombres} ${emp.empleado.apellidos}`,
+  //       competencias: promedioCompetencias.toFixed(2),
+  //       objetivos: promedioObjetivos.toFixed(2),
+  //       final: resultadoFinal.toFixed(2),
+  //     });
+  //   }
+
+  //   // ===============================
+  //   // 5️⃣ GUARDAR ARCHIVO
+  //   // ===============================
+  //   const dir = join(process.cwd(), 'exports');
+  //   if (!existsSync(dir)) mkdirSync(dir);
+
+  //   const filePath = join(
+  //     dir,
+  //     `resultados_empresa_${idEmpresaEmpleadora}.xlsx`,
+  //   );
+
+  //   await workbook.xlsx.writeFile(filePath);
+
+  //   return {
+  //     filePath,
+  //     fileName: `resultados_empresa_${idEmpresaEmpleadora}.xlsx`,
+  //   };
+  // }
+
+  async exportarResultadosEmpresaExcel(idEmpresaEmpleadora: number) {
+    // ===============================
+    // 1️⃣ OBTENER DATA BASE
+    // ===============================
+    const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+      where: {
+        estado: true,
+        evaluado: {
+          idEmpresaEmpleadora,
+          estado: true,
+        },
+      },
+      include: {
+        evaluado: {
+          select: {
+            idEmpleado: true,
+            nombres: true,
+            apellidos: true,
+            codigoEmpleado: true,
+          },
+        },
+        competencia: {
+          select: { nombre: true },
+        },
+        itemsEvaluados: {
+          select: { calificacion: true },
+        },
+      },
+    });
+
+    const objetivos = await this.prisma.objetivo.findMany({
+      where: {
+        estado: true,
+        empleado: {
+          idEmpresaEmpleadora,
+          estado: true,
+        },
+      },
+      include: {
+        empleado: {
+          select: {
+            idEmpleado: true,
+            nombres: true,
+            apellidos: true,
+            codigoEmpleado: true,
+          },
+        },
+        objetivoDetalles: {
+          where: { estado: true },
+          select: {
+            porcentajeLogrado: true,
+            pesoEspecifico: true,
+          },
+        },
+      },
+    });
+
+    // ===============================
+    // 2️⃣ AGRUPAR POR EMPLEADO
+    // ===============================
+    const empleados = new Map<number, any>();
+
+    // ----- COMPETENCIAS -----
+    for (const ev of evaluaciones) {
+      if (!ev.evaluado) continue;
+
+      if (!empleados.has(ev.evaluado.idEmpleado)) {
+        empleados.set(ev.evaluado.idEmpleado, {
+          empleado: ev.evaluado,
+          competencias: [],
+          objetivos: [],
+        });
+      }
+
+      const calificaciones = ev.itemsEvaluados
+        .map((i) => i.calificacion)
+        .filter((n) => n !== null) as number[];
+
+      const promedio =
+        calificaciones.length > 0
+          ? calificaciones.reduce((a, b) => a + b, 0) / calificaciones.length
+          : 0;
+
+      empleados.get(ev.evaluado.idEmpleado).competencias.push(promedio);
+    }
+
+    // ----- OBJETIVOS -----
+    for (const obj of objetivos) {
+      const emp = empleados.get(obj.empleado.idEmpleado);
+      if (!emp) continue;
+
+      let totalPeso = 0;
+      let acumulado = 0;
+
+      for (const det of obj.objetivoDetalles) {
+        if (det.porcentajeLogrado !== null) {
+          acumulado += det.porcentajeLogrado * det.pesoEspecifico;
+          totalPeso += det.pesoEspecifico;
+        }
+      }
+
+      const porcentajeObjetivo = totalPeso > 0 ? acumulado / totalPeso : 0;
+      emp.objetivos.push(porcentajeObjetivo);
+    }
+
+    // TODO: Porcentajes
+    const competenciaPor = 0.7;
+    const objetivoPor = 0.3;
+
+    // ===============================
+    // 3️⃣ CREAR EXCEL
+    // ===============================
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Resultados');
+
+    sheet.columns = [
+      { header: 'Código', key: 'codigo', width: 15 },
+      { header: 'Empleado', key: 'empleado', width: 35 },
+      {
+        header: `Resultado Competencias (${competenciaPor}%)`,
+        key: 'competencias',
+        width: 28,
+      },
+      {
+        header: `Resultado Objetivos (${objetivoPor}%)`,
+        key: 'objetivos',
+        width: 25,
+      },
+      { header: 'Resultado Final (%)', key: 'final', width: 20 },
+    ];
+
+    // ===============================
+    // 4️⃣ LLENAR DATA
+    // ===============================
+    for (const emp of empleados.values()) {
+      const promedioCompetencias =
+        emp.competencias.length > 0
+          ? emp.competencias.reduce((a, b) => a + b, 0) /
+            emp.competencias.length
+          : 0;
+
+      const promedioObjetivos =
+        emp.objetivos.length > 0
+          ? emp.objetivos.reduce((a, b) => a + b, 0) / emp.objetivos.length
+          : 0;
+
+      // PORCENTAJES
+      const resultadoFinal =
+        promedioCompetencias * competenciaPor + promedioObjetivos * objetivoPor;
+
+      sheet.addRow({
+        codigo: emp.empleado.codigoEmpleado,
+        empleado: `${emp.empleado.nombres} ${emp.empleado.apellidos}`,
+        competencias: Number(promedioCompetencias.toFixed(2)),
+        objetivos: Number(promedioObjetivos.toFixed(2)),
+        final: Number(resultadoFinal.toFixed(2)),
+      });
+    }
+
+    return workbook;
+  }
+
+  // Competencias
+  async exportarCompetenciasPorEmpresaExcel(idEmpresaEmpleadora: number) {
+    const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+      where: {
+        estado: true,
+        // estadoEvaluacion: 'PROCESO',
+        evaluado: {
+          idEmpresaEmpleadora,
+        },
+      },
+      include: {
+        evaluado: {
+          include: {
+            empresaEmpleadora: true,
+            areaEmpleadora: true,
+            puestoEmpleadora: true,
+            unidadOcupacionalEmpleadora: true,
+            gerenciaEmpleadora: true,
+          },
+        },
+        evaluador: true,
+        competencia: true,
+        nivel: true,
+        itemsEvaluados: {
+          include: {
+            item: true,
+          },
+        },
+      },
+      orderBy: [
+        { evaluado: { apellidos: 'asc' } },
+        { competencia: { nombre: 'asc' } },
+      ],
+    });
+
+    console.log('COMPETENCIAS', evaluaciones);
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Competencias');
+
+    sheet.columns = [
+      { header: 'Empresa', key: 'empresa', width: 30 },
+      { header: 'Codigo Empleado', key: 'codigoEmpleado', width: 35 },
+      { header: 'Empleado', key: 'empleado', width: 35 },
+      { header: 'Documento', key: 'documento', width: 15 },
+      { header: 'Codigo Jefe', key: 'codigoJefe', width: 35 },
+      { header: 'Evaluador', key: 'evaluador', width: 30 },
+      { header: 'Área', key: 'area', width: 25 },
+      { header: 'Puesto', key: 'puesto', width: 25 },
+      { header: 'Unidad', key: 'unidad', width: 25 },
+      { header: 'Gerencia', key: 'gerencia', width: 25 },
+      { header: 'Competencia', key: 'competencia', width: 30 },
+      { header: 'Nivel', key: 'nivel', width: 10 },
+      { header: 'Ítem Evaluado', key: 'item', width: 50 },
+      { header: 'Calificación', key: 'calificacion', width: 15 },
+    ];
+
+    evaluaciones.forEach((evaluacion) => {
+      evaluacion.itemsEvaluados.forEach((item) => {
+        sheet.addRow({
+          empresa: evaluacion.evaluado?.empresaEmpleadora.nombreEmpresa,
+          codigoEmpleado: evaluacion.evaluado?.codigoEmpleado,
+          empleado: `${evaluacion.evaluado?.nombres} ${evaluacion.evaluado?.apellidos}`,
+          documento: Number(evaluacion.evaluado?.documento),
+          codigoJefe: evaluacion.evaluador
+            ? evaluacion.evaluador?.codigoEmpleado
+            : evaluacion.evaluado?.codigoEmpleado,
+          evaluador: evaluacion.evaluador
+            ? `${evaluacion.evaluador.nombres} ${evaluacion.evaluador.apellidos}`
+            : 'Autoevaluación',
+          area: evaluacion.evaluado?.areaEmpleadora.descripcion,
+          puesto: evaluacion.evaluado?.puestoEmpleadora.descripcion,
+          unidad: evaluacion.evaluado?.unidadOcupacionalEmpleadora.descripcion,
+          gerencia: evaluacion.evaluado?.gerenciaEmpleadora.descripcion,
+          competencia: evaluacion.competencia.nombre,
+          nivel: evaluacion.nivel.nivel,
+          item: item.textoItemEvaluado ?? item.item.enunciado,
+          calificacion: item.calificacion,
+        });
+      });
+    });
+
+    return workbook;
+  }
+
+  // async exportarObjetivosPorEmpresaExcel(idEmpresaEmpleadora: number) {
+  //   const objetivos = await this.prisma.objetivo.findMany({
+  //     where: {
+  //       estado: true,
+  //       empleado: {
+  //         idEmpresaEmpleadora,
+  //       },
+  //     },
+  //     include: {
+  //       empleado: {
+  //         include: {
+  //           empresaEmpleadora: true,
+  //           areaEmpleadora: true,
+  //           puestoEmpleadora: true,
+  //           unidadOcupacionalEmpleadora: true,
+  //           gerenciaEmpleadora: true,
+  //         },
+  //       },
+  //       objetivoDetalles: {
+  //         where: { estado: true },
+  //         orderBy: { secuencial: 'asc' },
+  //       },
+  //     },
+  //     orderBy: [{ empleado: { apellidos: 'asc' } }],
+  //   });
+
+  //   const workbook = new ExcelJS.Workbook();
+  //   const sheet = workbook.addWorksheet('Objetivos');
+
+  //   sheet.columns = [
+  //     { header: 'Empresa', key: 'empresa', width: 30 },
+  //     { header: 'Codigo Empleado', key: 'codigoEmpleado', width: 35 }, //
+  //     { header: 'Empleado', key: 'empleado', width: 35 },
+  //     { header: 'Documento', key: 'documento', width: 15 },
+  //     { header: 'Codigo Jefe', key: 'codigoJefe', width: 35 }, //
+  //     // { header: 'Evaluador', key: 'evaluador', width: 30 }, // FALTA ESTO
+  //     { header: 'Área', key: 'area', width: 25 },
+  //     { header: 'Puesto', key: 'puesto', width: 25 },
+  //     { header: 'Unidad', key: 'unidad', width: 25 },
+  //     { header: 'Gerencia', key: 'gerencia', width: 25 },
+  //     { header: 'Objetivo', key: 'objetivo', width: 40 },
+  //     { header: 'Peso', key: 'peso', width: 10 },
+  //     { header: 'Meta', key: 'meta', width: 12 },
+  //     { header: 'Meta Alcanzada', key: 'metaAlcanzada', width: 15 },
+  //     { header: '% Logrado', key: 'porcentaje', width: 12 },
+  //     { header: 'Fecha Culminación', key: 'fecha', width: 18 },
+  //   ];
+
+  //   objetivos.forEach((obj) => {
+  //     obj.objetivoDetalles.forEach((det) => {
+  //       sheet.addRow({
+  //         empresa: obj.empleado.empresaEmpleadora.nombreEmpresa,
+  //         codigoEmpleado: obj.empleado.codigoEmpleado,
+  //         empleado: `${obj.empleado.nombres} ${obj.empleado.apellidos}`,
+  //         documento: obj.empleado.documento,
+  //         codigoJefe: obj.empleado.codigoEmpleadoJefe,
+  //         area: obj.empleado.areaEmpleadora.descripcion,
+  //         puesto: obj.empleado.puestoEmpleadora.descripcion,
+  //         unidad: obj.empleado.unidadOcupacionalEmpleadora.descripcion,
+  //         gerencia: obj.empleado.gerenciaEmpleadora.descripcion,
+  //         objetivo: det.descripcion,
+  //         peso: det.pesoEspecifico,
+  //         meta: det.metaObjetivo,
+  //         metaAlcanzada: det.metaAlcanzada,
+  //         porcentaje: det.porcentajeLogrado,
+  //         fecha: det.fechaCulminacion,
+  //       });
+  //     });
+  //   });
+
+  //   return workbook;
+  // }
+
+  async exportarObjetivosPorEmpresaExcel(idEmpresaEmpleadora: number) {
+    const objetivos = await this.prisma.objetivo.findMany({
+      where: {
+        estado: true,
+        empleado: {
+          idEmpresaEmpleadora,
+        },
+      },
+      include: {
+        empleado: {
+          include: {
+            empresaEmpleadora: true,
+            areaEmpleadora: true,
+            puestoEmpleadora: true,
+            unidadOcupacionalEmpleadora: true,
+            gerenciaEmpleadora: true,
+          },
+        },
+        objetivoDetalles: {
+          where: { estado: true },
+          orderBy: { secuencial: 'asc' },
+        },
+      },
+      orderBy: [{ empleado: { apellidos: 'asc' } }],
+    });
+
+    /* ===============================
+     1. Obtener códigos de jefes
+     =============================== */
+    const codigosJefe = [
+      ...new Set(
+        objetivos
+          .map((o) => o.empleado.codigoEmpleadoJefe)
+          .filter((code): code is string => code !== null),
+      ),
+    ];
+
+    console.log('CODIGOS JEFE', codigosJefe);
+
+    /* ===============================
+     2. Buscar empleados evaluadores
+     =============================== */
+    const jefes = await this.prisma.empleado.findMany({
+      where: {
+        codigoEmpleado: { in: codigosJefe },
+      },
+      select: {
+        codigoEmpleado: true,
+        nombres: true,
+        apellidos: true,
+      },
+    });
+
+    console.log('JEFES', jefes);
+
+    /* ===============================
+     3. Crear mapa de evaluadores
+     =============================== */
+    const evaluadorMap = new Map(
+      jefes.map((j) => [j.codigoEmpleado, `${j.nombres} ${j.apellidos}`]),
+    );
+
+    console.log('EVALUDOR MAP', evaluadorMap);
+
+    /* ===============================
+     4. Excel
+     =============================== */
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Objetivos');
+
+    sheet.columns = [
+      { header: 'Empresa', key: 'empresa', width: 30 },
+      { header: 'Código Empleado', key: 'codigoEmpleado', width: 20 },
+      { header: 'Empleado', key: 'empleado', width: 35 },
+      { header: 'Documento', key: 'documento', width: 15 },
+      { header: 'Código Jefe', key: 'codigoJefe', width: 20 },
+      { header: 'Evaluador', key: 'evaluador', width: 35 },
+      { header: 'Área', key: 'area', width: 25 },
+      { header: 'Puesto', key: 'puesto', width: 25 },
+      { header: 'Unidad', key: 'unidad', width: 25 },
+      { header: 'Gerencia', key: 'gerencia', width: 25 },
+      { header: 'Objetivo', key: 'objetivo', width: 40 },
+      { header: 'Peso', key: 'peso', width: 10 },
+      { header: 'Meta', key: 'meta', width: 12 },
+      { header: 'Meta Alcanzada', key: 'metaAlcanzada', width: 15 },
+      { header: '% Logrado', key: 'porcentaje', width: 12 },
+      { header: 'Fecha Culminación', key: 'fecha', width: 18 },
+    ];
+
+    objetivos.forEach((obj) => {
+      obj.objetivoDetalles.forEach((det) => {
+        sheet.addRow({
+          empresa: obj.empleado.empresaEmpleadora.nombreEmpresa,
+          codigoEmpleado: obj.empleado.codigoEmpleado,
+          empleado: `${obj.empleado.nombres} ${obj.empleado.apellidos}`,
+          documento: Number(obj.empleado.documento),
+          codigoJefe: obj.empleado.codigoEmpleadoJefe,
+          evaluador: obj.empleado.codigoEmpleadoJefe
+            ? evaluadorMap.get(obj.empleado.codigoEmpleadoJefe)
+            : 'SIN JEFE',
+          area: obj.empleado.areaEmpleadora.descripcion,
+          puesto: obj.empleado.puestoEmpleadora.descripcion,
+          unidad: obj.empleado.unidadOcupacionalEmpleadora.descripcion,
+          gerencia: obj.empleado.gerenciaEmpleadora.descripcion,
+          objetivo: det.descripcion,
+          peso: det.pesoEspecifico,
+          meta: det.metaObjetivo,
+          metaAlcanzada: det.metaAlcanzada,
+          porcentaje: det.porcentajeLogrado,
+          fecha: det.fechaCulminacion,
+        });
+      });
+    });
+
+    return workbook;
   }
 }

@@ -29,6 +29,10 @@ import { CreateCompetenciaNivelesItemsDto } from './dto/create-competencia-nivel
 import { IniciarEvaluacionDto } from './dto/init-evaluation.dto';
 import { UpdateEvaluacionDto } from './dto/update-evaluation-item.dto';
 
+import { Res } from '@nestjs/common';
+import { Response } from 'express';
+import { createReadStream } from 'fs';
+
 @ApiTags('Competencia')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -333,5 +337,118 @@ export class CompetenciaController {
       message: 'Empleados evaluados por empresa.',
       data: result, // { total, empleados }
     };
+  }
+
+  // ======================================================
+  //  GET /competencia/evaluaciones/empresa/:id/export-excel
+  // ======================================================
+  @Get('evaluaciones/empresa/:idEmpresaEmpleadora/export-excel')
+  @ApiOperation({
+    summary: 'Exportar resultados de evaluación por empresa en Excel',
+  })
+  @ApiParam({
+    name: 'idEmpresaEmpleadora',
+    description: 'ID de la empresa empleadora',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Archivo Excel generado correctamente',
+  })
+  async exportarResultadosEmpresaExcel(
+    @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Res() res: Response,
+  ) {
+    const workbook =
+      await this.competenciaService.exportarResultadosEmpresaExcel(
+        idEmpresaEmpleadora,
+      );
+
+    // res.set({
+    //   'Content-Type':
+    //     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    //   'Content-Disposition':
+    //     'attachment; filename="reporte_resultados_evaluaciones.xlsx"',
+    // });
+
+    // await workbook.xlsx.write(res);
+    // res.end();
+
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':
+        'attachment; filename="reporte_resultados_evaluaciones.xlsx"',
+      'Content-Length': buffer.byteLength,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('reportes/empresa/:idEmpresaEmpleadora/competencias/export-excel')
+  async exportarCompetenciasPorEmpresa(
+    @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Res() res: Response,
+  ) {
+    const workbook =
+      await this.competenciaService.exportarCompetenciasPorEmpresaExcel(
+        idEmpresaEmpleadora,
+      );
+
+    // res.set({
+    //   'Content-Type':
+    //     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    //   'Content-Disposition':
+    //     'attachment; filename="reporte_competencias_empresa.xlsx"',
+    // });
+
+    // await workbook.xlsx.write(res);
+    // res.end();
+
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':
+        'attachment; filename="reporte_competencias_empresa.xlsx"',
+      'Content-Length': buffer.byteLength,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('reportes/empresa/:idEmpresaEmpleadora/objetivos/export-excel')
+  async exportarObjetivosPorEmpresa(
+    @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Res() res: Response,
+  ) {
+    const workbook =
+      await this.competenciaService.exportarObjetivosPorEmpresaExcel(
+        idEmpresaEmpleadora,
+      );
+
+    // res.set({
+    //   'Content-Type':
+    //     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    //   'Content-Disposition':
+    //     'attachment; filename="reporte_objetivos_empresa.xlsx"',
+    // });
+
+    // await workbook.xlsx.write(res);
+    // res.end();
+
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':
+        'attachment; filename="reporte_objetivos_empresa.xlsx"',
+      'Content-Length': buffer.byteLength,
+    });
+
+    res.end(buffer);
   }
 }
