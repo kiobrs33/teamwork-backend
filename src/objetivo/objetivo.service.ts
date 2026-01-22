@@ -383,11 +383,11 @@ export class ObjetivoService {
           );
         }
 
-        if (detalle.porcentajeLogrado < 0 || detalle.porcentajeLogrado > 100) {
-          throw new BadRequestException(
-            'El porcentaje logrado debe estar entre 0 y 100',
-          );
-        }
+        // if (detalle.porcentajeLogrado < 0 || detalle.porcentajeLogrado > 100) {
+        //   throw new BadRequestException(
+        //     'El porcentaje logrado debe estar entre 0 y 100',
+        //   );
+        // }
 
         await tx.objetivoDetalle.update({
           where: { idObjetivoDetalle: detalle.idObjetivoDetalle },

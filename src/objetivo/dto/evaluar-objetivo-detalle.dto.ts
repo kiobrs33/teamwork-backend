@@ -21,7 +21,6 @@ export class EvaluarObjetivoDetalleDto {
     example: 85,
     description: 'Porcentaje logrado del detalle (0 - 100)',
     minimum: 0,
-    maximum: 100,
   })
   @IsNumber()
   porcentajeLogrado: number;
