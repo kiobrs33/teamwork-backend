@@ -236,4 +236,40 @@ export class EmpleadoController {
       data: { subordinados },
     };
   }
+
+  // ============================================================
+  // OBTENER JEFE DEL EMPLEADO + COMPETENCIAS (POR ID USUARIO)
+  // ============================================================
+  @Get('jefe/competencias/by-user/:id')
+  @ApiOperation({
+    summary:
+      'Obtener el jefe del empleado y sus competencias según su Unidad Ocupacional a partir del ID de usuario',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID del usuario del empleado',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Jefe y competencias obtenidos correctamente.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'El empleado no tiene jefe asignado o no existe.',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Error interno al obtener el jefe con competencias.',
+  })
+  async findJefeWithCompetenciasByUsuario(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const jefeConCompetencias =
+      await this.empleadoService.findJefeWithCompetenciasByUsuario(id);
+
+    return {
+      message: 'Jefe y competencias obtenidos correctamente.',
+      data: { jefeConCompetencias },
+    };
+  }
 }

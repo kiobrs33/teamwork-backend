@@ -422,7 +422,7 @@ export class EmpleadoService {
     }
   }
 
-  // ============================================================
+  // Solo subordinados de cada JEFE empleado
   // OBTENER SUBORDINADOS POR USUARIO LOGUEADO
   // ============================================================
   async findSubordinadosByUsuario(id: number) {
@@ -465,6 +465,86 @@ export class EmpleadoService {
       this.logger.error('Error al obtener subordinados por usuario:', error);
       throw new InternalServerErrorException(
         'No se pudo obtener los subordinados.',
+      );
+    }
+  }
+
+  // Obtener al JEDE inmediato con sus compentecias para evaluacion 180
+  async findJefeWithCompetenciasByUsuario(idUsuario: number) {
+    try {
+      // 1. Obtener el empleado asociado al usuario
+      const empleado = await this.prisma.empleado.findFirst({
+        where: {
+          idUsuario,
+          estado: true,
+        },
+        select: {
+          codigoEmpleadoJefe: true,
+        },
+      });
+
+      if (!empleado) {
+        throw new NotFoundException(
+          'El usuario no tiene un empleado asociado o no existe.',
+        );
+      }
+
+      if (!empleado.codigoEmpleadoJefe) {
+        throw new NotFoundException('El empleado no tiene un jefe asignado.');
+      }
+
+      // 2. Obtener datos del jefe
+      const jefe = await this.prisma.empleado.findFirst({
+        where: {
+          codigoEmpleado: empleado.codigoEmpleadoJefe,
+          estado: true,
+        },
+        include: {
+          unidadOcupacionalEmpleadora: true,
+        },
+      });
+
+      if (!jefe) {
+        throw new NotFoundException('No se encontró el jefe del empleado.');
+      }
+
+      // 3. Obtener competencias del jefe según su unidad ocupacional
+      const competencias =
+        await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+          where: {
+            idUnidadOcupacionalEmpleadora: jefe.idUnidadOcupacionalEmpleadora,
+          },
+          include: {
+            competencia: {},
+            competenciaNivel: {
+              include: {
+                items: {
+                  where: {
+                    estado: true,
+                  },
+                  orderBy: {
+                    secuencial: 'asc',
+                  },
+                },
+              },
+            },
+          },
+        });
+
+      return {
+        jefe,
+        competenciasAsignadas: competencias,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+
+      this.logger.error(
+        `Error al obtener jefe con competencias (idUsuario=${idUsuario}):`,
+        error,
+      );
+
+      throw new InternalServerErrorException(
+        'No se pudo obtener el jefe con competencias.',
       );
     }
   }
@@ -514,7 +594,7 @@ export class EmpleadoService {
     }
   }
 
-  // ============================================================
+  //Subordinado con sus competencias
   // SUBORDINADOS (POR ID DEL JEFE) + COMPETENCIAS DE LA UO
   // ============================================================
   async findSubordinadosWithCompetenciasByJefe(idEmpleadoJefe: number) {

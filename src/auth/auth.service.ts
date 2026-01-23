@@ -13,7 +13,19 @@ export class AuthService {
   async validateUser(codigoUsuario: string, contrasena: string) {
     const usuario = await this.prisma.usuario.findFirst({
       where: { codigoUsuario },
-      include: { empleado: true },
+      include: {
+        empleado: {
+          include: {
+            empresaEmpleadora: {
+              select: {
+                idEmpresaEmpleadora: true,
+                nombreEmpresa: true,
+                modeloEmpresa: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!usuario || !usuario.estado) {
