@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Reporte de Evaluación de Desempeño</title>
+    <style>
+      {{{css}}}
+    </style>
+  </head>
+  <body>
+    <div class="report">
+      <img
+        src="https://firebasestorage.googleapis.com/v0/b/fir-ebc49.appspot.com/o/teamwork%2Fseal-logo.png?alt=media&token=8a7f68dc-d20e-4e0b-bb46-aec6987f4441"
+        alt="logo"
+        class="report__logo"
+      />
+
+      <h2 class="report__title">
+        REPORTE DE RESULTADOS Y RETROALIMENTACIÓN DE LA EVALUACIÓN DE DESEMPEÑO
+      </h2>
+
+      <h4 class="report__subtitle">DATOS DEL TRABAJADOR</h4>
+      <div class="table">
+        <table>
+          <tbody>
+            <tr>
+              <td class="table__cell table__cell--bold">
+                Apellidos y Nombres:
+              </td>
+              <td class="table__cell">René Edgard Lozano Ramos</td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--bold">Puesto:</td>
+              <td class="table__cell">OPERADOR SCADA</td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--bold">Gerencia:</td>
+              <td class="table__cell">GERENCIA DE OPERACIONES</td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--bold">Área:</td>
+              <td class="table__cell">UNIDAD DE CONTROL DE OPERACIONES</td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--bold">Grupo:</td>
+              <td class="table__cell">
+                Grupo de evaluación de desempeño 2022 - G1
+              </td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--bold">
+                Fecha de Evaluación:
+              </td>
+              <td class="table__cell">Diciembre 2022</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="report__title">
+        RESULTADO DE LA EVALUACIÓN DE DESEMPEÑO | INDIVIDUAL
+      </h2>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Evaluación</th>
+              <th class="table__header">Ponderado</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">ED General</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Competencias
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                65%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                69%
+              </td>
+              <td
+                rowspan="2"
+                class="table__cell table__cell--center table__cell--bold"
+              >
+                80%
+              </td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Objetivos
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                35%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                100%
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="graphics">
+        <div class="graphics__item">
+          <h4 class="graphics__title">Resultado Obtenido ED General</h4>
+          <canvas id="doughnutChart" class="canvas"></canvas>
+        </div>
+        <div class="graphics__item">
+          <h4 class="graphics__title">Resultados de ED por Competencias</h4>
+           <canvas id="radarChart" class="canvas"></canvas>
+        </div>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">Competencias Evaluadas</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Resultado Obtenido</th>
+              <th class="table__header">Superavit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell">
+                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
+                Molestiae sint, debitis unde incidunt
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                Sin Autoev.
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                75%
+              </td>
+              <td class="table__cell table__cell--center table__cell--bold">
+                0%
+              </td>
+            </tr>
+            <tr>
+              <td colspan="5" class="table__cell">
+                <span class="u-font-bold">Comentarios del Jefe:</span>
+                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
+                consequatur iusto esse dolorum corporis soluta incidunt
+                distinctio nesciunt, facilis tempore excepturi assumenda
+                doloremque odio numquam asperiores unde aspernatur autem
+                suscipit!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">ED. COMPETENCIAS</th>
+              <th class="table__header table__header--bgcolor">
+                En Desarrollo
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td
+                class="table__cell table__cell--bgcolor table__cell--center table__cell--bold"
+              >
+                80%
+              </td>
+              <td class="table__cell table__cell--center">
+                Lorem ipsum dolor, sit amet consectetur adipisicing elit. Vel
+                porro, corrupti hic totam soluta sit dignissimos iste deleniti
+                ipsa vitae ipsum sed enim autem perferendis inventore pariatur
+                tempore iusto eligendi.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="container">
+        <h2 class="report__title">
+          RESULTADO DE LA EVALUACIÓN DE DESEMPEÑO | INDIVIDUAL
+        </h2>
+
+        <div class="graphics">
+          <div class="graphics__item">
+            <h4 class="graphics__title">Resultado Obtenido ED General</h4>
+            <canvas id="barChart" class="canvas"></canvas>
+          </div>
+          <div class="graphics__item">
+            <h4 class="graphics__title">Resultado Obtenido ED General</h4>
+            <canvas id="pieChart" class="canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      {{!-- <div style="display: flex; flex-wrap: wrap; gap: 30px;">
+        <canvas id="barChart" width="400" height="250"></canvas>
+        <canvas id="doughnutChart" width="300" height="300"></canvas>
+        <canvas id="pieChart" width="300" height="300"></canvas>
+        <canvas id="radarChart" width="400" height="300"></canvas>
+      </div> --}}
+
+      <div class="container">
+        <h2 class="report__title">
+          RESULTADOS CUALITATIVOS
+        </h2>
+
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header table__header--bgcolor">
+                  FORTALEZAS
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="table__cell">
+                  <br><br><br><br><br>
+                  <br><br><br><br><br>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header table__header--bgcolor">
+                  OPORTUNIDADES DE DESARROLLO
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="table__cell">
+                  <br><br><br><br><br>
+                  <br><br><br><br><br>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="container">
+        <h2 class="report__title">
+          PLÁN DE ACCIÓN
+        </h2>
+
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header">Objetivo de Desarrollo</th>
+                <th class="table__header">Desarrollo enfocado a</th>
+                <th class="table__header">Actividad Propuesta</th>
+                <th class="table__header">Fecha Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="container">
+        <h2 class="report__title">
+          COMENTARIOS FINALES
+        </h2>
+
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header table__header--bgcolor">
+                  COMENTARIOS DEL EVALUADOR
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="table__cell">
+                  <br><br><br><br><br>
+                  <br><br><br><br><br>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header table__header--bgcolor">
+                  COMENTARIOS DEL EVALUADO
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="table__cell">
+                  <br><br><br><br><br>
+                  <br><br><br><br><br>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="signatures">
+        <div class="signatures__item">
+          <br><br><br><br><br>
+          <hr>
+          <h3 class="signatures__subtitle">FIRMA EVALUADOR</h3>
+        </div>
+        <div class="signatures__item">
+          <br><br><br><br><br>
+          <hr>
+          <h3 class="signatures__subtitle">FIRMA EVALUADO</h3>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      const chartData = {{{json chartData}}};
+
+      /* ===== BAR ===== */
+      new Chart(document.getElementById('barChart'), {
+        type: 'bar',
+        data: chartData,
+        options: {
+          responsive: false,
+          animation: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100
+            }
+          }
+        }
+      });
+
+      /* ===== DOUGHNUT ===== */
+      new Chart(document.getElementById('doughnutChart'), {
+        type: 'doughnut',
+        data: {
+          labels: chartData.labels,
+          datasets: [{
+            data: chartData.datasets[0].data,
+            backgroundColor: [
+              '#1890ff',
+              '#52c41a',
+              '#faad14',
+              '#f5222d',
+              '#722ed1'
+            ]
+          }]
+        },
+        options: {
+          responsive: false,
+          animation: false,
+          cutout: '60%'
+        }
+      });
+
+      /* ===== PIE ===== */
+      new Chart(document.getElementById('pieChart'), {
+        type: 'pie',
+        data: {
+          labels: chartData.labels,
+          datasets: [{
+            data: chartData.datasets[0].data,
+            backgroundColor: [
+              '#1890ff',
+              '#52c41a',
+              '#faad14',
+              '#f5222d',
+              '#722ed1'
+            ]
+          }]
+        },
+        options: {
+          responsive: false,
+          animation: false
+        }
+      });
+
+      /* ===== RADAR ===== */
+      new Chart(document.getElementById('radarChart'), {
+        type: 'radar',
+        data: {
+          labels: chartData.labels,
+          datasets: [{
+            label: 'Resultado (%)',
+            data: chartData.datasets[0].data,
+            backgroundColor: 'rgba(24,144,255,0.2)',
+            borderColor: '#1890ff',
+            pointBackgroundColor: '#1890ff'
+          }]
+        },
+        options: {
+          responsive: false,
+          animation: false,
+          scales: {
+            r: {
+              beginAtZero: true,
+              max: 100
+            }
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

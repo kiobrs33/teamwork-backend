@@ -1,0 +1,324 @@
+/* body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  color: #1f2937;
+  margin: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 2px solid #d1d5db;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.header-left {
+  display: flex;
+  gap: 12px;
+}
+
+.logo {
+  width: 70px;
+  height: auto;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.empresa {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.card {
+  border: 1px solid #d1d5db;
+  padding: 12px;
+  margin-bottom: 16px;
+  border-radius: 4px;
+}
+
+.card h2 {
+  font-size: 13px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 4px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.evaluador-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 3px 6px;
+  background: #2563eb;
+  color: white;
+  border-radius: 4px;
+}
+
+.nivel {
+  margin-top: 12px;
+}
+
+.nivel h3 {
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: #374151;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.table th,
+.table td {
+  border: 1px solid #d1d5db;
+  padding: 6px;
+}
+
+.table th {
+  background: #f3f4f6;
+}
+
+.center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.estado {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+}
+
+.estado-PROCESO {
+  background: #facc15;
+}
+
+.estado-CERRADA {
+  background: #22c55e;
+  color: white;
+}
+
+.estado-ANULADA {
+  background: #ef4444;
+  color: white;
+}
+
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  color: #6b7280;
+  border-top: 1px solid #d1d5db;
+  padding-top: 6px;
+}
+
+.title {
+  text-align: center;
+  font-size: 16px;
+  margin: 20px 0;
+  text-transform: uppercase;
+  color: #374151;
+} */
+
+:root {
+  --primary-color: #d2902d;
+  --table-header-bg: #ecf0f1;
+  --border-radius: 2px;
+}
+
+* {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.report {
+  padding: 0px;
+}
+
+.report__logo {
+  width: 150px;
+  height: auto;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.report__title {
+  font-size: 12px;
+  font-weight: bold;
+  text-align: center;
+  color: #fff;
+  margin-bottom: 20px;
+  background: #d2902d;
+  padding: 5px 0;
+  border-radius: var(--border-radius);
+}
+
+.report__subtitle {
+  font-size: 12px;
+  font-weight: bold;
+  text-align: left;
+  color: #1f2937;
+  margin-bottom: 10px;
+}
+
+.table table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0.3rem;
+  border: none;
+  margin-bottom: 15px;
+}
+
+.table th.table__header {
+  background-color: var(--primary-color);
+  color: #fff;
+  text-align: center;
+  padding: 0.5rem;
+  border: none;
+  width: 15%;
+  border-radius: var(--border-radius);
+  font-size: 12px;
+}
+
+.table td.table__cell {
+  padding: 0.5rem;
+  background-color: #e7e6e6;
+  border: none;
+  text-align: left;
+  border-radius: var(--border-radius);
+  font-size: 12px;
+}
+
+.table td.table__cell--bgcolor {
+  background-color: var(--primary-color);
+  color: #fff;
+}
+
+.table th.table__header--bgcolor {
+  background-color: #e7e6e6;
+  color: #000;
+}
+
+.table td.table__cell--bold {
+  font-weight: bold;
+}
+
+.table td.table__cell--center {
+  text-align: center;
+}
+
+.u-font-bold {
+  font-weight: bold;
+  font-size: inherit;
+}
+
+.graphics {
+  display: flex;
+  border: solid 1px #d1d5db;
+  padding: 10px 0;
+  margin-bottom: 20px;
+}
+
+.graphics__item {
+  flex: 1;
+}
+
+.graphics__title {
+  text-align: center;
+  font-size: 14px;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.canvas {
+  width: 100%;
+  height: auto;
+}
+
+.signatures {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 20px;
+}
+
+.signatures__item {
+    flex: 1;
+    padding: 10px;
+}
+.signatures__subtitle {
+    text-align: center;
+    font-size: 12px;
+    margin-top: 5px;
+    font-weight: bold;
+}
+
+/* === CONTROL DE IMPRESIÓN === */
+@media print {
+  body {
+    margin: 0;
+  }
+
+  .report {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* 🚫 Nunca cortar estos elementos */
+  table,
+  canvas,
+  .table,
+  .report__title,
+  .graphics,
+  .container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 🚫 Evitar cortar filas */
+  tr,
+  td,
+  th {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 📄 Forzar salto limpio */
+  .page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+}
+
+@page {
+  margin: 10mm 10mm;
+}
+
+body {
+  counter-reset: page;
+}
