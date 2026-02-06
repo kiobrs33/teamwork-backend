@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmpleoDto } from './dto/create-empleo.dto';
 import { UpdateEmpleoDto } from './dto/update-empleo.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class EmpleoService {
@@ -34,7 +35,7 @@ export class EmpleoService {
       return empleo;
     } catch (error) {
       console.error('Error al crear empleo:', error);
-      throw new InternalServerErrorException('No se pudo crear el empleo.');
+      handlePrismaError(error, 'empleos');
     }
   }
 
@@ -47,9 +48,7 @@ export class EmpleoService {
       });
     } catch (error) {
       console.error('Error al obtener empleos:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los empleos.',
-      );
+      handlePrismaError(error, 'empleos');
     }
   }
 
@@ -109,14 +108,7 @@ export class EmpleoService {
       return empleo;
     } catch (error) {
       console.error('Error al actualizar empleo:', error);
-
-      if (error instanceof NotFoundException) {
-        throw error; // Lo reenvías tal cual
-      }
-
-      throw new InternalServerErrorException(
-        'No se pudo actualizar el empleo.',
-      );
+      handlePrismaError(error, 'empleos');
     }
   }
 
@@ -138,12 +130,7 @@ export class EmpleoService {
       });
     } catch (error) {
       console.error('Error al eliminar empleo:', error);
-
-      if (error instanceof NotFoundException) {
-        throw error; // Lo reenvías tal cual
-      }
-
-      throw new InternalServerErrorException('No se pudo eliminar el empleo.');
+      handlePrismaError(error, 'empleos');
     }
   }
 }

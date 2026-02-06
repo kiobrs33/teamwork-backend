@@ -11,6 +11,7 @@ import {
   UsePipes,
   ValidationPipe,
   Put,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -32,6 +33,7 @@ import { UpdateEvaluacionDto } from './dto/update-evaluation-item.dto';
 import { Res } from '@nestjs/common';
 import { Response } from 'express';
 import { createReadStream } from 'fs';
+import { CompetenciaQueryDto } from './dto/competencia-query.dto';
 
 @ApiTags('Competencia')
 @ApiBearerAuth()
@@ -46,11 +48,15 @@ export class CompetenciaController {
   @Get()
   @ApiOperation({ summary: 'Listar todas las competencias' })
   @ApiResponse({ status: 200, description: 'Lista de competencias.' })
-  async findAll() {
-    const competencias = await this.competenciaService.findAll();
+  async findAll(@Query() query: CompetenciaQueryDto) {
+    const resp = await this.competenciaService.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
     return {
       message: 'Lista de competencias.',
-      data: { competencias },
+      data: { competencias: resp.data, meta: resp.meta },
     };
   }
 

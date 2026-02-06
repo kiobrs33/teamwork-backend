@@ -10,6 +10,7 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
 import { UnidadOcupacionalEmpleadoraService } from './unidad-ocupacional-empleadora.service';
 import { CreateUnidadOcupacionalEmpleadoraDto } from './dto/create-unidad-ocupacional-empleadora.dto';
@@ -29,6 +30,7 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { AsignarCompetenciasLoteDto } from './dto/asignar-competencias-a-unidad-ocupacional-empleadora.dto';
 import { CreateAreaEmpleadoraDto } from '../area-empleadora/dto/create-area-empleadora.dto';
 import { AsignarCompetenciasDto } from './dto/create-unidad-competencia.dto';
+import { UnidadOcupacionalQueryDto } from './dto/unidad-ocupacional-query.dto';
 
 @ApiTags('Unidad Ocupacional Empleadora')
 @ApiBearerAuth()
@@ -67,11 +69,15 @@ export class UnidadOcupacionalEmpleadoraController {
     status: 200,
     description: 'Lista de unidades ocupacionales empleadoras.',
   })
-  async findAll() {
-    const unidades = await this.unidadOcupacionalEmpleadoraService.findAll();
+  async findAll(@Query() query: UnidadOcupacionalQueryDto) {
+    const resp = await this.unidadOcupacionalEmpleadoraService.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
     return {
       message: 'Lista de unidades ocupacionales empleadoras.',
-      data: { unidades },
+      data: { unidades: resp.data, meta: resp.meta },
     };
   }
 

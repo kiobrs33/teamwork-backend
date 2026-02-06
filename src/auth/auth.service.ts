@@ -16,13 +16,11 @@ export class AuthService {
       include: {
         empleado: {
           include: {
-            empresaEmpleadora: {
-              select: {
-                idEmpresaEmpleadora: true,
-                nombreEmpresa: true,
-                modeloEmpresa: true,
-              },
-            },
+            empresaEmpleadora: true,
+            puestoEmpleadora: true,
+            areaEmpleadora: true,
+            gerenciaEmpleadora: true,
+            unidadOcupacionalEmpleadora: true,
           },
         },
       },

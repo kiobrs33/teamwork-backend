@@ -17,6 +17,9 @@ import { UpdateEvaluacionDto } from './dto/update-evaluation-item.dto';
 import * as ExcelJS from 'exceljs';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
+import { CompetenciaQueryDto } from './dto/competencia-query.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class CompetenciaService {
@@ -24,51 +27,84 @@ export class CompetenciaService {
 
   constructor(private prisma: PrismaService) {}
 
-  // ======================================================
-  //                 GET ALL COMPETENCIAS
-  // ======================================================
-  // async findAll() {
-  //   try {
-  //     return await this.prisma.competencia.findMany({
-  //       where: { estado: true },
-  //       orderBy: { fechaCreacion: 'desc' },
-  //       include: {
-  //         niveles: {
-  //           include: { items: true },
-  //         },
-  //       },
-  //     });
-  //   } catch (error) {
-  //     this.logger.error('Error al obtener competencias:', error);
-  //     throw new InternalServerErrorException(
-  //       'No se pudieron obtener las competencias.',
-  //     );
-  //   }
-  // }
-
-  async findAll() {
+  async findAll({ page, limit, search }: CompetenciaQueryDto) {
     try {
-      return await this.prisma.competencia.findMany({
-        where: { estado: true },
-        orderBy: { fechaCreacion: 'desc' },
-        include: {
-          niveles: {
-            where: { estado: true },
-            orderBy: { nivel: 'asc' },
-            include: {
-              items: {
-                where: { estado: true },
-                orderBy: { secuencial: 'asc' },
+      const where: Prisma.CompetenciaWhereInput = {
+        estado: true,
+        ...(search && {
+          OR: [
+            { nombre: { contains: search, mode: 'insensitive' } },
+            { titulo: { contains: search, mode: 'insensitive' } },
+            { codigo: { contains: search, mode: 'insensitive' } },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: { contains: search, mode: 'insensitive' },
+                ruc: { contains: search, mode: 'insensitive' },
               },
+            },
+          ],
+        }),
+      };
+
+      const include: Prisma.CompetenciaInclude = {
+        empresaEmpleadora: true,
+        niveles: {
+          where: { estado: true },
+          orderBy: { nivel: 'asc' },
+          include: {
+            items: {
+              where: { estado: true },
+              orderBy: { secuencial: 'asc' },
             },
           },
         },
-      });
+      };
+
+      if (Number(limit) === 0) {
+        const data = await this.prisma.competencia.findMany({
+          where,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        });
+
+        return {
+          data,
+          meta: {
+            total: data.length,
+            page: 1,
+            limit: 0,
+            totalPages: 1,
+          },
+        };
+      }
+
+      const safeLimit = Math.min(Number(limit) || 10, 100);
+      const safePage = Math.max(Number(page) || 1, 1);
+      const skip = (safePage - 1) * safeLimit;
+
+      const [total, data] = await Promise.all([
+        this.prisma.competencia.count({ where }),
+        this.prisma.competencia.findMany({
+          where,
+          skip,
+          take: safeLimit,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(total / safeLimit),
+        },
+      };
     } catch (error) {
-      this.logger.error('Error al obtener competencias:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las competencias.',
-      );
+      this.logger.error('Error al obtener los empleados:', error);
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -94,9 +130,7 @@ export class CompetenciaService {
         throw error;
       }
       this.logger.error(`Error al obtener competencia con ID ${id}:`, error);
-      throw new InternalServerErrorException(
-        'No se pudo obtener la competencia.',
-      );
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -169,9 +203,7 @@ export class CompetenciaService {
       });
     } catch (error) {
       console.error(error);
-      throw new InternalServerErrorException(
-        'Error al actualizar la competencia',
-      );
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -204,9 +236,7 @@ export class CompetenciaService {
       });
     } catch (error) {
       this.logger.error(`Error al eliminar competencia con ID ${id}:`, error);
-      throw new InternalServerErrorException(
-        'No se pudo eliminar la competencia.',
-      );
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -251,9 +281,7 @@ export class CompetenciaService {
       });
     } catch (error) {
       this.logger.error('Error creando competencia con niveles:', error);
-      throw new InternalServerErrorException(
-        'No se pudo crear la competencia.',
-      );
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -297,7 +325,7 @@ export class CompetenciaService {
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
-      throw new InternalServerErrorException('Error al importar los datos.');
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -315,9 +343,7 @@ export class CompetenciaService {
       return competencias;
     } catch (error) {
       console.error('Error al obtener unidades ocupacionales:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las unidades ocupacionales.',
-      );
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -403,7 +429,7 @@ export class CompetenciaService {
       return this.obtenerEvaluacion(evaluacion.idEvaluacionCompetencia);
     } catch (error) {
       console.error(error);
-      throw new InternalServerErrorException('Error al iniciar la evaluación.');
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -489,9 +515,7 @@ export class CompetenciaService {
       });
     } catch (error) {
       console.error(error);
-      throw new InternalServerErrorException(
-        'Error al actualizar la evaluación.',
-      );
+      handlePrismaError(error, 'competencia');
     }
   }
 
@@ -1236,7 +1260,7 @@ export class CompetenciaService {
           puesto: evaluacion.evaluado?.puestoEmpleadora.descripcion,
           unidad: evaluacion.evaluado?.unidadOcupacionalEmpleadora.descripcion,
           gerencia: evaluacion.evaluado?.gerenciaEmpleadora.descripcion,
-          competencia: evaluacion.competencia.nombre,
+          competencia: evaluacion.competencia.titulo,
           nivel: evaluacion.nivel.nivel,
           item: item.textoItemEvaluado ?? item.item.enunciado,
           calificacion: item.calificacion,

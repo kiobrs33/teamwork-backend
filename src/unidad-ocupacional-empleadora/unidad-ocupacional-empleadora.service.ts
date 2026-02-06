@@ -3,6 +3,7 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -11,9 +12,14 @@ import { UpdateUnidadOcupacionalEmpleadoraDto } from './dto/update-unidad-ocupac
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { AsignarCompetenciasLoteDto } from './dto/asignar-competencias-a-unidad-ocupacional-empleadora.dto';
 import { UnidadCompetenciaAsignacionDto } from './dto/create-unidad-competencia.dto';
+import { Prisma } from '@prisma/client';
+import { UnidadOcupacionalQueryDto } from './dto/unidad-ocupacional-query.dto';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class UnidadOcupacionalEmpleadoraService {
+  private readonly logger = new Logger(UnidadOcupacionalEmpleadoraService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async create(user: AuthUser, dto: CreateUnidadOcupacionalEmpleadoraDto) {
@@ -28,27 +34,94 @@ export class UnidadOcupacionalEmpleadoraService {
       return unidad;
     } catch (error) {
       console.error('Error al crear unidad ocupacional:', error);
-      throw new InternalServerErrorException(
-        'No se pudo crear la unidad ocupacional.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
-  async findAll() {
+  // async findAll() {
+  //   try {
+  //     const unidades = await this.prisma.unidadOcupacionalEmpleadora.findMany({
+  //       include: { empresaEmpleadora: true },
+  //       where: { estado: true },
+  //       orderBy: {
+  //         fechaCreacion: 'desc',
+  //       },
+  //     });
+  //     return unidades;
+  //   } catch (error) {
+  //     console.error('Error al obtener unidades ocupacionales:', error);
+  //     throw new InternalServerErrorException(
+  //       'No se pudieron obtener las unidades ocupacionales.',
+  //     );
+  //   }
+  // }
+
+  async findAll({ page, limit, search }: UnidadOcupacionalQueryDto) {
     try {
-      const unidades = await this.prisma.unidadOcupacionalEmpleadora.findMany({
-        include: { empresaEmpleadora: true },
-        where: { estado: true },
-        orderBy: {
-          fechaCreacion: 'desc',
+      const where: Prisma.UnidadOcupacionalEmpleadoraWhereInput = {
+        estado: true,
+        ...(search && {
+          OR: [
+            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: { contains: search, mode: 'insensitive' },
+                ruc: { contains: search, mode: 'insensitive' },
+              },
+            },
+          ],
+        }),
+      };
+
+      const include: Prisma.UnidadOcupacionalEmpleadoraInclude = {
+        empresaEmpleadora: true,
+      };
+
+      if (Number(limit) === 0) {
+        const data = await this.prisma.unidadOcupacionalEmpleadora.findMany({
+          where,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        });
+
+        return {
+          data,
+          meta: {
+            total: data.length,
+            page: 1,
+            limit: 0,
+            totalPages: 1,
+          },
+        };
+      }
+
+      const safeLimit = Math.min(Number(limit) || 10, 100);
+      const safePage = Math.max(Number(page) || 1, 1);
+      const skip = (safePage - 1) * safeLimit;
+
+      const [total, data] = await Promise.all([
+        this.prisma.unidadOcupacionalEmpleadora.count({ where }),
+        this.prisma.unidadOcupacionalEmpleadora.findMany({
+          where,
+          skip,
+          take: safeLimit,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(total / safeLimit),
         },
-      });
-      return unidades;
+      };
     } catch (error) {
-      console.error('Error al obtener unidades ocupacionales:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las unidades ocupacionales.',
-      );
+      this.logger.error('Error al obtener las unidades ocupacionales:', error);
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -66,9 +139,7 @@ export class UnidadOcupacionalEmpleadoraService {
       return unidad;
     } catch (error) {
       console.error('Error al obtener la unidad ocupacional:', error);
-      throw new InternalServerErrorException(
-        'No se pudo obtener la unidad ocupacional.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -99,9 +170,7 @@ export class UnidadOcupacionalEmpleadoraService {
       return updatedUnidad;
     } catch (error) {
       console.error('Error al actualizar la unidad ocupacional:', error);
-      throw new InternalServerErrorException(
-        'No se pudo actualizar la unidad ocupacional.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -126,14 +195,8 @@ export class UnidadOcupacionalEmpleadoraService {
         });
       return removedUnidad;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
       console.error('Error al eliminar la unidad ocupacional:', error);
-      throw new InternalServerErrorException(
-        'No se pudo eliminar la unidad ocupacional.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -195,9 +258,7 @@ export class UnidadOcupacionalEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
-      throw new InternalServerErrorException(
-        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -224,9 +285,7 @@ export class UnidadOcupacionalEmpleadoraService {
       return resultado;
     } catch (error) {
       console.error(error);
-      throw new InternalServerErrorException(
-        'Error al procesar la asignación.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -426,9 +485,7 @@ export class UnidadOcupacionalEmpleadoraService {
       return resultados;
     } catch (error) {
       console.error(error);
-      throw new InternalServerErrorException(
-        'Error al obtener unidades con competencias.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 
@@ -443,9 +500,7 @@ export class UnidadOcupacionalEmpleadoraService {
       return unidades;
     } catch (error) {
       console.error('Error al obtener unidades ocupacionales:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las unidades ocupacionales.',
-      );
+      handlePrismaError(error, 'unidad ocupacional');
     }
   }
 }

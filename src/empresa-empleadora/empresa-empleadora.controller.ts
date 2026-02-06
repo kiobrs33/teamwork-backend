@@ -9,6 +9,7 @@ import {
   Delete,
   ParseIntPipe,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { EmpresaEmpleadoraService } from './empresa-empleadora.service';
 import { CreateEmpresaEmpleadoraDto } from './dto/create-empresa-empleadora.dto';
@@ -24,6 +25,7 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { EmpresaQueryDto } from './dto/empresa-query.dto';
 
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
@@ -52,11 +54,15 @@ export class EmpresaEmpleadoraController {
   @Get()
   @ApiOperation({ summary: 'Listar todas las empresas empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de empresas empleadoras.' })
-  async findAll() {
-    const empresas = await this.service.findAll();
+  async findAll(@Query() query: EmpresaQueryDto) {
+    const resp = await this.service.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
     return {
       message: 'Lista de empresas empleadoras.',
-      data: { empresas },
+      data: { empresas: resp.data, meta: resp.meta },
     };
   }
 

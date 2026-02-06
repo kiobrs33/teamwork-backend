@@ -57,7 +57,7 @@ export class CreateEmpleadoDto {
   @ApiPropertyOptional({ example: '12345678' })
   @IsOptional()
   @IsString({ message: 'El documento debe ser una cadena de texto.' })
-  documento?: string;
+  documento?: string | null;
 
   @ApiProperty({ example: 'Arequipa' })
   @IsOptional()
@@ -67,7 +67,7 @@ export class CreateEmpleadoDto {
   @ApiProperty({ example: 1 })
   @IsOptional()
   @IsInt({ message: 'El tiempo empresa valor debe ser un número entero.' })
-  tiempoEmpresaValor?: number;
+  tiempoEmpresaValor?: number | null;
 
   @ApiProperty({
     example: TiempoEmpresaUnidad.DIAS,

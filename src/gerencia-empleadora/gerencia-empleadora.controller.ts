@@ -11,6 +11,7 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
 
 import {
@@ -27,6 +28,7 @@ import { GerenciaEmpleadoraService } from './gerencia-empleadora.service';
 import { CreateGerenciaEmpleadoraDto } from './dto/create-gerencia-empleadora.dto';
 import { UpdateGerenciaEmpleadoraDto } from './dto/update-gerencia-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { GerenciaQueryDto } from './dto/gerencia-query.dto';
 
 @ApiTags('Gerencia Empleadora')
 @ApiBearerAuth()
@@ -37,6 +39,7 @@ export class GerenciaEmpleadoraController {
     private readonly gerenciaEmpleadoraService: GerenciaEmpleadoraService,
   ) {}
 
+  // Crear gerencia empleadora
   @Post()
   @ApiOperation({ summary: 'Crear una nueva gerencia empleadora' })
   @ApiResponse({
@@ -54,17 +57,23 @@ export class GerenciaEmpleadoraController {
     };
   }
 
+  // Listar todas las gerencias empleadoras
   @Get()
   @ApiOperation({ summary: 'Listar todas las gerencias empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de gerencias empleadoras.' })
-  async findAll() {
-    const gerencias = await this.gerenciaEmpleadoraService.findAll();
+  async findAll(@Query() query: GerenciaQueryDto) {
+    const resp = await this.gerenciaEmpleadoraService.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
     return {
       message: 'Lista de gerencias empleadoras.',
-      data: { gerencias },
+      data: { gerencias: resp.data, meta: resp.meta },
     };
   }
 
+  // Listar gerencias por empresa
   @Get('empresa/:id')
   @ApiOperation({ summary: 'Listar gerencias empleadoras de una empresa' })
   @ApiResponse({
@@ -82,6 +91,7 @@ export class GerenciaEmpleadoraController {
     };
   }
 
+  // Obtener gerencia empleadora por ID
   @Get(':id')
   @ApiOperation({ summary: 'Obtener gerencia empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
@@ -94,6 +104,7 @@ export class GerenciaEmpleadoraController {
     };
   }
 
+  // Actualizar gerencia empleadora
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar gerencia empleadora' })
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
@@ -113,6 +124,7 @@ export class GerenciaEmpleadoraController {
     };
   }
 
+  // Eliminar gerencia empleadora (soft delete)
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar gerencia empleadora (soft delete)' })
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
@@ -128,6 +140,7 @@ export class GerenciaEmpleadoraController {
     };
   }
 
+  // Importar gerencias empleadoras desde Excel
   @Post('import')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreateGerenciaEmpleadoraDto] })

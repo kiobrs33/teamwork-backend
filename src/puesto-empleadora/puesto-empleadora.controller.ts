@@ -10,6 +10,7 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
 import { PuestoEmpleadoraService } from './puesto-empleadora.service';
 import { CreatePuestoEmpleadoraDto } from './dto/create-puesto-empleadora.dto';
@@ -26,6 +27,7 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { PuestoQueryDto } from './dto/puesto-query.dto';
 
 @ApiTags('Puesto Empleadora')
 @ApiBearerAuth()
@@ -53,11 +55,15 @@ export class PuestoEmpleadoraController {
   @Get()
   @ApiOperation({ summary: 'Listar todos los puestos empleadora' })
   @ApiResponse({ status: 200, description: 'Lista de puestos empleadora.' })
-  async findAll() {
-    const puestos = await this.puestoEmpleadoraService.findAll();
+  async findAll(@Query() query: PuestoQueryDto) {
+    const resp = await this.puestoEmpleadoraService.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
     return {
       message: 'Lista de puestos empleadora.',
-      data: { puestos },
+      data: { puestos: resp.data, meta: resp.meta },
     };
   }
 

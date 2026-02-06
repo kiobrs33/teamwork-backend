@@ -11,6 +11,9 @@ import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 import { hash } from 'bcryptjs';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { EmployeeQueryDto } from './dto/employee-query.dto';
+import { Prisma } from '@prisma/client';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class EmpleadoService {
@@ -166,26 +169,87 @@ export class EmpleadoService {
       });
     } catch (error) {
       this.logger.error('Error al crear empleado:', error);
-      if (error instanceof HttpException) throw error;
-      throw new InternalServerErrorException('No se pudo crear al empleado.');
+      handlePrismaError(error, 'empleado');
     }
   }
 
-  // ============================================================
-  // FIND ALL
-  // ============================================================
-  async findAll() {
+  async findAll({ page, limit, search }: EmployeeQueryDto) {
     try {
-      return await this.prisma.empleado.findMany({
-        where: { estado: true },
-        include: { usuario: true },
-        orderBy: { fechaCreacion: 'desc' },
-      });
+      const where: Prisma.EmpleadoWhereInput = {
+        estado: true,
+        ...(search && {
+          OR: [
+            { nombres: { contains: search, mode: 'insensitive' } },
+            { apellidos: { contains: search, mode: 'insensitive' } },
+            { documento: { contains: search } },
+            {
+              usuario: {
+                codigoUsuario: { contains: search, mode: 'insensitive' },
+              },
+            },
+            { codigoEmpleado: { contains: search, mode: 'insensitive' } },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
+      };
+
+      const include: Prisma.EmpleadoInclude = {
+        usuario: true,
+        empresaEmpleadora: true,
+      };
+
+      if (Number(limit) === 0) {
+        const data = await this.prisma.empleado.findMany({
+          where,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        });
+
+        return {
+          data,
+          meta: {
+            total: data.length,
+            page: 1,
+            limit: 0,
+            totalPages: 1,
+          },
+        };
+      }
+
+      const safeLimit = Math.min(Number(limit) || 10, 100);
+      const safePage = Math.max(Number(page) || 1, 1);
+      const skip = (safePage - 1) * safeLimit;
+
+      const [total, data] = await Promise.all([
+        this.prisma.empleado.count({ where }),
+        this.prisma.empleado.findMany({
+          where,
+          skip,
+          take: safeLimit,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(total / safeLimit),
+        },
+      };
     } catch (error) {
       this.logger.error('Error al obtener los empleados:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los empleados.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -203,9 +267,8 @@ export class EmpleadoService {
 
       return empleado;
     } catch (error) {
-      if (error instanceof HttpException) throw error;
       this.logger.error('Error al obtener el empleado:', error);
-      throw new InternalServerErrorException('No se pudo obtener al empleado.');
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -223,9 +286,8 @@ export class EmpleadoService {
 
       return empleado;
     } catch (error) {
-      if (error instanceof HttpException) throw error;
       this.logger.error('Error al obtener el empleado por usuario:', error);
-      throw new InternalServerErrorException('No se pudo obtener al empleado.');
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -306,14 +368,11 @@ export class EmpleadoService {
       return await this.prisma.empleado.update({
         where: { idEmpleado: id },
         data: empleadoUpdateData,
-        include: { usuario: true },
+        include: { usuario: true, empresaEmpleadora: true },
       });
     } catch (error) {
-      if (error instanceof HttpException) throw error;
       this.logger.error('Error al actualizar al empleado:', error);
-      throw new InternalServerErrorException(
-        'No se pudo actualizar al empleado.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -338,87 +397,202 @@ export class EmpleadoService {
         },
       });
     } catch (error) {
-      if (error instanceof HttpException) throw error;
       this.logger.error('Error al eliminar (inactivar) al empleado:', error);
-      throw new InternalServerErrorException(
-        'No se pudo eliminar al empleado.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
   // ============================================================
   // CREATE MASSIVE
   // ============================================================
+  // async createMany(user: AuthUser, data: CreateEmpleadoDto[]) {
+  //   try {
+  //     const codesUser = new Set();
+  //     const codesEmpleado = new Set();
+
+  //     for (const body of data) {
+  //       if (codesUser.has(body.codigoUsuario)) {
+  //         throw new BadRequestException(
+  //           `Código de usuario duplicado dentro del archivo: ${body.codigoUsuario}`,
+  //         );
+  //       }
+  //       codesUser.add(body.codigoUsuario);
+
+  //       if (codesEmpleado.has(body.codigoEmpleado)) {
+  //         throw new BadRequestException(
+  //           `Código de empleado duplicado dentro del archivo: ${body.codigoEmpleado}`,
+  //         );
+  //       }
+  //       codesEmpleado.add(body.codigoEmpleado);
+
+  //       await this.validateUniqueFields(body);
+  //     }
+
+  //     return await this.prisma.$transaction(async (tx) => {
+  //       const createdEmployees: any[] = [];
+
+  //       for (const body of data) {
+  //         const hashedPassword = await hash(body.contrasena, 10);
+
+  //         const usuario = await tx.usuario.create({
+  //           data: {
+  //             codigoUsuario: body.codigoUsuario,
+  //             contrasena: hashedPassword,
+  //             rol: body.rol,
+  //             creadoPorId: user.idUsuario,
+  //           },
+  //         });
+
+  //         const empleado = await tx.empleado.create({
+  //           data: {
+  //             codigoEmpleado: body.codigoEmpleado,
+  //             nombres: body.nombres,
+  //             apellidos: body.apellidos,
+  //             documento: body.documento,
+  //             sede: body.sede,
+  //             tiempoEmpresaValor: body.tiempoEmpresaValor,
+  //             tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
+  //             idEmpresaEmpleadora: body.idEmpresaEmpleadora,
+  //             idAreaEmpleadora: body.idAreaEmpleadora,
+  //             idPuestoEmpleadora: body.idPuestoEmpleadora,
+  //             idGerenciaEmpleadora: body.idGerenciaEmpleadora,
+  //             idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
+  //             codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
+  //             idUsuario: usuario.idUsuario,
+  //             creadoPorId: user.idUsuario,
+  //           },
+  //           include: { usuario: true },
+  //         });
+
+  //         createdEmployees.push(empleado);
+  //       }
+
+  //       return createdEmployees;
+  //     });
+  //   } catch (error) {
+  //     this.logger.error('Error en creación masiva de empleados:', error);
+  //     handlePrismaError(error, 'empleado');
+  //   }
+  // }
+
   async createMany(user: AuthUser, data: CreateEmpleadoDto[]) {
+    const BATCH_SIZE = 10;
+
     try {
-      const codesUser = new Set();
-      const codesEmpleado = new Set();
+      /* =====================================================
+       * 1. Validaciones en memoria (archivo)
+       * ===================================================== */
+      const codesUser = new Set<string>();
+      const codesEmpleado = new Set<string>();
 
       for (const body of data) {
         if (codesUser.has(body.codigoUsuario)) {
           throw new BadRequestException(
-            `Código de usuario duplicado dentro del archivo: ${body.codigoUsuario}`,
+            `Código de usuario duplicado en el archivo: ${body.codigoUsuario}`,
           );
         }
         codesUser.add(body.codigoUsuario);
 
         if (codesEmpleado.has(body.codigoEmpleado)) {
           throw new BadRequestException(
-            `Código de empleado duplicado dentro del archivo: ${body.codigoEmpleado}`,
+            `Código de empleado duplicado en el archivo: ${body.codigoEmpleado}`,
           );
         }
         codesEmpleado.add(body.codigoEmpleado);
-
-        await this.validateUniqueFields(body);
       }
 
-      return await this.prisma.$transaction(async (tx) => {
-        const createdEmployees: any[] = [];
+      /* =====================================================
+       * 2. Validar duplicados en BD (UNA sola vez)
+       * ===================================================== */
+      const codigosUsuario = [...codesUser];
+      const codigosEmpleado = [...codesEmpleado];
 
-        for (const body of data) {
-          const hashedPassword = await hash(body.contrasena, 10);
+      const [usuariosExistentes, empleadosExistentes] = await Promise.all([
+        this.prisma.usuario.findMany({
+          where: { codigoUsuario: { in: codigosUsuario } },
+          select: { codigoUsuario: true },
+        }),
+        this.prisma.empleado.findMany({
+          where: { codigoEmpleado: { in: codigosEmpleado } },
+          select: { codigoEmpleado: true },
+        }),
+      ]);
 
-          const usuario = await tx.usuario.create({
-            data: {
-              codigoUsuario: body.codigoUsuario,
-              contrasena: hashedPassword,
-              rol: body.rol,
-              creadoPorId: user.idUsuario,
-            },
-          });
+      if (usuariosExistentes.length > 0) {
+        throw new BadRequestException(
+          `El código de usuario ya existe: ${usuariosExistentes[0].codigoUsuario}`,
+        );
+      }
 
-          const empleado = await tx.empleado.create({
-            data: {
-              codigoEmpleado: body.codigoEmpleado,
-              nombres: body.nombres,
-              apellidos: body.apellidos,
-              documento: body.documento,
-              sede: body.sede,
-              tiempoEmpresaValor: body.tiempoEmpresaValor,
-              tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
-              idEmpresaEmpleadora: body.idEmpresaEmpleadora,
-              idAreaEmpleadora: body.idAreaEmpleadora,
-              idPuestoEmpleadora: body.idPuestoEmpleadora,
-              idGerenciaEmpleadora: body.idGerenciaEmpleadora,
-              idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
-              codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
-              idUsuario: usuario.idUsuario,
-              creadoPorId: user.idUsuario,
-            },
-            include: { usuario: true },
-          });
+      if (empleadosExistentes.length > 0) {
+        throw new BadRequestException(
+          `El código de empleado ya existe: ${empleadosExistentes[0].codigoEmpleado}`,
+        );
+      }
 
-          createdEmployees.push(empleado);
-        }
-
-        return createdEmployees;
-      });
-    } catch (error) {
-      this.logger.error('Error en creación masiva de empleados:', error);
-      if (error instanceof HttpException) throw error;
-      throw new InternalServerErrorException(
-        'No se pudo completar la creación masiva de empleados.',
+      /* =====================================================
+       * 3. Preparar data (hash fuera de la transacción)
+       * ===================================================== */
+      const preparedData = await Promise.all(
+        data.map(async (body) => ({
+          ...body,
+          hashedPassword: await hash(body.contrasena, 10),
+        })),
       );
+
+      /* =====================================================
+       * 4. Procesar en lotes con transacciones pequeñas
+       * ===================================================== */
+      const createdEmployees: any[] = [];
+
+      for (let i = 0; i < preparedData.length; i += BATCH_SIZE) {
+        const batch = preparedData.slice(i, i + BATCH_SIZE);
+
+        await this.prisma.$transaction(async (tx) => {
+          for (const body of batch) {
+            const usuario = await tx.usuario.create({
+              data: {
+                codigoUsuario: body.codigoUsuario,
+                contrasena: body.hashedPassword,
+                rol: body.rol,
+                creadoPorId: user.idUsuario,
+              },
+            });
+
+            const empleado = await tx.empleado.create({
+              data: {
+                codigoEmpleado: body.codigoEmpleado,
+                nombres: body.nombres,
+                apellidos: body.apellidos,
+                documento: body.documento,
+                sede: body.sede,
+                tiempoEmpresaValor: body.tiempoEmpresaValor,
+                tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
+                idEmpresaEmpleadora: body.idEmpresaEmpleadora,
+                idAreaEmpleadora: body.idAreaEmpleadora,
+                idPuestoEmpleadora: body.idPuestoEmpleadora,
+                idGerenciaEmpleadora: body.idGerenciaEmpleadora,
+                idUnidadOcupacionalEmpleadora:
+                  body.idUnidadOcupacionalEmpleadora,
+                codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
+                idUsuario: usuario.idUsuario,
+                creadoPorId: user.idUsuario,
+              },
+              include: { usuario: true },
+            });
+
+            createdEmployees.push(empleado);
+          }
+        });
+      }
+
+      return {
+        totalInsertados: createdEmployees.length,
+        empleados: createdEmployees,
+      };
+    } catch (error) {
+      this.logger.error('Error en creación masiva de empleados', error);
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -460,12 +634,8 @@ export class EmpleadoService {
 
       return subordinados;
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-
       this.logger.error('Error al obtener subordinados por usuario:', error);
-      throw new InternalServerErrorException(
-        'No se pudo obtener los subordinados.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -536,16 +706,11 @@ export class EmpleadoService {
         competenciasAsignadas: competencias,
       };
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-
       this.logger.error(
         `Error al obtener jefe con competencias (idUsuario=${idUsuario}):`,
         error,
       );
-
-      throw new InternalServerErrorException(
-        'No se pudo obtener el jefe con competencias.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -582,15 +747,11 @@ export class EmpleadoService {
 
       return empleados;
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-
       this.logger.error(
         'Error al obtener empleados por empresa empleadora:',
         error,
       );
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los empleados por empresa empleadora.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -690,15 +851,11 @@ export class EmpleadoService {
 
       return results;
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-
       this.logger.error(
         'Error al obtener subordinados con competencias:',
         error,
       );
-      throw new InternalServerErrorException(
-        'No se pudo obtener los subordinados con competencias.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 
@@ -746,15 +903,11 @@ export class EmpleadoService {
         competenciasAsignadas: competencias,
       };
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-
       this.logger.error(
         `Error al obtener competencias del empleado ${idEmpleado}:`,
         error,
       );
-      throw new InternalServerErrorException(
-        'No se pudo obtener las competencias asignadas del empleado.',
-      );
+      handlePrismaError(error, 'empleado');
     }
   }
 }

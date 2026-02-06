@@ -37,7 +37,7 @@ export class ObjetivoController {
   @ApiResponse({ status: 200, description: 'Lista de objetivos.' })
   async findAll() {
     const objetivos = await this.objetivoService.findAll();
-    return { message: 'Lista de objetivos', objetivos };
+    return { message: 'Lista de objetivos', data: { objetivos } };
   }
 
   @Get('subordinados/:id')
@@ -52,7 +52,9 @@ export class ObjetivoController {
     const objetivos = await this.objetivoService.findAllByJefe(id);
     return {
       message: `Objetivos de subordinados del jefe ${id}`,
-      objetivos,
+      data: {
+        objetivos,
+      },
     };
   }
 
@@ -74,7 +76,9 @@ export class ObjetivoController {
 
     return {
       message: `Objetivo ${id} evaluado correctamente`,
-      objetivo,
+      data: {
+        objetivo,
+      },
     };
   }
 
@@ -83,7 +87,7 @@ export class ObjetivoController {
   @ApiParam({ name: 'id', example: 1 })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const objetivo = await this.objetivoService.findOne(id);
-    return { message: 'Objetivo encontrado', objetivo };
+    return { message: 'Objetivo encontrado', data: { objetivo } };
   }
 
   @Patch(':id')
@@ -95,7 +99,7 @@ export class ObjetivoController {
     @Body() dto: UpdateObjetivoDto,
   ) {
     const objetivo = await this.objetivoService.update(id, user, dto);
-    return { message: `Objetivo ${id} actualizado`, objetivo };
+    return { message: `Objetivo ${id} actualizado`, data: { objetivo } };
   }
 
   @Delete(':id')
@@ -103,7 +107,7 @@ export class ObjetivoController {
   @ApiParam({ name: 'id', example: 1 })
   async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const objetivo = await this.objetivoService.remove(user, id);
-    return { message: `Objetivo ${id} eliminado`, objetivo };
+    return { message: `Objetivo ${id} eliminado`, data: { objetivo } };
   }
 
   @Post('con-detalles')
@@ -113,7 +117,7 @@ export class ObjetivoController {
     @Body() dto: CreateObjetivoConDetallesDto,
   ) {
     const objetivo = await this.objetivoService.createConDetalles(user, dto);
-    return { message: 'Objetivo creado exitosamente', objetivo };
+    return { message: 'Objetivo creado exitosamente', data: { objetivo } };
   }
 
   @Post('masivo')
@@ -123,7 +127,7 @@ export class ObjetivoController {
     @Body() dto: CreateObjetivosMasivosDto,
   ) {
     const objetivos = await this.objetivoService.createMasivo(user, dto);
-    return { message: 'Objetivos creados masivamente', objetivos };
+    return { message: 'Objetivos creados masivamente', data: { objetivos } };
   }
 
   @Get('empresa/:idEmpresa/empleados-evaluados')
@@ -151,7 +155,9 @@ export class ObjetivoController {
 
     return {
       message: 'Empleados evaluados por empresa',
-      ...resultado,
+      data: {
+        ...resultado,
+      },
     };
   }
 }

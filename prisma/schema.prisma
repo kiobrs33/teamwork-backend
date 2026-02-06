@@ -73,6 +73,8 @@ model EmpresaEmpleadora {
   fechaVigenciaFin             DateTime                      @map("fecha_vigencia_fin")
   fechaVigenciaInicioObjetivo  DateTime?                     @map("fecha_vigencia_inicio_objetivo")
   fechaVigenciaFinObjetivo     DateTime?                     @map("fecha_vigencia_fin_objetivo")
+  porcentajeCompetecias        Int?                          @map("porcentaje_competencias")
+  porcentajeObjetivos          Int?                          @map("porcentaje_objetivos")
   estado                       Boolean                       @default(true)
   creadoPorId                  Int                           @map("creado_por_id")
   actualizadoPorId             Int?                          @map("actualizado_por_id")

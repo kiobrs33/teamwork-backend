@@ -12,6 +12,7 @@ import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-detalle.dto'
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CreateObjetivosMasivosDto } from './dto/create-objetivo-masivo.dto';
 import { EvaluarObjetivoDto } from './dto/evaluar-objetivo.dto';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class ObjetivoService {
@@ -34,9 +35,7 @@ export class ObjetivoService {
       });
     } catch (error) {
       this.logger.error('Error al obtener objetivos:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los objetivos.',
-      );
+      handlePrismaError(error, 'objetivos');
     }
   }
 
@@ -58,10 +57,8 @@ export class ObjetivoService {
 
       return objetivo;
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-
       this.logger.error(`Error al obtener objetivo ${id}:`, error);
-      throw new InternalServerErrorException('No se pudo obtener el objetivo.');
+      handlePrismaError(error, 'objetivos');
     }
   }
 
@@ -144,9 +141,7 @@ export class ObjetivoService {
       });
     } catch (error) {
       this.logger.error(`Error al eliminar objetivo ${id}:`, error);
-      throw new InternalServerErrorException(
-        'No se pudo eliminar el objetivo.',
-      );
+      handlePrismaError(error, 'objetivos');
     }
   }
 
@@ -190,9 +185,7 @@ export class ObjetivoService {
       });
     } catch (error) {
       this.logger.error('Error creando objetivo:', error);
-      throw new InternalServerErrorException(
-        'No se pudo crear el objetivo con detalles.',
-      );
+      handlePrismaError(error, 'objetivos');
     }
   }
 
@@ -289,11 +282,17 @@ export class ObjetivoService {
         select: { idEmpleado: true },
       });
 
-      if (subordinados.length === 0) {
+      if (subordinados.length == 0) {
         return [];
       }
 
       const subordinadosIds = subordinados.map((s) => s.idEmpleado);
+
+      // Condificion para verificar si al menos hay 1 objetivo
+      const totalObjetivos = await this.prisma.objetivo.count();
+      if (totalObjetivos == 0) {
+        return [];
+      }
 
       // 3. Obtener objetivos de los subordinados
       return await this.prisma.objetivo.findMany({
@@ -309,11 +308,7 @@ export class ObjetivoService {
       });
     } catch (error) {
       this.logger.error('Error al obtener objetivos de subordinados:', error);
-
-      if (error instanceof HttpException) throw error;
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los objetivos de subordinados.',
-      );
+      handlePrismaError(error, 'objetivos');
     }
   }
 

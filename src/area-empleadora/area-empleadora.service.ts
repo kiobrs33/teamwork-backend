@@ -1,16 +1,20 @@
 import {
-  HttpException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateAreaEmpleadoraDto } from './dto/create-area-empleadora.dto';
 import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { Prisma } from '@prisma/client';
+import { AreaQueryDto } from './dto/area-query.dto';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class AreaEmpleadoraService {
+  private readonly logger = new Logger(AreaEmpleadoraService.name);
   constructor(private prisma: PrismaService) {}
 
   async create(user: AuthUser, dto: CreateAreaEmpleadoraDto) {
@@ -25,25 +29,75 @@ export class AreaEmpleadoraService {
       return area;
     } catch (error) {
       console.error('Error al crear área:', error);
-      throw new InternalServerErrorException('No se pudo crear el área.');
+      handlePrismaError(error, 'area empleadora');
     }
   }
 
-  async findAll() {
+  async findAll({ page, limit, search }: AreaQueryDto) {
     try {
-      const areas = await this.prisma.areaEmpleadora.findMany({
-        include: { empresaEmpleadora: true },
-        where: { estado: true },
-        orderBy: {
-          fechaCreacion: 'desc',
+      const where: Prisma.AreaEmpleadoraWhereInput = {
+        estado: true,
+        ...(search && {
+          OR: [
+            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: { contains: search, mode: 'insensitive' },
+              },
+            },
+          ],
+        }),
+      };
+
+      const include: Prisma.AreaEmpleadoraInclude = {
+        empresaEmpleadora: true,
+      };
+
+      if (Number(limit) === 0) {
+        const data = await this.prisma.areaEmpleadora.findMany({
+          where,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        });
+
+        return {
+          data,
+          meta: {
+            total: data.length,
+            page: 1,
+            limit: 0,
+            totalPages: 1,
+          },
+        };
+      }
+
+      const safeLimit = Math.min(Number(limit) || 10, 100);
+      const safePage = Math.max(Number(page) || 1, 1);
+      const skip = (safePage - 1) * safeLimit;
+
+      const [total, data] = await Promise.all([
+        this.prisma.areaEmpleadora.count({ where }),
+        this.prisma.areaEmpleadora.findMany({
+          where,
+          skip,
+          take: safeLimit,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(total / safeLimit),
         },
-      });
-      return areas;
+      };
     } catch (error) {
-      console.error('Error al obtener áreas:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las áreas.',
-      );
+      this.logger.error('Error al obtener los empleados:', error);
+      handlePrismaError(error, 'area empleadora');
     }
   }
 
@@ -61,7 +115,7 @@ export class AreaEmpleadoraService {
       return area;
     } catch (error) {
       console.error('Error al obtener el área:', error);
-      throw new InternalServerErrorException('No se pudo obtener el área.');
+      handlePrismaError(error, 'area empleadora');
     }
   }
 
@@ -87,7 +141,7 @@ export class AreaEmpleadoraService {
       return updatedArea;
     } catch (error) {
       console.error('Error al actualizar el área:', error);
-      throw new InternalServerErrorException('No se pudo actualizar el área.');
+      handlePrismaError(error, 'area empleadora');
     }
   }
 
@@ -111,12 +165,8 @@ export class AreaEmpleadoraService {
       });
       return deletedArea;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
       console.error('Error al eliminar el área:', error);
-      throw new InternalServerErrorException('No se pudo eliminar el área.');
+      handlePrismaError(error, 'area empleadora');
     }
   }
 
@@ -135,9 +185,7 @@ export class AreaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
-      throw new InternalServerErrorException(
-        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
-      );
+      handlePrismaError(error, 'area empleadora');
     }
   }
 
@@ -154,9 +202,7 @@ export class AreaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al obtener areas por empresa:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las areas de esta empresa.',
-      );
+      handlePrismaError(error, 'area empleadora');
     }
   }
 }

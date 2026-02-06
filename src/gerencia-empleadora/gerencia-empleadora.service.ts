@@ -2,19 +2,23 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateGerenciaEmpleadoraDto } from './dto/create-gerencia-empleadora.dto';
 import { UpdateGerenciaEmpleadoraDto } from './dto/update-gerencia-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { GerenciaQueryDto } from './dto/gerencia-query.dto';
+import { Prisma } from '@prisma/client';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class GerenciaEmpleadoraService {
+  private readonly logger = new Logger(GerenciaEmpleadoraService.name);
   constructor(private prisma: PrismaService) {}
 
   async create(user: AuthUser, dto: CreateGerenciaEmpleadoraDto) {
-    console.log(user);
     try {
       const gerencia = await this.prisma.gerenciaEmpleadora.create({
         data: {
@@ -26,24 +30,76 @@ export class GerenciaEmpleadoraService {
       return gerencia;
     } catch (error) {
       console.error('Error al crear gerencia:', error);
-      throw new InternalServerErrorException('No se pudo crear la gerencia.');
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 
-  async findAll() {
+  async findAll({ page, limit, search }: GerenciaQueryDto) {
     try {
-      return await this.prisma.gerenciaEmpleadora.findMany({
-        include: { empresaEmpleadora: true },
-        where: { estado: true },
-        orderBy: {
-          fechaCreacion: 'desc',
+      const where: Prisma.GerenciaEmpleadoraWhereInput = {
+        estado: true,
+        ...(search && {
+          OR: [
+            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: { contains: search, mode: 'insensitive' },
+                ruc: { contains: search, mode: 'insensitive' },
+              },
+            },
+          ],
+        }),
+      };
+
+      const include: Prisma.AreaEmpleadoraInclude = {
+        empresaEmpleadora: true,
+      };
+
+      if (Number(limit) === 0) {
+        const data = await this.prisma.gerenciaEmpleadora.findMany({
+          where,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        });
+
+        return {
+          data,
+          meta: {
+            total: data.length,
+            page: 1,
+            limit: 0,
+            totalPages: 1,
+          },
+        };
+      }
+
+      const safeLimit = Math.min(Number(limit) || 10, 100);
+      const safePage = Math.max(Number(page) || 1, 1);
+      const skip = (safePage - 1) * safeLimit;
+
+      const [total, data] = await Promise.all([
+        this.prisma.gerenciaEmpleadora.count({ where }),
+        this.prisma.gerenciaEmpleadora.findMany({
+          where,
+          skip,
+          take: safeLimit,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(total / safeLimit),
         },
-      });
+      };
     } catch (error) {
-      console.error('Error al obtener gerencias:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las gerencias.',
-      );
+      this.logger.error('Error al obtener los empleados:', error);
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 
@@ -60,11 +116,8 @@ export class GerenciaEmpleadoraService {
 
       return gerencia;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
       console.error('Error al obtener la gerencia:', error);
-      throw new InternalServerErrorException('No se pudo obtener la gerencia.');
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 
@@ -89,9 +142,7 @@ export class GerenciaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al actualizar la gerencia:', error);
-      throw new InternalServerErrorException(
-        'No se pudo actualizar la gerencia.',
-      );
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 
@@ -115,9 +166,7 @@ export class GerenciaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al eliminar la gerencia:', error);
-      throw new InternalServerErrorException(
-        'No se pudo eliminar la gerencia.',
-      );
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 
@@ -136,9 +185,7 @@ export class GerenciaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
-      throw new InternalServerErrorException(
-        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
-      );
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 
@@ -155,9 +202,7 @@ export class GerenciaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al obtener gerencias por empresa:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las gerencias de esta empresa.',
-      );
+      handlePrismaError(error, 'gerencia empleadora');
     }
   }
 }

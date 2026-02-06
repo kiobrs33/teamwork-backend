@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
   IsNotEmpty,
@@ -6,6 +6,9 @@ import {
   Matches,
   Length,
   IsDateString,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
 
 export class CreateEmpresaEmpleadoraDto {
@@ -110,4 +113,20 @@ export class CreateEmpresaEmpleadoraDto {
     },
   )
   fechaVigenciaFinObjetivo?: string | null;
+
+  @ApiPropertyOptional({
+    example: 80,
+    description: 'Porcentaje de competencias (0 a 100)',
+  })
+  @IsOptional()
+  @IsInt()
+  porcentajeCompetecias?: number;
+
+  @ApiPropertyOptional({
+    example: 20,
+    description: 'Porcentaje de objetivos (0 a 100)',
+  })
+  @IsOptional()
+  @IsInt()
+  porcentajeObjetivos?: number;
 }

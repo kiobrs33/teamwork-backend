@@ -10,6 +10,7 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,6 +26,7 @@ import { AreaEmpleadoraService } from './area-empleadora.service';
 import { CreateAreaEmpleadoraDto } from './dto/create-area-empleadora.dto';
 import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { AreaQueryDto } from './dto/area-query.dto';
 
 @ApiTags('Área Empleadora')
 @ApiBearerAuth()
@@ -33,6 +35,7 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 export class AreaEmpleadoraController {
   constructor(private readonly areaEmpleadoraService: AreaEmpleadoraService) {}
 
+  // Crear área empleadora
   @Post()
   @ApiOperation({ summary: 'Crear una nueva área empleadora' })
   @ApiResponse({
@@ -47,17 +50,23 @@ export class AreaEmpleadoraController {
     };
   }
 
+  // Listar todas las áreas empleadoras
   @Get()
   @ApiOperation({ summary: 'Listar todas las áreas empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de áreas empleadoras.' })
-  async findAll() {
-    const areas = await this.areaEmpleadoraService.findAll();
+  async findAll(@Query() query: AreaQueryDto) {
+    const resp = await this.areaEmpleadoraService.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
     return {
       message: 'Lista de áreas empleadoras.',
-      data: { areas },
+      data: { areas: resp.data, meta: resp.meta },
     };
   }
 
+  // Listar áreas empleadoras por empresa
   @Get('empresa/:id')
   @ApiOperation({ summary: 'Listar areas empleadoras de una empresa' })
   @ApiResponse({
@@ -73,6 +82,7 @@ export class AreaEmpleadoraController {
     };
   }
 
+  // Obtener área empleadora por ID
   @Get(':id')
   @ApiOperation({ summary: 'Obtener área empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID del área empleadora' })
@@ -85,6 +95,7 @@ export class AreaEmpleadoraController {
     };
   }
 
+  // Actualizar área empleadora
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar área empleadora' })
   @ApiParam({ name: 'id', description: 'ID del área empleadora' })
@@ -104,6 +115,7 @@ export class AreaEmpleadoraController {
     };
   }
 
+  // Eliminar área empleadora (soft delete)
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar área empleadora (soft delete)' })
   @ApiParam({ name: 'id', description: 'ID del área empleadora' })
@@ -119,6 +131,7 @@ export class AreaEmpleadoraController {
     };
   }
 
+  // Importar áreas empleadoras desde Excel
   @Post('import')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreateAreaEmpleadoraDto] })

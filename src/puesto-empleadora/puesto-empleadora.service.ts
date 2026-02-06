@@ -2,15 +2,21 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreatePuestoEmpleadoraDto } from './dto/create-puesto-empleadora.dto';
 import { UpdatePuestoEmpleadoraDto } from './dto/update-puesto-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { Prisma } from '@prisma/client';
+import { PuestoQueryDto } from './dto/puesto-query.dto';
+import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 @Injectable()
 export class PuestoEmpleadoraService {
+  private readonly logger = new Logger(PuestoEmpleadoraService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async create(user: AuthUser, dto: CreatePuestoEmpleadoraDto) {
@@ -25,25 +31,94 @@ export class PuestoEmpleadoraService {
       return puesto;
     } catch (error) {
       console.error('Error al crear puesto:', error);
-      throw new InternalServerErrorException('No se pudo crear el puesto.');
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 
-  async findAll() {
+  // async findAll() {
+  //   try {
+  //     const puestos = await this.prisma.puestoEmpleadora.findMany({
+  //       include: { empresaEmpleadora: true },
+  //       where: { estado: true },
+  //       orderBy: {
+  //         fechaCreacion: 'desc',
+  //       },
+  //     });
+  //     return puestos;
+  //   } catch (error) {
+  //     console.error('Error al obtener puestos:', error);
+  //     throw new InternalServerErrorException(
+  //       'No se pudieron obtener los puestos.',
+  //     );
+  //   }
+  // }
+
+  async findAll({ page, limit, search }: PuestoQueryDto) {
     try {
-      const puestos = await this.prisma.puestoEmpleadora.findMany({
-        include: { empresaEmpleadora: true },
-        where: { estado: true },
-        orderBy: {
-          fechaCreacion: 'desc',
+      const where: Prisma.PuestoEmpleadoraWhereInput = {
+        estado: true,
+        ...(search && {
+          OR: [
+            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: { contains: search, mode: 'insensitive' },
+                ruc: { contains: search, mode: 'insensitive' },
+              },
+            },
+          ],
+        }),
+      };
+
+      const include: Prisma.PuestoEmpleadoraInclude = {
+        empresaEmpleadora: true,
+      };
+
+      if (Number(limit) === 0) {
+        const data = await this.prisma.puestoEmpleadora.findMany({
+          where,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        });
+
+        return {
+          data,
+          meta: {
+            total: data.length,
+            page: 1,
+            limit: 0,
+            totalPages: 1,
+          },
+        };
+      }
+
+      const safeLimit = Math.min(Number(limit) || 10, 100);
+      const safePage = Math.max(Number(page) || 1, 1);
+      const skip = (safePage - 1) * safeLimit;
+
+      const [total, data] = await Promise.all([
+        this.prisma.puestoEmpleadora.count({ where }),
+        this.prisma.puestoEmpleadora.findMany({
+          where,
+          skip,
+          take: safeLimit,
+          include,
+          orderBy: { fechaCreacion: 'desc' },
+        }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          total,
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(total / safeLimit),
         },
-      });
-      return puestos;
+      };
     } catch (error) {
-      console.error('Error al obtener puestos:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener los puestos.',
-      );
+      this.logger.error('Error al obtener los puestos:', error);
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 
@@ -60,12 +135,8 @@ export class PuestoEmpleadoraService {
 
       return puesto;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
       console.error('Error al obtener el puesto:', error);
-      throw new InternalServerErrorException('No se pudo obtener el puesto.');
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 
@@ -90,9 +161,7 @@ export class PuestoEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al actualizar el puesto:', error);
-      throw new InternalServerErrorException(
-        'No se pudo actualizar el puesto.',
-      );
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 
@@ -116,7 +185,7 @@ export class PuestoEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al eliminar el puesto:', error);
-      throw new InternalServerErrorException('No se pudo eliminar el puesto.');
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 
@@ -135,9 +204,7 @@ export class PuestoEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al importar datos:', error);
-      throw new InternalServerErrorException(
-        'Error al importar los datos. Por favor, verifica el archivo o contacta soporte.',
-      );
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 
@@ -154,9 +221,7 @@ export class PuestoEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al obtener puestos por empresa:', error);
-      throw new InternalServerErrorException(
-        'No se pudieron obtener las puestos de esta empresa.',
-      );
+      handlePrismaError(error, 'puesto empleadora');
     }
   }
 }

@@ -65,7 +65,7 @@ async function main() {
       data: { codigoUsuario, contrasena: hashedPassword, rol, creadoPorId: 1 },
     });
 
-    await prisma.empleado.create({
+    const empleado = await prisma.empleado.create({
       data: {
         codigoEmpleado: faker.string.alphanumeric(6).toUpperCase(),
         nombres: faker.person.firstName(),
@@ -85,7 +85,7 @@ async function main() {
       },
     });
 
-    return user;
+    return { ...user, ...empleado };
   }
 
   // 2. Crear usuarios ADMIN, JEFE, EMPLEADO
@@ -93,7 +93,22 @@ async function main() {
   const jefeUser = await crearUsuarioYEmpleado('jefe', 'JEFE');
   const empleadoUser = await crearUsuarioYEmpleado('empleado', 'EMPLEADO');
 
-  console.log('Users', adminUser, jefeUser, empleadoUser);
+  const TOTAL = 500;
+  const BATCH_SIZE = 20;
+
+  for (let i = 1; i <= TOTAL; i += BATCH_SIZE) {
+    const batch = Array.from(
+      { length: Math.min(BATCH_SIZE, TOTAL - i + 1) },
+      (_, index) =>
+        crearUsuarioYEmpleado(
+          `empleado_${i + index}`,
+          'EMPLEADO',
+          jefeUser.codigoEmpleado,
+        ),
+    );
+
+    await Promise.all(batch);
+  }
 
   // =========================
   // 2. Crear empresas

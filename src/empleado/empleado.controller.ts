@@ -8,6 +8,7 @@ import {
   Delete,
   ParseIntPipe,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { EmpleadoService } from './empleado.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
@@ -24,6 +25,7 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { EmployeeQueryDto } from './dto/employee-query.dto';
 
 @ApiTags('Empleados')
 @ApiBearerAuth()
@@ -32,9 +34,7 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 export class EmpleadoController {
   constructor(private readonly empleadoService: EmpleadoService) {}
 
-  // ============================================================
   // CREAR EMPLEADO
-  // ============================================================
   @Post()
   @ApiOperation({ summary: 'Crear un nuevo empleado' })
   @ApiResponse({ status: 201, description: 'Empleado creado exitosamente.' })
@@ -47,9 +47,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // CREAR EMPLEADOS MASIVOS
-  // ============================================================
   @Post('masivo')
   @ApiOperation({ summary: 'Crear varios empleados de forma masiva' })
   @ApiResponse({
@@ -62,30 +60,35 @@ export class EmpleadoController {
     description: 'Lista de empleados a crear de forma masiva',
   })
   async createMany(@User() user: AuthUser, @Body() body: CreateEmpleadoDto[]) {
-    const empleados = await this.empleadoService.createMany(user, body);
+    console.log('CONTROLLLER MASIVO', body);
+    const resp = await this.empleadoService.createMany(user, body);
     return {
       message: 'Empleados creados exitosamente.',
-      data: { empleados },
+      data: {
+        empleados: resp.empleados,
+        totalInsertados: resp.totalInsertados,
+      },
     };
   }
 
-  // ============================================================
   // LISTAR TODOS
-  // ============================================================
   @Get()
-  @ApiOperation({ summary: 'Listar todos los empleados' })
+  @ApiOperation({ summary: 'Listar empleados (paginado o todos)' })
   @ApiResponse({ status: 200, description: 'Lista de empleados.' })
-  async findAll() {
-    const empleados = await this.empleadoService.findAll();
+  async findAll(@Query() query: EmployeeQueryDto) {
+    const resp = await this.empleadoService.findAll({
+      page: query.page ?? 1,
+      limit: query.limit ?? 0,
+      search: query.search,
+    });
+
     return {
       message: 'Lista de empleados.',
-      data: { empleados },
+      data: { empleados: resp.data, meta: resp.meta },
     };
   }
 
-  // ============================================================
   // OBTENER EMPLEADOS POR ID DE EMPRESA EMPLEADORA
-  // ============================================================
   @Get('empresa/:id')
   @ApiOperation({
     summary: 'Obtener empleados por empresa empleadora',
@@ -103,9 +106,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // OBTENER POR ID USUARIO
-  // ============================================================
   @Get('by-user/:id')
   @ApiOperation({ summary: 'Obtener empleado por ID de usuario' })
   @ApiParam({ name: 'id', description: 'ID del usuario' })
@@ -118,9 +119,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // COMPETENCIAS ASIGNADAS DE UN EMPLEADO (POR ID EMPLEADO)
-  // ============================================================
   @Get('competencias/:id')
   @ApiOperation({
     summary:
@@ -139,9 +138,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // OBTENER POR ID EMPLEADO
-  // ============================================================
   @Get(':id')
   @ApiOperation({ summary: 'Obtener empleado por ID' })
   @ApiParam({ name: 'id', description: 'ID del empleado' })
@@ -154,9 +151,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // ACTUALIZAR EMPLEADO
-  // ============================================================
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar empleado' })
   @ApiParam({ name: 'id', description: 'ID del empleado' })
@@ -176,9 +171,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // ELIMINAR EMPLEADO (SOFT DELETE)
-  // ============================================================
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar empleado (soft delete)' })
   @ApiParam({ name: 'id', description: 'ID del empleado' })
@@ -194,6 +187,7 @@ export class EmpleadoController {
     };
   }
 
+  // OBTENER SUBORDINADOS POR ID USUARIO
   @Get('subordinados/by-user/:id')
   @ApiOperation({
     summary: 'Obtener empleados subordinados del usuario logueado',
@@ -212,9 +206,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
-  // SUBORDINADOS POR ID JEFE + COMPETENCIAS DE LA UO
-  // ============================================================
+  // SUBORDINADOS POR ID JEFE + COMPETENCIAS DE LA UNIDAD OCUPACIONAL
   @Get('subordinados/competencias/:id')
   @ApiOperation({
     summary:
@@ -237,9 +229,7 @@ export class EmpleadoController {
     };
   }
 
-  // ============================================================
   // OBTENER JEFE DEL EMPLEADO + COMPETENCIAS (POR ID USUARIO)
-  // ============================================================
   @Get('jefe/competencias/by-user/:id')
   @ApiOperation({
     summary:
