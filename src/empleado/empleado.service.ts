@@ -162,7 +162,7 @@ export class EmpleadoService {
             idUsuario: usuario.idUsuario,
             creadoPorId: user.idUsuario,
           },
-          include: { usuario: true },
+          include: { usuario: true, empresaEmpleadora: true },
         });
 
         return empleado;
