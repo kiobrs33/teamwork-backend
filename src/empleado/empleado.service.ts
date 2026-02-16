@@ -564,7 +564,8 @@ export class EmpleadoService {
                 codigoEmpleado: body.codigoEmpleado,
                 nombres: body.nombres,
                 apellidos: body.apellidos,
-                documento: body.documento,
+                // documento: body.documento,
+                documento: body.documento ? String(body.documento) : null,
                 sede: body.sede,
                 tiempoEmpresaValor: body.tiempoEmpresaValor,
                 tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
@@ -574,7 +575,12 @@ export class EmpleadoService {
                 idGerenciaEmpleadora: body.idGerenciaEmpleadora,
                 idUnidadOcupacionalEmpleadora:
                   body.idUnidadOcupacionalEmpleadora,
-                codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
+                // codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
+                codigoEmpleadoJefe:
+                  body.codigoEmpleadoJefe !== undefined &&
+                  body.codigoEmpleadoJefe !== null
+                    ? String(body.codigoEmpleadoJefe)
+                    : null,
                 idUsuario: usuario.idUsuario,
                 creadoPorId: user.idUsuario,
               },

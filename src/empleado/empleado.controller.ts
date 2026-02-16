@@ -60,7 +60,7 @@ export class EmpleadoController {
     description: 'Lista de empleados a crear de forma masiva',
   })
   async createMany(@User() user: AuthUser, @Body() body: CreateEmpleadoDto[]) {
-    console.log('CONTROLLLER MASIVO', body);
+    // console.log('CONTROLLLER MASIVO', body);
     const resp = await this.empleadoService.createMany(user, body);
     return {
       message: 'Empleados creados exitosamente.',
