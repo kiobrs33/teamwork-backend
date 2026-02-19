@@ -27,38 +27,38 @@
               <td class="table__cell table__cell--bold">
                 Apellidos y Nombres:
               </td>
-              <td class="table__cell">René Edgard Lozano Ramos</td>
+              <td class="table__cell">{{empleado.apellidos}} {{empleado.nombres}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Puesto:</td>
-              <td class="table__cell">OPERADOR SCADA</td>
+              <td class="table__cell">{{empleado.puestoEmpleadora.descripcion}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Gerencia:</td>
-              <td class="table__cell">GERENCIA DE OPERACIONES</td>
+              <td class="table__cell">{{empleado.gerenciaEmpleadora.descripcion}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Área:</td>
-              <td class="table__cell">UNIDAD DE CONTROL DE OPERACIONES</td>
+              <td class="table__cell">{{empleado.areaEmpleadora.descripcion}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Grupo:</td>
               <td class="table__cell">
-                Grupo de evaluación de desempeño 2022 - G1
+                {{empleado.unidadOcupacionalEmpleadora.descripcion}}
               </td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">
                 Fecha de Evaluación:
               </td>
-              <td class="table__cell">Diciembre 2022</td>
+              <td class="table__cell">{{fechaEvaluacion}}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <h2 class="report__title">
-        RESULTADO DE LA EVALUACIÓN DE DESEMPEÑO | INDIVIDUAL
+        RESULTADO DE LA EVALUACIÓN DE DESEMPEÑO | REPORTE INDIVIDUAL
       </h2>
 
       <div class="table">

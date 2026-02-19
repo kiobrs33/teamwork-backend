@@ -1025,6 +1025,17 @@ export class CompetenciaService {
   // }
 
   async exportarResultadosEmpresaExcel(idEmpresaEmpleadora: number) {
+    const empresa = await this.prisma.empresaEmpleadora.findFirst({
+      where: {
+        idEmpresaEmpleadora: idEmpresaEmpleadora,
+        estado: true,
+      },
+    });
+
+    if (!empresa) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
     // ===============================
     // 1️⃣ OBTENER DATA BASE
     // ===============================
@@ -1130,8 +1141,8 @@ export class CompetenciaService {
     }
 
     // TODO: Porcentajes
-    const competenciaPor = 0.7;
-    const objetivoPor = 0.3;
+    const competenciaPor = (empresa.porcentajeCompetecias ?? 0) / 100;
+    const objetivoPor = (empresa.porcentajeObjetivos ?? 0) / 100;
 
     // ===============================
     // 3️⃣ CREAR EXCEL

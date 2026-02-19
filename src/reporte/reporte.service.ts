@@ -314,6 +314,13 @@ export class ReporteService {
       },
     });
 
+    const fecha = new Date();
+
+    const fechaEvaluacion = fecha.toLocaleDateString('es-ES', {
+      month: 'long',
+      year: 'numeric',
+    }).toUpperCase();
+
     if (!empleado) {
       throw new NotFoundException('Empleado no encontrado');
     }
@@ -491,6 +498,8 @@ export class ReporteService {
 
     return this.pdfRenderer.render('evaluacion', {
       chartData,
+      empleado,
+      fechaEvaluacion,
     });
   }
 }
