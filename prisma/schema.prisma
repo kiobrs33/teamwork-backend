@@ -63,32 +63,32 @@ model Usuario {
 }
 
 model EmpresaEmpleadora {
-  idEmpresaEmpleadora                 Int                           @id @default(autoincrement()) @map("id_empresa_empleadora")
-  nombreEmpresa                       String                        @map("nombre_empresa")
-  ruc                                 String?                       @unique
-  direccionEmpresa                    String?                       @map("direccion_empresa")
-  urlLogo                             String                        @map("url_logo")
-  modeloEmpresa                       String // 90, 180
-  fechaVigenciaInicio                 DateTime                      @map("fecha_vigencia_inicio")
-  fechaVigenciaFin                    DateTime                      @map("fecha_vigencia_fin")
-  fechaVigenciaInicioObjetivo         DateTime?                     @map("fecha_vigencia_inicio_objetivo")
-  fechaVigenciaFinObjetivo            DateTime?                     @map("fecha_vigencia_fin_objetivo")
-  porcentajeCompetecias               Int?                          @map("porcentaje_competencias")
-  porcentajeObjetivos                 Int?                          @map("porcentaje_objetivos")
-  porcentajeJefeCompetencia           Int?                          @map("porcentaje_jefe_competencia")
-  porcentajeAutoevaluacionCompetencia Int?                          @map("porcentaje_autoevaluacion_competencia")
-  tipoCalificacionCompetencia         String?                       @default("LIKERT") @map("tipo_calificacion_competencia")
-  estado                              Boolean                       @default(true)
-  creadoPorId                         Int                           @map("creado_por_id")
-  actualizadoPorId                    Int?                          @map("actualizado_por_id")
-  fechaCreacion                       DateTime                      @default(now()) @map("fecha_creacion")
-  fechaModificacion                   DateTime?                     @map("fecha_modificacion")
-  areaEmpleadoras                     AreaEmpleadora[]
-  puestoEmpleadoras                   PuestoEmpleadora[]
-  gerenciaEmpleadoras                 GerenciaEmpleadora[]
-  empleados                           Empleado[]
-  unidadOcupacionalEmpleadoras        UnidadOcupacionalEmpleadora[]
-  competencias                        Competencia[]
+  idEmpresaEmpleadora                        Int                           @id @default(autoincrement()) @map("id_empresa_empleadora")
+  nombreEmpresa                              String                        @map("nombre_empresa")
+  ruc                                        String?                       @unique
+  direccionEmpresa                           String?                       @map("direccion_empresa")
+  urlLogo                                    String                        @map("url_logo")
+  modeloEmpresa                              String // 90, 180
+  fechaVigenciaInicio                        DateTime                      @map("fecha_vigencia_inicio")
+  fechaVigenciaFin                           DateTime                      @map("fecha_vigencia_fin")
+  fechaVigenciaInicioObjetivo                DateTime?                     @map("fecha_vigencia_inicio_objetivo")
+  fechaVigenciaFinObjetivo                   DateTime?                     @map("fecha_vigencia_fin_objetivo")
+  porcentajeCompetecias                      Int?                          @map("porcentaje_competencias")
+  porcentajeObjetivos                        Int?                          @map("porcentaje_objetivos")
+  porcentajeEvaluacionJefeCompetencia        Int?                          @map("porcentaje_evaluacion_jefe_competencia")
+  porcentajeEvaluacionSubordinadoCompetencia Int?                          @map("porcentaje_evaluacion_subordinado_competencia")
+  tipoCalificacionCompetencia                String?                       @default("LIKERT") @map("tipo_calificacion_competencia")
+  estado                                     Boolean                       @default(true)
+  creadoPorId                                Int                           @map("creado_por_id")
+  actualizadoPorId                           Int?                          @map("actualizado_por_id")
+  fechaCreacion                              DateTime                      @default(now()) @map("fecha_creacion")
+  fechaModificacion                          DateTime?                     @map("fecha_modificacion")
+  areaEmpleadoras                            AreaEmpleadora[]
+  puestoEmpleadoras                          PuestoEmpleadora[]
+  gerenciaEmpleadoras                        GerenciaEmpleadora[]
+  empleados                                  Empleado[]
+  unidadOcupacionalEmpleadoras               UnidadOcupacionalEmpleadora[]
+  competencias                               Competencia[]
 
   @@map("empresa_empleadora")
 }

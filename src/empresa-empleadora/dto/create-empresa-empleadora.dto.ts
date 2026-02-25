@@ -131,6 +131,166 @@
 //   porcentajeObjetivos?: number;
 // }
 
+// import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+// import {
+//   IsString,
+//   IsNotEmpty,
+//   IsOptional,
+//   Matches,
+//   Length,
+//   IsDateString,
+//   IsInt,
+//   Min,
+//   Max,
+//   IsIn,
+//   IsEnum,
+// } from 'class-validator';
+// import { TipoCalificacion } from '../types/empresaTypes';
+
+// export class CreateEmpresaEmpleadoraDto {
+//   @ApiProperty({
+//     example: 'Empresa XYZ S.A.',
+//     description: 'Nombre de la empresa',
+//   })
+//   @IsString()
+//   @IsNotEmpty({ message: 'El nombre de la empresa es obligatorio.' })
+//   @Length(1, 100, {
+//     message: 'El nombre debe tener entre 1 y 100 caracteres.',
+//   })
+//   nombreEmpresa: string;
+
+//   @ApiProperty({
+//     example: '12345678901',
+//     description: 'RUC de la empresa (11 dígitos)',
+//     required: false,
+//   })
+//   @IsOptional()
+//   @IsString()
+//   @Matches(/^\d{11}$/, {
+//     message: 'El RUC debe tener exactamente 11 dígitos numéricos.',
+//   })
+//   ruc?: string;
+
+//   @ApiProperty({
+//     example: 'Av. Principal 123, Lima',
+//     description: 'Dirección de la empresa',
+//     required: false,
+//   })
+//   @IsOptional()
+//   @IsString()
+//   @Length(5, 200, {
+//     message: 'La dirección debe tener entre 5 y 200 caracteres.',
+//   })
+//   direccionEmpresa?: string;
+
+//   @ApiProperty({
+//     example: 'https://empresa.com/logo.png',
+//     description: 'URL del logo',
+//   })
+//   @IsString()
+//   @IsNotEmpty({ message: 'La URL del logo es obligatoria.' })
+//   urlLogo: string;
+
+//   @ApiProperty({
+//     example: '90',
+//     description: 'Modelo de evaluación (90 o 180)',
+//   })
+//   @IsString()
+//   @IsIn(['90', '180'], {
+//     message: 'El modelo debe ser 90 o 180.',
+//   })
+//   modeloEmpresa: string;
+
+//   @ApiProperty({
+//     example: '2025-07-10T17:30:07.811Z',
+//   })
+//   @IsDateString()
+//   fechaVigenciaInicio: string;
+
+//   @ApiProperty({
+//     example: '2025-12-10T17:30:07.811Z',
+//   })
+//   @IsDateString()
+//   fechaVigenciaFin: string;
+
+//   @ApiPropertyOptional({
+//     example: '2025-07-10T17:30:07.811Z',
+//   })
+//   @IsOptional()
+//   @IsDateString()
+//   fechaVigenciaInicioObjetivo?: string | null;
+
+//   @ApiPropertyOptional({
+//     example: '2025-12-10T17:30:07.811Z',
+//   })
+//   @IsOptional()
+//   @IsDateString()
+//   fechaVigenciaFinObjetivo?: string | null;
+
+//   /*
+//     =========================
+//     PONDERACIONES
+//     =========================
+//   */
+
+//   @ApiPropertyOptional({
+//     example: 80,
+//     description: 'Porcentaje de competencias',
+//   })
+//   @IsOptional()
+//   @IsInt()
+//   @Min(0)
+//   @Max(100)
+//   porcentajeCompetecias?: number;
+
+//   @ApiPropertyOptional({
+//     example: 20,
+//     description: 'Porcentaje de objetivos',
+//   })
+//   @IsOptional()
+//   @IsInt()
+//   @Min(0)
+//   @Max(100)
+//   porcentajeObjetivos?: number;
+
+//   @ApiPropertyOptional({
+//     example: 70,
+//     description: 'Porcentaje evaluación jefe (competencias)',
+//   })
+//   @IsOptional()
+//   @IsInt()
+//   @Min(0)
+//   @Max(100)
+//   porcentajeJefeCompetencia?: number;
+
+//   @ApiPropertyOptional({
+//     example: 30,
+//     description: 'Porcentaje autoevaluación (competencias)',
+//   })
+//   @IsOptional()
+//   @IsInt()
+//   @Min(0)
+//   @Max(100)
+//   porcentajeAutoevaluacionCompetencia?: number;
+
+//   /*
+//     =========================
+//     TIPO CALIFICACION
+//     =========================
+//   */
+
+//   @ApiPropertyOptional({
+//     example: 'LIKERT',
+//     description: 'Tipo de calificación de competencias',
+//   })
+//   @IsOptional()
+//   @IsString()
+//   @IsEnum(TipoCalificacion, {
+//     message: 'El tipo debe ser LIKERT o MANUAL',
+//   })
+//   tipoCalificacionCompetencia?: string;
+// }
+
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
@@ -144,10 +304,17 @@ import {
   Max,
   IsIn,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { TipoCalificacion } from '../types/empresaTypes';
 
 export class CreateEmpresaEmpleadoraDto {
+  /*
+    =========================
+    INFORMACIÓN GENERAL
+    =========================
+  */
+
   @ApiProperty({
     example: 'Empresa XYZ S.A.',
     description: 'Nombre de la empresa',
@@ -171,10 +338,9 @@ export class CreateEmpresaEmpleadoraDto {
   })
   ruc?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Av. Principal 123, Lima',
     description: 'Dirección de la empresa',
-    required: false,
   })
   @IsOptional()
   @IsString()
@@ -201,35 +367,41 @@ export class CreateEmpresaEmpleadoraDto {
   })
   modeloEmpresa: string;
 
+  /*
+    =========================
+    VIGENCIAS
+    =========================
+  */
+
   @ApiProperty({
     example: '2025-07-10T17:30:07.811Z',
   })
-  @IsDateString()
+  @IsDateString({}, { message: 'Fecha inicio inválida (ISO 8601).' })
   fechaVigenciaInicio: string;
 
   @ApiProperty({
     example: '2025-12-10T17:30:07.811Z',
   })
-  @IsDateString()
+  @IsDateString({}, { message: 'Fecha fin inválida (ISO 8601).' })
   fechaVigenciaFin: string;
 
   @ApiPropertyOptional({
     example: '2025-07-10T17:30:07.811Z',
   })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({}, { message: 'Fecha inicio objetivo inválida.' })
   fechaVigenciaInicioObjetivo?: string | null;
 
   @ApiPropertyOptional({
     example: '2025-12-10T17:30:07.811Z',
   })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({}, { message: 'Fecha fin objetivo inválida.' })
   fechaVigenciaFinObjetivo?: string | null;
 
   /*
     =========================
-    PONDERACIONES
+    PONDERACIONES GENERALES
     =========================
   */
 
@@ -253,6 +425,12 @@ export class CreateEmpresaEmpleadoraDto {
   @Max(100)
   porcentajeObjetivos?: number;
 
+  /*
+    =========================
+    PONDERACIÓN COMPETENCIAS
+    =========================
+  */
+
   @ApiPropertyOptional({
     example: 70,
     description: 'Porcentaje evaluación jefe (competencias)',
@@ -261,21 +439,21 @@ export class CreateEmpresaEmpleadoraDto {
   @IsInt()
   @Min(0)
   @Max(100)
-  porcentajeJefeCompetencia?: number;
+  porcentajeEvaluacionJefeCompetencia?: number;
 
   @ApiPropertyOptional({
     example: 30,
-    description: 'Porcentaje autoevaluación (competencias)',
+    description: 'Porcentaje evaluación subordinado (competencias)',
   })
   @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100)
-  porcentajeAutoevaluacionCompetencia?: number;
+  porcentajeEvaluacionSubordinadoCompetencia?: number;
 
   /*
     =========================
-    TIPO CALIFICACION
+    TIPO CALIFICACIÓN
     =========================
   */
 
@@ -284,9 +462,8 @@ export class CreateEmpresaEmpleadoraDto {
     description: 'Tipo de calificación de competencias',
   })
   @IsOptional()
-  @IsString()
   @IsEnum(TipoCalificacion, {
-    message: 'El tipo debe ser LIKERT o MANUAL',
+    message: 'El tipo debe ser LIKERT o MANUAL.',
   })
-  tipoCalificacionCompetencia?: string;
+  tipoCalificacionCompetencia?: TipoCalificacion;
 }
