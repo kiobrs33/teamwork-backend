@@ -1629,9 +1629,23 @@ export class CompetenciaService {
       }
 
       // ✅ MODELO 180 → JEFE + SUBORDINADOS
+      // if (empresa.modeloEmpresa === '180') {
+      //   resultadoCompetencias =
+      //     promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso;
+      // }
       if (empresa.modeloEmpresa === '180') {
-        resultadoCompetencias =
-          promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso;
+        const tieneSubordinados = emp.evaluacionesSubordinados.length > 0;
+
+        // 🔵 Si NO tiene subordinados → funciona como 90
+        if (!tieneSubordinados) {
+          resultadoCompetencias = promedioJefe;
+        }
+
+        // 🔵 Si SÍ tiene subordinados → 180 real
+        if (tieneSubordinados) {
+          resultadoCompetencias =
+            promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso;
+        }
       }
 
       const promedioObjetivos =
