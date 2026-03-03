@@ -1916,17 +1916,61 @@ export class CompetenciaService {
 
   // Competencias
   async exportarCompetenciasPorEmpresaExcel(idEmpresaEmpleadora: number) {
+    // const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+    //   where: {
+    //     estado: true,
+    //     // estadoEvaluacion: 'PROCESO',
+    //     evaluado: {
+    //       idEmpresaEmpleadora,
+    //     },
+    //   },
+    //   include: {
+    //     evaluado: {
+    //       where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR EMPLEADOS ACTIVOS
+    //       include: {
+    //         empresaEmpleadora: true,
+    //         areaEmpleadora: true,
+    //         puestoEmpleadora: true,
+    //         unidadOcupacionalEmpleadora: true,
+    //         gerenciaEmpleadora: true,
+    //       },
+    //     },
+    //     evaluador: {
+    //       where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR EVALUADORES ACTIVOS
+    //     },
+    //     competencia: true,
+    //     nivel: true,
+    //     itemsEvaluados: {
+    //       where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR ÍTEMS ACTIVOS
+    //       include: {
+    //         item: true,
+    //       },
+    //     },
+    //   },
+    //   orderBy: [
+    //     { evaluado: { apellidos: 'asc' } },
+    //     { competencia: { nombre: 'asc' } },
+    //   ],
+    // });
+
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
-        estado: true,
-        // estadoEvaluacion: 'PROCESO',
+        estado: true, // evaluación activa
         evaluado: {
-          idEmpresaEmpleadora,
+          is: {
+            estado: true, // 👈 empleado activo
+            idEmpresaEmpleadora,
+          },
+        },
+        competencia: {
+          estado: true,
+        },
+        nivel: {
+          estado: true,
         },
       },
       include: {
         evaluado: {
-          where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR EMPLEADOS ACTIVOS
           include: {
             empresaEmpleadora: true,
             areaEmpleadora: true,
@@ -1935,11 +1979,15 @@ export class CompetenciaService {
             gerenciaEmpleadora: true,
           },
         },
-        evaluador: true,
+        evaluador: {
+          where: {
+            estado: true, // evaluador activo
+          },
+        },
         competencia: true,
         nivel: true,
         itemsEvaluados: {
-          where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR ÍTEMS ACTIVOS
+          where: { estado: true },
           include: {
             item: true,
           },
