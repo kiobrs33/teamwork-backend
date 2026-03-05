@@ -1971,6 +1971,7 @@ export class CompetenciaService {
       },
       include: {
         evaluado: {
+          where: { estado: true },
           include: {
             empresaEmpleadora: true,
             areaEmpleadora: true,
@@ -2021,30 +2022,61 @@ export class CompetenciaService {
       { header: 'Calificación', key: 'calificacion', width: 15 },
     ];
 
-    evaluaciones.forEach((evaluacion) => {
-      evaluacion.itemsEvaluados.forEach((item) => {
+    // evaluaciones.forEach((evaluacion) => {
+    //   evaluacion.itemsEvaluados.forEach((item) => {
+    //     sheet.addRow({
+    //       empresa: evaluacion.evaluado?.empresaEmpleadora.nombreEmpresa,
+    //       codigoEmpleado: evaluacion.evaluado?.codigoEmpleado,
+    //       empleado: `${evaluacion.evaluado?.nombres} ${evaluacion.evaluado?.apellidos}`,
+    //       documento: Number(evaluacion.evaluado?.documento),
+    //       codigoJefe: evaluacion.evaluador
+    //         ? evaluacion.evaluador?.codigoEmpleado
+    //         : evaluacion.evaluado?.codigoEmpleado,
+    //       evaluador: evaluacion.evaluador
+    //         ? `${evaluacion.evaluador.nombres} ${evaluacion.evaluador.apellidos}`
+    //         : 'Autoevaluación',
+    //       area: evaluacion.evaluado?.areaEmpleadora.descripcion,
+    //       puesto: evaluacion.evaluado?.puestoEmpleadora.descripcion,
+    //       unidad: evaluacion.evaluado?.unidadOcupacionalEmpleadora.descripcion,
+    //       gerencia: evaluacion.evaluado?.gerenciaEmpleadora.descripcion,
+    //       competencia: evaluacion.competencia.titulo,
+    //       nivel: evaluacion.nivel.nivel,
+    //       item: item.textoItemEvaluado ?? item.item.enunciado,
+    //       calificacion: item.calificacion,
+    //     });
+    //   });
+    // });
+
+    // TODO: solucion
+    for (const evaluacion of evaluaciones) {
+      for (const item of evaluacion.itemsEvaluados) {
+        // ❗ Saltar si la calificación es null o undefined
+        if (item.calificacion === null || item.calificacion === undefined) {
+          continue;
+        }
+
         sheet.addRow({
-          empresa: evaluacion.evaluado?.empresaEmpleadora.nombreEmpresa,
+          empresa: evaluacion.evaluado?.empresaEmpleadora?.nombreEmpresa,
           codigoEmpleado: evaluacion.evaluado?.codigoEmpleado,
           empleado: `${evaluacion.evaluado?.nombres} ${evaluacion.evaluado?.apellidos}`,
-          documento: Number(evaluacion.evaluado?.documento),
-          codigoJefe: evaluacion.evaluador
-            ? evaluacion.evaluador?.codigoEmpleado
-            : evaluacion.evaluado?.codigoEmpleado,
+          documento: evaluacion.evaluado?.documento,
+          codigoJefe:
+            evaluacion.evaluador?.codigoEmpleado ??
+            evaluacion.evaluado?.codigoEmpleado,
           evaluador: evaluacion.evaluador
             ? `${evaluacion.evaluador.nombres} ${evaluacion.evaluador.apellidos}`
             : 'Autoevaluación',
-          area: evaluacion.evaluado?.areaEmpleadora.descripcion,
-          puesto: evaluacion.evaluado?.puestoEmpleadora.descripcion,
-          unidad: evaluacion.evaluado?.unidadOcupacionalEmpleadora.descripcion,
-          gerencia: evaluacion.evaluado?.gerenciaEmpleadora.descripcion,
+          area: evaluacion.evaluado?.areaEmpleadora?.descripcion,
+          puesto: evaluacion.evaluado?.puestoEmpleadora?.descripcion,
+          unidad: evaluacion.evaluado?.unidadOcupacionalEmpleadora?.descripcion,
+          gerencia: evaluacion.evaluado?.gerenciaEmpleadora?.descripcion,
           competencia: evaluacion.competencia.titulo,
           nivel: evaluacion.nivel.nivel,
           item: item.textoItemEvaluado ?? item.item.enunciado,
           calificacion: item.calificacion,
         });
-      });
-    });
+      }
+    }
 
     return workbook;
   }
