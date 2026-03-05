@@ -1222,11 +1222,15 @@ export class CompetenciaService {
 
       const emp = empleados.get(ev.evaluado.idEmpleado);
 
+      const codigoEmpleado = ev.evaluado.codigoEmpleado;
+      const codigoJefe = ev.evaluado.codigoEmpleadoJefe;
+      const codigoEvaluador = ev.evaluador?.codigoEmpleado;
+
       // ===============================
       // AUTOEVALUACIÓN
       // ===============================
 
-      if (ev.idEvaluador === ev.idEvaluado) {
+      if (codigoEvaluador && codigoEvaluador === codigoEmpleado) {
         emp.autoEvaluaciones.push(promedioEvaluacion);
         continue;
       }
@@ -1235,13 +1239,7 @@ export class CompetenciaService {
       // JEFE
       // ===============================
 
-      const codigoJefe = ev.evaluado.codigoEmpleadoJefe;
-
-      if (
-        codigoJefe &&
-        ev.evaluador &&
-        ev.evaluador.codigoEmpleado === codigoJefe
-      ) {
+      if (codigoJefe && codigoEvaluador === codigoJefe) {
         emp.evaluacionesJefe.push(promedioEvaluacion);
         continue;
       }
