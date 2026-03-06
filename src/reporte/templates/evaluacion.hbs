@@ -25,26 +25,32 @@
           <tbody>
             <tr>
               <td class="table__cell table__cell--bold">
+                Codigo:
+              </td>
+              <td class="table__cell">{{evaluado.codigoEmpleado}}</td>
+            </tr>
+            <tr>
+              <td class="table__cell table__cell--bold">
                 Apellidos y Nombres:
               </td>
-              <td class="table__cell">{{empleado.apellidos}} {{empleado.nombres}}</td>
+              <td class="table__cell">{{evaluado.apellidos}} {{evaluado.nombres}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Puesto:</td>
-              <td class="table__cell">{{empleado.puestoEmpleadora.descripcion}}</td>
+              <td class="table__cell">{{empleado.puesto}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Gerencia:</td>
-              <td class="table__cell">{{empleado.gerenciaEmpleadora.descripcion}}</td>
+              <td class="table__cell">{{empleado.gerencia}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Área:</td>
-              <td class="table__cell">{{empleado.areaEmpleadora.descripcion}}</td>
+              <td class="table__cell">{{empleado.area}}</td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Grupo:</td>
               <td class="table__cell">
-                {{empleado.unidadOcupacionalEmpleadora.descripcion}}
+                {{empleado.grupo}}
               </td>
             </tr>
             <tr>
@@ -77,16 +83,16 @@
                 Competencias
               </td>
               <td class="table__cell table__cell--center table__cell--bold">
-                65%
+                {{empresa.pesoCompetencias}}%
               </td>
               <td class="table__cell table__cell--center table__cell--bold">
-                69%
+                {{resultados.competencias}}
               </td>
               <td
                 rowspan="2"
                 class="table__cell table__cell--center table__cell--bold"
               >
-                80%
+                {{resultados.evaluacionFinal}}
               </td>
             </tr>
             <tr>
@@ -94,10 +100,10 @@
                 Objetivos
               </td>
               <td class="table__cell table__cell--center table__cell--bold">
-                35%
+                {{empresa.pesoObjetivos}}%
               </td>
               <td class="table__cell table__cell--center table__cell--bold">
-                100%
+                {{resultados.objetivos}}
               </td>
             </tr>
           </tbody>
@@ -105,9 +111,13 @@
       </div>
 
       <div class="graphics">
-        <div class="graphics__item">
+        {{!-- <div class="graphics__item">
           <h4 class="graphics__title">Resultado Obtenido ED General</h4>
-          <canvas id="doughnutChart" class="canvas"></canvas>
+          <canvas id="doughnutChart" class="canvas--graphic"></canvas>
+        </div> --}}
+        <div class="graphics__item">
+          <h4 class="graphics__title">Resultado Evaluación de GENERAL</h4>
+          <canvas id="evaluacionFinalChart" class="canvas"></canvas>
         </div>
         <div class="graphics__item">
           <h4 class="graphics__title">Resultados de ED por Competencias</h4>
@@ -115,193 +125,55 @@
         </div>
       </div>
 
-      <div class="table">
-        <table>
-          <thead>
-            <tr>
-              <th class="table__header">Competencias Evaluadas</th>
-              <th class="table__header">Autoevaluación</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Superavit / Oportunidad de mejora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="table__cell">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Molestiae sint, debitis unde incidunt
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                Sin Autoev.
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                0%
-              </td>
-            </tr>
-            <tr>
-              <td colspan="5" class="table__cell">
-                <span class="u-font-bold">Comentarios del Jefe:</span>
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
 
-      <div class="table">
-        <table>
-          <thead>
-            <tr>
-              <th class="table__header">Competencias Evaluadas</th>
-              <th class="table__header">Autoevaluación</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Superavit / Oportunidad de mejora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="table__cell">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Molestiae sint, debitis unde incidunt
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                Sin Autoev.
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                0%
-              </td>
-            </tr>
-            <tr>
-              <td colspan="5" class="table__cell">
-                <span class="u-font-bold">Comentarios del Jefe:</span>
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {{#each competenciasDetalle}}
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header">Competencia</th>
+                <th class="table__header">Autevaluacion</th>
+                <th class="table__header">Resultado Alcanzado</th>
+                <th class="table__header">Resultado Esperado</th>
+                <th class="table__header">Superavit / Oportunidad de mejora</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="table__cell">
+                  {{competencia}}
+                </td>
+                <td class="table__cell table__cell--center table__cell--bold">
+                  {{autoevaluacion}}
+                </td>
+                <td class="table__cell table__cell--center table__cell--bold">
+                  {{resultadoFinal}}
+                </td>
+                <td class="table__cell table__cell--center table__cell--bold">
+                  100
+                </td>
+                <td class="table__cell table__cell--center table__cell--bold">
+                  {{#if superavit}}
+                    <span style="color:green;">+ {{superavit}}</span>
+                  {{/if}}
 
-      <div class="table">
-        <table>
-          <thead>
-            <tr>
-              <th class="table__header">Competencias Evaluadas</th>
-              <th class="table__header">Autoevaluación</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Superavit / Oportunidad de mejora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="table__cell">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Molestiae sint, debitis unde incidunt
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                Sin Autoev.
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                0%
-              </td>
-            </tr>
-            <tr>
-              <td colspan="5" class="table__cell">
-                <span class="u-font-bold">Comentarios del Jefe:</span>
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                  {{#if oportunidadMejora}}
+                    <span style="color:red;">- {{oportunidadMejora}}</span>
+                  {{/if}}
 
-      <div class="table">
-        <table>
-          <thead>
-            <tr>
-              <th class="table__header">Competencias Evaluadas</th>
-              <th class="table__header">Autoevaluación</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Superavit / Oportunidad de mejora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="table__cell">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Molestiae sint, debitis unde incidunt
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                Sin Autoev.
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                0%
-              </td>
-            </tr>
-            <tr>
-              <td colspan="5" class="table__cell">
-                <span class="u-font-bold">Comentarios del Jefe:</span>
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                  {{#unless superavit}}
+                    {{#unless oportunidadMejora}}
+                      0
+                    {{/unless}}
+                  {{/unless}}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      {{/each}}
 
-      <div class="table">
+      {{!-- <div class="table">
         <table>
           <thead>
             <tr>
@@ -343,95 +215,7 @@
             </tr>
           </tbody>
         </table>
-      </div>
-
-      <div class="table">
-        <table>
-          <thead>
-            <tr>
-              <th class="table__header">Competencias Evaluadas</th>
-              <th class="table__header">Autoevaluación</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Superavit / Oportunidad de mejora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="table__cell">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Molestiae sint, debitis unde incidunt
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                Sin Autoev.
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                0%
-              </td>
-            </tr>
-            <tr>
-              <td colspan="5" class="table__cell">
-                <span class="u-font-bold">Comentarios del Jefe:</span>
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="table">
-        <table>
-          <thead>
-            <tr>
-              <th class="table__header">Competencias Evaluadas</th>
-              <th class="table__header">Autoevaluación</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Resultado Obtenido</th>
-              <th class="table__header">Superavit / Oportunidad de mejora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="table__cell">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Molestiae sint, debitis unde incidunt
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                Sin Autoev.
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                75%
-              </td>
-              <td class="table__cell table__cell--center table__cell--bold">
-                0%
-              </td>
-            </tr>
-            <tr>
-              <td colspan="5" class="table__cell">
-                <span class="u-font-bold">Comentarios del Jefe:</span>
-                Lorem ipsum dolor sit amet consectetur adipisicing elit. Harum
-                consequatur iusto esse dolorum corporis soluta incidunt
-                distinctio nesciunt, facilis tempore excepturi assumenda
-                doloremque odio numquam asperiores unde aspernatur autem
-                suscipit!
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      </div> --}}
 
       <div class="table">
         <table>
@@ -439,7 +223,7 @@
             <tr>
               <th class="table__header">ED. COMPETENCIAS</th>
               <th class="table__header table__header--bgcolor">
-                En Desarrollo
+                {{clasificacionCompetencias.nivel}}
               </th>
             </tr>
           </thead>
@@ -448,13 +232,10 @@
               <td
                 class="table__cell table__cell--bgcolor table__cell--center table__cell--bold"
               >
-                80%
+                {{resultados.competencias}}
               </td>
               <td class="table__cell table__cell--center">
-                Lorem ipsum dolor, sit amet consectetur adipisicing elit. Vel
-                porro, corrupti hic totam soluta sit dignissimos iste deleniti
-                ipsa vitae ipsum sed enim autem perferendis inventore pariatur
-                tempore iusto eligendi.
+                <span>{{clasificacionCompetencias.mensaje}}</span>
               </td>
             </tr>
           </tbody>
@@ -466,16 +247,65 @@
           RESULTADO DE LA EVALUACIÓN DE DESEMPEÑO | INDIVIDUAL
         </h2>
 
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header">Objetivo</th>
+                <th class="table__header">Meta Objetivo</th>
+                <th class="table__header">Porcentaje Logrado</th>
+                <th class="table__header">Meta Alcanzada</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each objetivosDetalle}}
+                <tr>
+                  <td class="table__cell">
+                    {{descripcion}}
+                  </td>
+                  <td class="table__cell table__cell--center table__cell--bold">
+                    {{metaObjetivo}}
+                  </td>
+                  <td class="table__cell table__cell--center table__cell--bold">
+                    {{porcentajeLogrado}}%
+                  </td>
+                  <td class="table__cell table__cell--center table__cell--bold">
+                    {{metaAlcanzada}}
+                  </td>
+                </tr>
+              {{/each}}
+              <tr>
+                  <td colspan="2" class="table__cell table__cell--center">
+                    Resultado Final ED Objetivos
+                  </td>
+                  <td
+                    colspan="2" 
+                    class="table__cell table__cell--center"
+                  >
+                    {{resultados.objetivos}}
+                  </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <div class="graphics">
           <div class="graphics__item">
+            <h4 class="graphics__title">Resultado Evaluación de Objetivos</h4>
+            <canvas id="objetivosComparacionChart" width="700" height="350"></canvas>
+          </div>
+        </div>
+
+        {{!-- <div class="graphics">
+          <div class="graphics__item">
             <h4 class="graphics__title">Resultado Obtenido ED General</h4>
-            <canvas id="barChart" class="canvas"></canvas>
+            <canvas id="barChart"></canvas>
           </div>
           <div class="graphics__item">
             <h4 class="graphics__title">Resultado Obtenido ED General</h4>
-            <canvas id="pieChart" class="canvas"></canvas>
+            <canvas id="pieChart"></canvas>
           </div>
-        </div>
+        </div> --}}
       </div>
 
       {{!-- <div style="display: flex; flex-wrap: wrap; gap: 30px;">
@@ -705,7 +535,7 @@
       const chartData = {{{json chartData}}};
 
       /* ===== BAR ===== */
-      new Chart(document.getElementById('barChart'), {
+       /* new Chart(document.getElementById('barChart'), {
         type: 'bar',
         data: chartData,
         options: {
@@ -718,33 +548,10 @@
             }
           }
         }
-      });
-
-      /* ===== DOUGHNUT ===== */
-      new Chart(document.getElementById('doughnutChart'), {
-        type: 'doughnut',
-        data: {
-          labels: chartData.labels,
-          datasets: [{
-            data: chartData.datasets[0].data,
-            backgroundColor: [
-              '#1890ff',
-              '#52c41a',
-              '#faad14',
-              '#f5222d',
-              '#722ed1'
-            ]
-          }]
-        },
-        options: {
-          responsive: false,
-          animation: false,
-          cutout: '60%'
-        }
-      });
+      }); */
 
       /* ===== PIE ===== */
-      new Chart(document.getElementById('pieChart'), {
+      /* new Chart(document.getElementById('pieChart'), {
         type: 'pie',
         data: {
           labels: chartData.labels,
@@ -763,31 +570,223 @@
           responsive: false,
           animation: false
         }
+      }); */
+
+      // OBJETIVOS BAR HORIZONTAL
+      const objetivosChart = {{{json objetivosChart}}};
+      new Chart(document.getElementById('objetivosComparacionChart'), {
+        type: 'bar',
+        data: objetivosChart,
+        options: {
+          indexAxis: 'y',
+          responsive: false,
+          animation: false,
+
+          scales: {
+            x: {
+              beginAtZero: true,
+              max: 120
+            }
+          },
+
+          plugins: {
+            legend: {
+              position: 'right'
+            }
+          },
+
+          datasets: {
+            bar: {
+              barThickness: 18
+            }
+          }
+        }
       });
 
-      /* ===== RADAR ===== */
-      new Chart(document.getElementById('radarChart'), {
-        type: 'radar',
+
+      // COMPETENCIAS DOUGHNUT
+      const doughnutData = {{{json competenciasDoughnutChart}}};
+      const centerTextPlugin = {
+        id: 'centerText',
+        beforeDraw(chart) {
+          const { width } = chart;
+          const { height } = chart;
+          const ctx = chart.ctx;
+
+          ctx.restore();
+
+          const fontSize = (height / 5).toFixed(2);
+          ctx.font = fontSize + "px Arial";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#2f80ed";
+
+          const text = doughnutData.porcentaje + "%";
+          const textX = Math.round((width - ctx.measureText(text).width) / 2);
+          const textY = height / 2;
+
+          ctx.fillText(text, textX, textY);
+          ctx.save();
+        }
+      };
+      new Chart(document.getElementById('doughnutChart'), {
+        type: 'doughnut',
         data: {
-          labels: chartData.labels,
+          labels: ['Resultado Competencias', 'Pendiente'],
           datasets: [{
-            label: 'Resultado (%)',
-            data: chartData.datasets[0].data,
-            backgroundColor: 'rgba(24,144,255,0.2)',
-            borderColor: '#1890ff',
-            pointBackgroundColor: '#1890ff'
+            data: [
+              doughnutData.porcentaje,
+              doughnutData.restante
+            ],
+            backgroundColor: [
+              '#2f80ed',
+              '#e5e5e5'
+            ],
+            borderWidth: 0
           }]
         },
         options: {
           responsive: false,
+          cutout: '90%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                font: {
+                  size: 12
+                }
+              }
+            }
+          }
+        },
+        plugins: [centerTextPlugin]
+      });
+
+
+      // COMPETENCIAS RADAR
+      const radarData = {{{json competenciasRadarChart}}};
+      new Chart(document.getElementById('radarChart'), {
+        type: 'radar',
+        data: radarData,
+        options: {
+          responsive: false,
           animation: false,
+
+          plugins: {
+            legend: {
+              position: 'bottom', // 👈 leyenda abajo
+              labels: {
+                font: {
+                  size: 12
+                },
+                boxWidth: 15
+              }
+            }
+          },
+
+          elements: {
+            line: {
+              borderWidth: 2
+            },
+            point: {
+              radius: 4,
+              hoverRadius: 6
+            }
+          },
+
           scales: {
             r: {
               beginAtZero: true,
-              max: 100
+              max: 100,
+              ticks: {
+                stepSize: 25,
+                backdropColor: 'transparent',
+                font: {
+                  size: 10
+                }
+              },
+
+              grid: {
+                color: '#e8e8e8'
+              },
+
+              angleLines: {
+                color: '#d9d9d9'
+              },
+
+              pointLabels: {
+                font: {
+                  size: 8,
+                  // weight: 'bold',
+                },
+                color: '#333',
+                // display: false
+              }
             }
           }
         }
+      });
+
+      // EVALUACION FINAL DOUGHNUT
+      const porcentajeFinal = {{{resultados.evaluacionFinal}}};
+      const restanteFinal = 100 - porcentajeFinal;
+      const centerTextFinal = {
+        id: 'centerTextFinal',
+        beforeDraw(chart) {
+
+          const { width, height } = chart;
+          const ctx = chart.ctx;
+
+          ctx.restore();
+
+          const fontSize = (height / 5).toFixed(2);
+          ctx.font = fontSize + "px Arial";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#2f80ed";
+
+          const text = porcentajeFinal + "%";
+
+          const textX = Math.round((width - ctx.measureText(text).width) / 2);
+          const textY = height / 2;
+
+          ctx.fillText(text, textX, textY);
+          ctx.save();
+        }
+      };
+      new Chart(document.getElementById('evaluacionFinalChart'), {
+        type: 'doughnut',
+
+        data: {
+          labels: ['Resultado ED', 'Pendiente'],
+          datasets: [{
+            data: [
+              porcentajeFinal,
+              restanteFinal
+            ],
+            backgroundColor: [
+              '#2f80ed',
+              '#e5e5e5'
+            ],
+            borderWidth: 0
+          }]
+        },
+
+        options: {
+          responsive: false,
+          cutout: '85%',
+
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                font: {
+                  size: 12
+                }
+              }
+            }
+          }
+        },
+
+        plugins: [centerTextFinal]
       });
     </script>
   </body>

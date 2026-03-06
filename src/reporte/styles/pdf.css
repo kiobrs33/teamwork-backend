@@ -243,16 +243,18 @@
   border: solid 1px #d1d5db;
   padding: 10px 0;
   margin-bottom: 20px;
+  justify-content: center;
 }
 
 .graphics__item {
   flex: 1;
+  padding: 0 10px;
 }
 
 .graphics__title {
   text-align: center;
   font-size: 14px;
-  margin-bottom: 5px;
+  margin-bottom: 10px;
   font-weight: bold;
 }
 
