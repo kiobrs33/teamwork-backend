@@ -162,10 +162,10 @@
 }
 
 .report__logo {
-  width: 150px;
-  height: auto;
+  width: auto;
+  height: 30px;
   display: block;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
 }
 
 .report__title {

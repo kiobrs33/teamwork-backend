@@ -82,7 +82,8 @@ export class PdfRendererService implements OnModuleInit {
     });
 
     const browser = await puppeteer.launch({
-      headless: 'shell',
+      // headless: 'shell', dev mode
+      headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
@@ -90,11 +91,15 @@ export class PdfRendererService implements OnModuleInit {
 
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
+    // await new Promise((resolve) => setTimeout(resolve, 2000)); prod
+
+    await page.waitForSelector('canvas');
+
     // 🔥 CLAVE: esperar a que Chart.js pinte el canvas
-    await page.waitForFunction(() => {
-      const canvas = document.querySelector('canvas');
-      return canvas && canvas.toDataURL().length > 1000;
-    });
+    // await page.waitForFunction(() => {
+    //   const canvas = document.querySelector('canvas');
+    //   return canvas && canvas.toDataURL().length > 1000;
+    // });
 
     const pdf = await page.pdf({
       format: 'A4',
