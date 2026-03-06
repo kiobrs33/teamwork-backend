@@ -84,6 +84,9 @@ export class PdfRendererService implements OnModuleInit {
     const browser = await puppeteer.launch({
       // headless: 'shell', dev mode
       headless: true,
+      // executablePath: '/usr/bin/chromium',
+      executablePath:
+        process.env.NODE_ENV === 'production' ? '/usr/bin/chromium' : undefined,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
