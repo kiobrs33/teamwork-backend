@@ -57,7 +57,7 @@
               <td class="table__cell table__cell--bold">
                 Fecha de Evaluación:
               </td>
-              <td class="table__cell">{{fechaEvaluacion}}</td>
+              <td class="table__cell">{{empresa.periodoEvaluacion}}</td>
             </tr>
           </tbody>
         </table>
@@ -117,11 +117,11 @@
         </div> --}}
         <div class="graphics__item">
           <h4 class="graphics__title">Resultado Evaluación de GENERAL</h4>
-          <canvas id="evaluacionFinalChart" class="canvas"></canvas>
+          <canvas id="evaluacionFinalChart" class="canvas--fig1"></canvas>
         </div>
         <div class="graphics__item">
           <h4 class="graphics__title">Resultados de ED por Competencias</h4>
-           <canvas id="radarChart" class="canvas"></canvas>
+           <canvas id="radarChart" class="canvas--fig2"></canvas>
         </div>
       </div>
 
@@ -141,29 +141,29 @@
             <tbody>
               <tr>
                 <td class="table__cell">
-                  {{competencia}}
+                  <strong>{{orden}}</strong><br> {{competencia}}
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
-                  {{autoevaluacion}}
+                  {{autoevaluacion}}%
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
-                  {{resultadoFinal}}
+                  {{resultadoFinal}}%
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
-                  100
+                  {{competenciaResultadoEsperado}}%
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
                   {{#if superavit}}
-                    <span style="color:green;">+ {{superavit}}</span>
+                    <span style="color:green;">+{{superavit}}%</span>
                   {{/if}}
 
                   {{#if oportunidadMejora}}
-                    <span style="color:red;">- {{oportunidadMejora}}</span>
+                    <span style="color:red;">-{{oportunidadMejora}}%</span>
                   {{/if}}
 
                   {{#unless superavit}}
                     {{#unless oportunidadMejora}}
-                      0
+                      0%
                     {{/unless}}
                   {{/unless}}
                 </td>
@@ -253,24 +253,24 @@
               <tr>
                 <th class="table__header">Objetivo</th>
                 <th class="table__header">Meta Objetivo</th>
-                <th class="table__header">Porcentaje Logrado</th>
                 <th class="table__header">Meta Alcanzada</th>
+                <th class="table__header">Porcentaje Logrado</th>
               </tr>
             </thead>
             <tbody>
               {{#each objetivosDetalle}}
                 <tr>
                   <td class="table__cell">
-                    {{descripcion}}
+                    <strong>{{orden}}</strong><br> {{descripcion}}
                   </td>
                   <td class="table__cell table__cell--center table__cell--bold">
                     {{metaObjetivo}}
                   </td>
                   <td class="table__cell table__cell--center table__cell--bold">
-                    {{porcentajeLogrado}}%
+                    {{metaAlcanzada}}
                   </td>
                   <td class="table__cell table__cell--center table__cell--bold">
-                    {{metaAlcanzada}}
+                    {{porcentajeLogrado}}%
                   </td>
                 </tr>
               {{/each}}
@@ -292,7 +292,7 @@
         <div class="graphics">
           <div class="graphics__item">
             <h4 class="graphics__title">Resultado Evaluación de Objetivos</h4>
-            <canvas id="objetivosComparacionChart" width="700" height="350"></canvas>
+            <canvas id="objetivosComparacionChart" width="700" height="400"></canvas>
           </div>
         </div>
 
@@ -332,8 +332,11 @@
             <tbody>
               <tr>
                 <td class="table__cell">
-                  <br><br><br><br><br>
-                  <br><br><br><br><br>
+                  <br>
+                  {{#each fortalezas}}
+                    • {{competencia}}<br>
+                  {{/each}}
+                  <br>
                 </td>
               </tr>
             </tbody>
@@ -352,8 +355,11 @@
             <tbody>
               <tr>
                 <td class="table__cell">
-                  <br><br><br><br><br>
-                  <br><br><br><br><br>
+                  <br>
+                  {{#each debilidades}}
+                    • {{competencia}}<br>
+                  {{/each}}
+                  <br>
                 </td>
               </tr>
             </tbody>
@@ -531,6 +537,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
     <script>
       const chartData = {{{json chartData}}};
 
@@ -576,91 +583,209 @@
       const objetivosChart = {{{json objetivosChart}}};
       new Chart(document.getElementById('objetivosComparacionChart'), {
         type: 'bar',
+
         data: objetivosChart,
+
         options: {
           indexAxis: 'y',
+
           responsive: false,
           animation: false,
+
+          layout: {
+            padding: 10
+          },
 
           scales: {
             x: {
               beginAtZero: true,
-              max: 120
+              max: 120,
+
+              grid: {
+                color: '#e8e8e8'
+              },
+
+              ticks: {
+                font: {
+                  size: 11
+                },
+
+                callback: function(value) {
+                  return value + '%';
+                }
+              }
+            },
+
+            y: {
+              grid: {
+                display: false
+              },
+
+              ticks: {
+                font: {
+                  size: 11,
+                  weight: 'bold'
+                }
+              }
             }
           },
 
           plugins: {
+
             legend: {
-              position: 'right'
+              position: 'top',
+
+              labels: {
+                boxWidth: 14,
+                font: {
+                  size: 12,
+                  weight: 'bold'
+                }
+              }
+            },
+
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  return ctx.dataset.label + ': ' + ctx.raw + '%';
+                }
+              }
+            },
+
+            datalabels: {
+              anchor: 'end',
+              align: 'right',
+
+              color: '#000',
+
+              font: {
+                weight: 'bold',
+                size: 11
+              },
+
+              formatter: (value) => value + '%'
             }
+
           },
 
           datasets: {
             bar: {
+              borderRadius: 0,
+              borderWidth: 1,
               barThickness: 18
             }
           }
-        }
+        },
+
+        plugins: [ChartDataLabels]
+
       });
 
 
       // COMPETENCIAS DOUGHNUT
-      const doughnutData = {{{json competenciasDoughnutChart}}};
-      const centerTextPlugin = {
-        id: 'centerText',
-        beforeDraw(chart) {
-          const { width } = chart;
-          const { height } = chart;
-          const ctx = chart.ctx;
+     const doughnutData = {{{json competenciasDoughnutChart}}};
 
-          ctx.restore();
+const centerTextPlugin = {
+  id: 'centerText',
 
-          const fontSize = (height / 5).toFixed(2);
-          ctx.font = fontSize + "px Arial";
-          ctx.textBaseline = "middle";
-          ctx.fillStyle = "#2f80ed";
+  beforeDraw(chart) {
 
-          const text = doughnutData.porcentaje + "%";
-          const textX = Math.round((width - ctx.measureText(text).width) / 2);
-          const textY = height / 2;
+    const { width, height, ctx } = chart;
 
-          ctx.fillText(text, textX, textY);
-          ctx.save();
+    ctx.restore();
+
+    const fontSize = (height / 4).toFixed(2);
+
+    ctx.font = fontSize + "px Arial";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+
+    ctx.fillStyle = "#1677ff";
+
+    const text = doughnutData.porcentaje + "%";
+
+    const textX = width / 2;
+    const textY = height / 2;
+
+    ctx.fillText(text, textX, textY);
+
+    ctx.save();
+  }
+};
+
+
+new Chart(document.getElementById('doughnutChart'), {
+
+  type: 'doughnut',
+
+  data: {
+    labels: ['Resultado', 'Pendiente'],
+
+    datasets: [
+      {
+        data: [
+          doughnutData.porcentaje,
+          doughnutData.restante
+        ],
+
+        backgroundColor: [
+          '#1677ff',
+          '#f0f0f0'
+        ],
+
+        hoverBackgroundColor: [
+          '#0958d9',
+          '#d9d9d9'
+        ],
+
+        borderWidth: 0
+      }
+    ]
+  },
+
+  options: {
+
+    responsive: true,
+    maintainAspectRatio: false,
+
+    layout: {
+      padding: 10
+    },
+
+    cutout: '75%',
+
+    plugins: {
+
+      legend: {
+
+        position: 'bottom',
+
+        labels: {
+
+          font: {
+            size: 12,
+            weight: 'bold'
+          },
+
+          boxWidth: 12
         }
-      };
-      new Chart(document.getElementById('doughnutChart'), {
-        type: 'doughnut',
-        data: {
-          labels: ['Resultado Competencias', 'Pendiente'],
-          datasets: [{
-            data: [
-              doughnutData.porcentaje,
-              doughnutData.restante
-            ],
-            backgroundColor: [
-              '#2f80ed',
-              '#e5e5e5'
-            ],
-            borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: false,
-          cutout: '90%',
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: {
-                font: {
-                  size: 12
-                }
-              }
-            }
-          }
-        },
-        plugins: [centerTextPlugin]
-      });
+      },
 
+      tooltip: {
+        callbacks: {
+          label: function(ctx) {
+            return ctx.label + ": " + ctx.raw + "%";
+          }
+        }
+      }
+
+    }
+
+  },
+
+  plugins: [centerTextPlugin]
+
+});
 
       // COMPETENCIAS RADAR
       const radarData = {{{json competenciasRadarChart}}};
@@ -716,10 +841,10 @@
               pointLabels: {
                 font: {
                   size: 8,
-                  // weight: 'bold',
+                  weight: 'bold',
                 },
                 color: '#333',
-                display: false
+                // display: false
               }
             }
           }
@@ -728,66 +853,72 @@
 
       // EVALUACION FINAL DOUGHNUT
       const porcentajeFinal = {{{resultados.evaluacionFinal}}};
-      const restanteFinal = 100 - porcentajeFinal;
-      const centerTextFinal = {
-        id: 'centerTextFinal',
-        beforeDraw(chart) {
+const restanteFinal = 100 - porcentajeFinal;
 
-          const { width, height } = chart;
-          const ctx = chart.ctx;
+const centerTextFinal = {
+  id: 'centerTextFinal',
+  beforeDraw(chart) {
+    const { ctx, chartArea } = chart;
 
-          ctx.restore();
+    if (!chartArea) return;
 
-          const fontSize = (height / 5).toFixed(2);
-          ctx.font = fontSize + "px Arial";
-          ctx.textBaseline = "middle";
-          ctx.fillStyle = "#2f80ed";
+    const { left, right, top, bottom } = chartArea;
 
-          const text = porcentajeFinal + "%";
+    const width = right - left;
+    const height = bottom - top;
 
-          const textX = Math.round((width - ctx.measureText(text).width) / 2);
-          const textY = height / 2;
+    ctx.save();
 
-          ctx.fillText(text, textX, textY);
-          ctx.save();
-        }
-      };
-      new Chart(document.getElementById('evaluacionFinalChart'), {
-        type: 'doughnut',
+    const fontSize = Math.min(width, height) / 6;
+    ctx.font = `${fontSize}px Arial`;
+    ctx.fillStyle = "#2f80ed";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
 
-        data: {
-          labels: ['Resultado ED', 'Pendiente'],
-          datasets: [{
-            data: [
-              porcentajeFinal,
-              restanteFinal
-            ],
-            backgroundColor: [
-              '#2f80ed',
-              '#e5e5e5'
-            ],
-            borderWidth: 0
-          }]
-        },
+    const text = porcentajeFinal + "%";
 
-        options: {
-          responsive: false,
-          cutout: '85%',
+    const centerX = left + width / 2;
+    const centerY = top + height / 2;
 
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: {
-                font: {
-                  size: 12
-                }
-              }
-            }
+    ctx.fillText(text, centerX, centerY);
+
+    ctx.restore();
+  }
+};
+
+new Chart(document.getElementById('evaluacionFinalChart'), {
+  type: 'doughnut',
+
+  data: {
+    labels: ['Resultado ED', 'Pendiente'],
+    datasets: [{
+      data: [porcentajeFinal, restanteFinal],
+      backgroundColor: [
+        '#2f80ed',
+        '#e5e5e5'
+      ],
+      borderWidth: 0
+    }]
+  },
+
+  options: {
+    responsive: false,
+    cutout: '90%',
+
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          font: {
+            size: 12
           }
-        },
+        }
+      }
+    }
+  },
 
-        plugins: [centerTextFinal]
-      });
+  plugins: [centerTextFinal]
+});
     </script>
   </body>
 </html>

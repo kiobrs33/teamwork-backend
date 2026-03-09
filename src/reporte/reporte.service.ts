@@ -145,17 +145,22 @@ export class ReporteService {
     const promedio = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
+    let contadorComp = 1;
     for (const ev of evaluaciones) {
       const key = `${ev.idCompetencia}_${ev.idCompetenciaNivel}`;
+      const orden = `Competencia ${contadorComp}`;
 
       if (!mapaCompetencias.has(key)) {
         mapaCompetencias.set(key, {
-          competencia: ev.competencia.nombre,
+          orden,
+          competencia: ev.competencia.titulo,
           nivel: ev.nivel.nivel,
           auto: [],
           jefe: [],
           subordinados: [],
         });
+
+        contadorComp++;
       }
 
       const registro = mapaCompetencias.get(key);
@@ -229,6 +234,7 @@ export class ReporteService {
       }
 
       competenciasDetalle.push({
+        orden: comp.orden,
         competencia: comp.competencia,
         nivel: comp.nivel,
 
@@ -241,6 +247,8 @@ export class ReporteService {
 
         superavit,
         oportunidadMejora,
+
+        competenciaResultadoEsperado: empresa.competenciaResultadoEsperado,
       });
     }
 
@@ -287,7 +295,7 @@ export class ReporteService {
     };
 
     const competenciasRadarChart = {
-      labels: competenciasDetalle.map((c) => c.competencia),
+      labels: competenciasDetalle.map((c) => c.orden),
       datasets: [
         {
           label: 'Resultado Obtenido',
@@ -363,12 +371,15 @@ export class ReporteService {
 
     let totalPeso = 0;
     let acumulado = 0;
+    let contadorObj = 1;
 
     for (const obj of objetivos) {
       for (const det of obj.objetivoDetalles) {
         const porcentaje = det.porcentajeLogrado ?? 0;
+        const orden = `Objetivo ${contadorObj}`;
 
         objetivosDetalle.push({
+          orden,
           descripcion: det.descripcion,
           metaObjetivo: det.metaObjetivo,
           metaAlcanzada: det.metaAlcanzada ?? 0,
@@ -378,27 +389,47 @@ export class ReporteService {
 
         acumulado += porcentaje * det.pesoEspecifico;
         totalPeso += det.pesoEspecifico;
+        contadorObj++;
       }
     }
 
     const resultadoObjetivos = totalPeso > 0 ? acumulado / totalPeso : 0;
 
     const objetivosChart = {
-      labels: objetivosDetalle.map((o) => o.descripcion),
+      labels: objetivosDetalle.map((o) => o.orden),
       datasets: [
         {
           label: 'Programada',
-          data: objetivosDetalle.map((o) => o.metaObjetivo),
+          data: objetivosDetalle.map(() => 100),
           backgroundColor: '#8c8c8c',
         },
         {
           label: 'Alcanzado',
-          data: objetivosDetalle.map((o) => o.metaAlcanzada),
+          data: objetivosDetalle.map((o) => o.porcentajeLogrado),
           backgroundColor: '#1890ff',
         },
       ],
     };
-    console.log(objetivosChart);
+
+    const fortalezas = competenciasDetalle.filter(
+      (c) => c.resultadoFinal >= (empresa.competenciaResultadoEsperado ?? 100),
+    );
+
+    const debilidades = competenciasDetalle.filter(
+      (c) => c.resultadoFinal < (empresa.competenciaResultadoEsperado ?? 100),
+    );
+
+    // Fecha periodo evaluación
+    const datePeriodoEvaluacion = new Date(
+      empresa.periodoEvaluacion ?? Date.now(),
+    );
+
+    const newPeriodoEvaluacion = datePeriodoEvaluacion
+      .toLocaleDateString('es-ES', {
+        month: 'long',
+        year: 'numeric',
+      })
+      .toUpperCase();
 
     // ==============================
     // RESULTADO FINAL ED
@@ -412,14 +443,13 @@ export class ReporteService {
     // DATA PARA EL REPORTE
     // ==============================
     const data = {
-      fechaEvaluacion: new Date().toLocaleDateString('es-PE'),
-
       empresa: {
         nombre: empresa.nombreEmpresa,
         logo: empresa.urlLogo,
         modelo: empresa.modeloEmpresa,
         pesoCompetencias: pesoCompetencias * 100,
         pesoObjetivos: pesoObjetivos * 100,
+        periodoEvaluacion: newPeriodoEvaluacion,
       },
 
       evaluado: {
@@ -444,6 +474,8 @@ export class ReporteService {
       clasificacionCompetencias: desempeno,
 
       competenciasDetalle,
+      fortalezas,
+      debilidades,
 
       competenciasDoughnutChart,
       competenciasRadarChart,

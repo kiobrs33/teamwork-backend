@@ -15,6 +15,7 @@ import { CompetenciaModule } from './competencia/competencia.module';
 import { EmpleoModule } from './empleo/empleo.module';
 import { LoggerModule } from 'nestjs-pino';
 import { ReporteModule } from './reporte/reporte.module';
+import { RetroalimentacionDetalleModule } from './retroalimentacion-detalle/retroalimentacion-detalle.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ReporteModule } from './reporte/reporte.module';
     CompetenciaModule,
     EmpleoModule,
     ReporteModule,
+    RetroalimentacionDetalleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

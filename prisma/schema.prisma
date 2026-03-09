@@ -78,6 +78,8 @@ model EmpresaEmpleadora {
   porcentajeEvaluacionJefeCompetencia        Int?                          @map("porcentaje_evaluacion_jefe_competencia")
   porcentajeEvaluacionSubordinadoCompetencia Int?                          @map("porcentaje_evaluacion_subordinado_competencia")
   tipoCalificacionCompetencia                String?                       @default("LIKERT") @map("tipo_calificacion_competencia")
+  periodoEvaluacion                          String?                       @map("periodo_evaluacion") // 2023-01, 2023-02, 2023-03, etc.
+  competenciaResultadoEsperado               Int?                          @map("competencia_resultado_esperado") // 60% ,70% hasta 100%
   estado                                     Boolean                       @default(true)
   creadoPorId                                Int                           @map("creado_por_id")
   actualizadoPorId                           Int?                          @map("actualizado_por_id")
@@ -156,15 +158,16 @@ model UnidadOcupacionalEmpleadora {
 
 // TODO: OBJETIVOS Y DETALLES
 model Objetivo {
-  idObjetivo        Int               @id @default(autoincrement()) @map("id_objetivo")
-  idEmpleado        Int
-  empleado          Empleado          @relation(fields: [idEmpleado], references: [idEmpleado])
-  estado            Boolean           @default(true)
-  creadoPorId       Int               @map("creado_por_id")
-  actualizadoPorId  Int?              @map("actualizado_por_id")
-  fechaCreacion     DateTime          @default(now()) @map("fecha_creacion")
-  fechaModificacion DateTime?         @map("fecha_modificacion")
-  objetivoDetalles  ObjetivoDetalle[]
+  idObjetivo                Int                        @id @default(autoincrement()) @map("id_objetivo")
+  idEmpleado                Int
+  empleado                  Empleado                   @relation(fields: [idEmpleado], references: [idEmpleado])
+  estado                    Boolean                    @default(true)
+  creadoPorId               Int                        @map("creado_por_id")
+  actualizadoPorId          Int?                       @map("actualizado_por_id")
+  fechaCreacion             DateTime                   @default(now()) @map("fecha_creacion")
+  fechaModificacion         DateTime?                  @map("fecha_modificacion")
+  objetivoDetalles          ObjetivoDetalle[]
+  retroalimentacionDetalles RetroalimentacionDetalle[]
 
   @@map("objetivo")
 }
@@ -385,4 +388,20 @@ model Comunicado {
   fechaModificacion DateTime? @map("fecha_modificacion")
 
   @@map("comunicado")
+}
+
+model RetroalimentacionDetalle {
+  idRetroalimentacionDetalle Int       @id @default(autoincrement()) @map("id_retroalimentacion_detalle")
+  idObjetivo                 Int       @map("id_objetivo")
+  objetivo                   Objetivo  @relation(fields: [idObjetivo], references: [idObjetivo])
+  descripcionObjetivo        String?   @map("descripcion_objetivo")
+  descripcionActividad       String?   @map("descripcion_actividad")
+  descripcionFecha           String?   @map("descripcion_fecha")
+  descripcionEstado          String?   @map("descripcion_estado")
+  estado                     Boolean   @default(true)
+  actualizadoPorId           Int?      @map("actualizado_por_id")
+  fechaCreacion              DateTime  @default(now()) @map("fecha_creacion")
+  fechaModificacion          DateTime? @map("fecha_modificacion")
+
+  @@map("retroalimentacion_detalle")
 }
