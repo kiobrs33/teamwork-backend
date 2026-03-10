@@ -1491,10 +1491,10 @@ export class CompetenciaService {
     // TODO: solucion
     for (const evaluacion of evaluaciones) {
       for (const item of evaluacion.itemsEvaluados) {
-        // ❗ Saltar si la calificación es null o undefined
-        if (item.calificacion === null || item.calificacion === undefined) {
-          continue;
-        }
+        // ❗ Saltar si la calificación es null o undefined 10/03/2026
+        // if (item.calificacion === null || item.calificacion === undefined) {
+        //   continue;
+        // }
 
         sheet.addRow({
           empresa: evaluacion.evaluado?.empresaEmpleadora?.nombreEmpresa,
