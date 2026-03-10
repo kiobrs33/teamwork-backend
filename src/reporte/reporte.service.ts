@@ -223,13 +223,16 @@ export class ReporteService {
       let oportunidadMejora: number | null = null;
       let resultadoTexto = `${resultadoFinal}%`;
 
-      if (resultadoFinal > 100) {
-        superavit = Number((resultadoFinal - 100).toFixed(2));
+      const competenciaResultadoEsperado =
+        empresa.competenciaResultadoEsperado ?? 100;
+
+      if (resultadoFinal > competenciaResultadoEsperado) {
+        superavit = Number((resultadoFinal - competenciaResultadoEsperado).toFixed(2));
         resultadoTexto = `${resultadoFinal}% (+${superavit})`;
       }
 
-      if (resultadoFinal < 100) {
-        oportunidadMejora = Number((100 - resultadoFinal).toFixed(2));
+      if (resultadoFinal < competenciaResultadoEsperado) {
+        oportunidadMejora = Number((competenciaResultadoEsperado - resultadoFinal).toFixed(2));
         resultadoTexto = `${resultadoFinal}% (-${oportunidadMejora})`;
       }
 
