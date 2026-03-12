@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsArray, IsNumber } from 'class-validator';
-import { CreateRetroalimentacionDetalleDto } from './create-retroalimentacion-detalle.dto';
+import { CreateRetroalimentacionDetalleItemDto } from './create-retroalimentacion-detalle-item.dto';
 
 export class CreateManyRetroalimentacionDto {
   @ApiProperty({ example: 5 })
@@ -8,8 +8,8 @@ export class CreateManyRetroalimentacionDto {
   idObjetivo: number;
 
   @ApiProperty({
-    type: [CreateRetroalimentacionDetalleDto],
+    type: [CreateRetroalimentacionDetalleItemDto],
   })
   @IsArray()
-  detalles: CreateRetroalimentacionDetalleDto[];
+  detalles: CreateRetroalimentacionDetalleItemDto[];
 }

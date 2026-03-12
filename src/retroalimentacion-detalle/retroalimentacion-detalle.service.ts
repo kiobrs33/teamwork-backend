@@ -1,10 +1,14 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+
 import { CreateRetroalimentacionDetalleDto } from './dto/create-retroalimentacion-detalle.dto';
 import { UpdateRetroalimentacionDetalleDto } from './dto/update-retroalimentacion-detalle.dto';
+import { UpdateRetroalimentacionDetalleItemDto } from './dto/update-retroalimentacion-detalle-item.dto';
+
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
+import { CreateRetroalimentacionDetalleItemDto } from './dto/create-retroalimentacion-detalle-item.dto';
 
 @Injectable()
 export class RetroalimentacionDetalleService {
@@ -12,25 +16,30 @@ export class RetroalimentacionDetalleService {
 
   constructor(private prisma: PrismaService) {}
 
+  // =========================
+  // CREATE
+  // =========================
+
   async create(user: AuthUser, dto: CreateRetroalimentacionDetalleDto) {
     try {
-      const retroalimentacion =
-        await this.prisma.retroalimentacionDetalle.create({
-          data: {
-            ...dto,
-            actualizadoPorId: user.idUsuario,
-          },
-          include: {
-            objetivo: true,
-          },
-        });
-
-      return retroalimentacion;
+      return await this.prisma.retroalimentacionDetalle.create({
+        data: {
+          ...dto,
+          actualizadoPorId: user.idUsuario,
+        },
+        include: {
+          objetivo: true,
+        },
+      });
     } catch (error) {
-      console.error('Error al crear retroalimentación:', error);
+      this.logger.error('Error al crear retroalimentación', error);
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
+
+  // =========================
+  // FIND ALL
+  // =========================
 
   async findAll(page = 1, limit = 10, search?: string) {
     try {
@@ -84,6 +93,7 @@ export class RetroalimentacionDetalleService {
 
       const safeLimit = Math.min(Number(limit) || 10, 100);
       const safePage = Math.max(Number(page) || 1, 1);
+
       const skip = (safePage - 1) * safeLimit;
 
       const [total, data] = await Promise.all([
@@ -107,34 +117,41 @@ export class RetroalimentacionDetalleService {
         },
       };
     } catch (error) {
-      this.logger.error('Error al obtener retroalimentaciones:', error);
+      this.logger.error('Error al obtener retroalimentaciones', error);
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
+
+  // =========================
+  // FIND ONE
+  // =========================
 
   async findOne(id: number) {
     try {
-      const retroalimentacion =
-        await this.prisma.retroalimentacionDetalle.findUnique({
-          where: {
-            idRetroalimentacionDetalle: id,
-            estado: true,
-          },
-          include: {
-            objetivo: true,
-          },
-        });
+      const data = await this.prisma.retroalimentacionDetalle.findUnique({
+        where: {
+          idRetroalimentacionDetalle: id,
+          estado: true,
+        },
+        include: {
+          objetivo: true,
+        },
+      });
 
-      if (!retroalimentacion) {
+      if (!data) {
         throw new NotFoundException('Retroalimentación no encontrada');
       }
 
-      return retroalimentacion;
+      return data;
     } catch (error) {
-      console.error('Error al obtener retroalimentación:', error);
+      this.logger.error('Error al obtener retroalimentación', error);
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
+
+  // =========================
+  // UPDATE
+  // =========================
 
   async update(
     user: AuthUser,
@@ -142,62 +159,72 @@ export class RetroalimentacionDetalleService {
     dto: UpdateRetroalimentacionDetalleDto,
   ) {
     try {
-      const retroalimentacion =
-        await this.prisma.retroalimentacionDetalle.findUnique({
-          where: {
-            idRetroalimentacionDetalle: id,
-            estado: true,
-          },
-        });
+      const existe = await this.prisma.retroalimentacionDetalle.findUnique({
+        where: {
+          idRetroalimentacionDetalle: id,
+          estado: true,
+        },
+      });
 
-      if (!retroalimentacion) {
+      if (!existe) {
         throw new NotFoundException('Retroalimentación no encontrada');
       }
 
       return await this.prisma.retroalimentacionDetalle.update({
-        where: { idRetroalimentacionDetalle: id },
+        where: {
+          idRetroalimentacionDetalle: id,
+        },
         data: {
           ...dto,
-          fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
+          fechaModificacion: new Date(),
         },
         include: {
           objetivo: true,
         },
       });
     } catch (error) {
-      console.error('Error al actualizar retroalimentación:', error);
+      this.logger.error('Error al actualizar retroalimentación', error);
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
 
+  // =========================
+  // DELETE (soft)
+  // =========================
+
   async remove(user: AuthUser, id: number) {
     try {
-      const retroalimentacion =
-        await this.prisma.retroalimentacionDetalle.findUnique({
-          where: {
-            idRetroalimentacionDetalle: id,
-            estado: true,
-          },
-        });
+      const existe = await this.prisma.retroalimentacionDetalle.findUnique({
+        where: {
+          idRetroalimentacionDetalle: id,
+          estado: true,
+        },
+      });
 
-      if (!retroalimentacion) {
+      if (!existe) {
         throw new NotFoundException('Retroalimentación no encontrada');
       }
 
       return await this.prisma.retroalimentacionDetalle.update({
-        where: { idRetroalimentacionDetalle: id },
+        where: {
+          idRetroalimentacionDetalle: id,
+        },
         data: {
           estado: false,
-          fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
+          fechaModificacion: new Date(),
         },
       });
     } catch (error) {
-      console.error('Error al eliminar retroalimentación:', error);
+      this.logger.error('Error al eliminar retroalimentación', error);
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
+
+  // =========================
+  // IMPORT
+  // =========================
 
   async importData(user: AuthUser, data: CreateRetroalimentacionDetalleDto[]) {
     try {
@@ -206,61 +233,68 @@ export class RetroalimentacionDetalleService {
         actualizadoPorId: user.idUsuario,
       }));
 
-      return await this.prisma.$transaction(async (tx) => {
-        return await tx.retroalimentacionDetalle.createMany({
-          data: registros,
-        });
+      return await this.prisma.retroalimentacionDetalle.createMany({
+        data: registros,
       });
     } catch (error) {
-      console.error('Error al importar datos:', error);
+      this.logger.error('Error al importar datos', error);
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
 
-  async findByObjetivoId(id: number) {
-    try {
-      return await this.prisma.retroalimentacionDetalle.findMany({
-        where: {
-          estado: true,
-          idObjetivo: id,
-        },
-        orderBy: {
-          fechaCreacion: 'desc',
-        },
-      });
-    } catch (error) {
-      console.error(
-        'Error al obtener retroalimentaciones por objetivo:',
-        error,
-      );
-      handlePrismaError(error, 'retroalimentación detalle');
-    }
-  }
+  // =========================
+  // FIND BY OBJETIVO
+  // =========================
+
+  // async findByObjetivoId(idObjetivo: number) {
+  //   try {
+  //     return await this.prisma.retroalimentacionDetalle.findMany({
+  //       where: {
+  //         estado: true,
+  //         idObjetivo,
+  //       },
+  //       orderBy: {
+  //         fechaCreacion: 'desc',
+  //       },
+  //     });
+  //   } catch (error) {
+  //     this.logger.error('Error al obtener por objetivo', error);
+  //     handlePrismaError(error, 'retroalimentación detalle');
+  //   }
+  // }
+
+  // =========================
+  // CREATE MANY
+  // =========================
 
   async createMany(
     user: AuthUser,
     idObjetivo: number,
-    detalles: CreateRetroalimentacionDetalleDto[],
+    detalles: CreateRetroalimentacionDetalleItemDto[],
   ) {
     try {
-      const registros = detalles.map((d) => ({
+      const data = detalles.map((d) => ({
         ...d,
         idObjetivo,
         actualizadoPorId: user.idUsuario,
       }));
 
       return await this.prisma.retroalimentacionDetalle.createMany({
-        data: registros,
+        data,
       });
     } catch (error) {
       handlePrismaError(error, 'retroalimentación detalle');
     }
   }
 
+  // =========================
+  // UPDATE MANY (PRO)
+  // =========================
+
   async updateMany(
     user: AuthUser,
     idObjetivo: number,
-    detalles: UpdateRetroalimentacionDetalleDto[],
+    detalles: UpdateRetroalimentacionDetalleItemDto[],
   ) {
     try {
       const existentes = await this.prisma.retroalimentacionDetalle.findMany({
@@ -279,11 +313,14 @@ export class RetroalimentacionDetalleService {
       const eliminar = idsExistentes.filter((id) => !idsRecibidos.includes(id));
 
       return await this.prisma.$transaction(async (tx) => {
-        // eliminar los que ya no vienen
+        // eliminar
+
         if (eliminar.length > 0) {
           await tx.retroalimentacionDetalle.updateMany({
             where: {
-              idRetroalimentacionDetalle: { in: eliminar },
+              idRetroalimentacionDetalle: {
+                in: eliminar,
+              },
             },
             data: {
               estado: false,
@@ -293,15 +330,18 @@ export class RetroalimentacionDetalleService {
           });
         }
 
-        // crear o actualizar
-        for (const detalle of detalles) {
-          if (detalle.idRetroalimentacionDetalle) {
+        // create / update
+
+        for (const item of detalles) {
+          if (item.idRetroalimentacionDetalle) {
+            const { idRetroalimentacionDetalle, ...data } = item;
+
             await tx.retroalimentacionDetalle.update({
               where: {
-                idRetroalimentacionDetalle: detalle.idRetroalimentacionDetalle,
+                idRetroalimentacionDetalle,
               },
               data: {
-                ...detalle,
+                ...data,
                 actualizadoPorId: user.idUsuario,
                 fechaModificacion: new Date(),
               },
@@ -309,7 +349,7 @@ export class RetroalimentacionDetalleService {
           } else {
             await tx.retroalimentacionDetalle.create({
               data: {
-                ...detalle,
+                ...item,
                 idObjetivo,
                 actualizadoPorId: user.idUsuario,
               },
@@ -317,8 +357,38 @@ export class RetroalimentacionDetalleService {
           }
         }
 
-        return { message: 'Retroalimentaciones actualizadas correctamente' };
+        return {
+          message: 'Retroalimentaciones actualizadas correctamente',
+        };
       });
+    } catch (error) {
+      handlePrismaError(error, 'retroalimentación detalle');
+    }
+  }
+
+  async findByObjetivoId(idObjetivo: number) {
+    try {
+      const objetivo = await this.prisma.objetivo.findUnique({
+        where: {
+          idObjetivo,
+        },
+      });
+
+      if (!objetivo) {
+        throw new NotFoundException(`No existe objetivo con id ${idObjetivo}`);
+      }
+
+      const data = await this.prisma.retroalimentacionDetalle.findMany({
+        where: {
+          idObjetivo,
+          estado: true,
+        },
+        orderBy: {
+          idRetroalimentacionDetalle: 'asc',
+        },
+      });
+
+      return data;
     } catch (error) {
       handlePrismaError(error, 'retroalimentación detalle');
     }

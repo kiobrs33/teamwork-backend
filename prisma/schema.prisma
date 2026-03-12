@@ -185,7 +185,7 @@ model ObjetivoDetalle {
   metaObjetivo          Float     @map("meta_objetivo")
   metaAlcanzada         Float?    @map("meta_alcanzada")
   fechaCulminacion      DateTime  @map("fecha_culminacion")
-  porcentajeLogrado     Float?    @map("porcentaje_logrado")
+  porcentajeLogrado     Float?    @map("porcentaje_logrado") // EFECTIVIDAD
   estado                Boolean   @default(true)
   creadoPorId           Int       @map("creado_por_id")
   actualizadoPorId      Int?      @map("actualizado_por_id")

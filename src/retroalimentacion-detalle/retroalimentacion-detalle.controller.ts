@@ -22,7 +22,6 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-
 import { RetroalimentacionDetalleService } from './retroalimentacion-detalle.service';
 import { CreateRetroalimentacionDetalleDto } from './dto/create-retroalimentacion-detalle.dto';
 import { UpdateRetroalimentacionDetalleDto } from './dto/update-retroalimentacion-detalle.dto';
@@ -38,34 +37,39 @@ export class RetroalimentacionDetalleController {
     private readonly retroalimentacionDetalleService: RetroalimentacionDetalleService,
   ) {}
 
-  // Crear retroalimentación
+  // =========================
+  // CREATE
+  // =========================
+
   @Post()
-  @ApiOperation({ summary: 'Crear una retroalimentación detalle' })
+  @ApiOperation({ summary: 'Crear retroalimentación detalle' })
   @ApiResponse({
     status: 201,
-    description: 'Retroalimentación creada exitosamente.',
+    description: 'Retroalimentación creada',
   })
   async create(
     @User() user: AuthUser,
     @Body() dto: CreateRetroalimentacionDetalleDto,
   ) {
-    const retroalimentacion = await this.retroalimentacionDetalleService.create(
-      user,
-      dto,
-    );
+    const data = await this.retroalimentacionDetalleService.create(user, dto);
 
     return {
-      message: 'Retroalimentación creada exitosamente.',
-      data: { retroalimentacion },
+      message: 'Retroalimentación creada correctamente',
+      data,
     };
   }
 
-  // Crear múltiples retroalimentaciones
+  // =========================
+  // CREATE MANY
+  // =========================
+
   @Post('many')
   @ApiOperation({
-    summary: 'Crear múltiples retroalimentaciones para un objetivo',
+    summary: 'Crear múltiples retroalimentaciones',
   })
-  @ApiBody({ type: CreateManyRetroalimentacionDto })
+  @ApiBody({
+    type: CreateManyRetroalimentacionDto,
+  })
   async createMany(
     @User() user: AuthUser,
     @Body() dto: CreateManyRetroalimentacionDto,
@@ -77,83 +81,21 @@ export class RetroalimentacionDetalleController {
     );
 
     return {
-      message: 'Retroalimentaciones creadas correctamente.',
+      message: 'Retroalimentaciones creadas',
       data: result,
     };
   }
 
-  // Listar todas
-  @Get()
-  @ApiOperation({ summary: 'Listar todas las retroalimentaciones' })
-  async findAll() {
-    const retroalimentaciones =
-      await this.retroalimentacionDetalleService.findAll();
+  // =========================
+  // UPDATE MANY
+  // =========================
 
-    return {
-      message: 'Lista de retroalimentaciones.',
-      data: { retroalimentaciones },
-    };
-  }
-
-  // Listar por objetivo
-  @Get('objetivo/:id')
-  @ApiOperation({ summary: 'Listar retroalimentaciones por objetivo' })
-  @ApiParam({ name: 'id', description: 'ID del objetivo' })
-  async findByObjetivo(@Param('id', ParseIntPipe) id: number) {
-    const retroalimentaciones =
-      await this.retroalimentacionDetalleService.findByObjetivoId(id);
-
-    return {
-      message: 'Retroalimentaciones del objetivo.',
-      data: { retroalimentaciones },
-    };
-  }
-
-  // Obtener una retroalimentación
-  @Get(':id')
-  @ApiOperation({ summary: 'Obtener retroalimentación por ID' })
-  @ApiParam({
-    name: 'id',
-    description: 'ID de la retroalimentación detalle',
-  })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    const retroalimentacion =
-      await this.retroalimentacionDetalleService.findOne(id);
-
-    return {
-      message: 'Retroalimentación encontrada.',
-      data: { retroalimentacion },
-    };
-  }
-
-  // Actualizar una retroalimentación
-  @Patch(':id')
-  @ApiOperation({ summary: 'Actualizar retroalimentación detalle' })
-  @ApiParam({
-    name: 'id',
-    description: 'ID de la retroalimentación detalle',
-  })
-  async update(
-    @User() user: AuthUser,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateRetroalimentacionDetalleDto,
-  ) {
-    const retroalimentacion = await this.retroalimentacionDetalleService.update(
-      user,
-      id,
-      dto,
-    );
-
-    return {
-      message: `Retroalimentación con ID ${id} actualizada correctamente.`,
-      data: { retroalimentacion },
-    };
-  }
-
-  // Actualizar lista completa
   @Patch('many')
   @ApiOperation({
-    summary: 'Actualizar lista de retroalimentaciones de un objetivo',
+    summary: 'Actualizar lista completa de retroalimentaciones',
+  })
+  @ApiBody({
+    type: UpdateManyRetroalimentacionDto,
   })
   async updateMany(
     @User() user: AuthUser,
@@ -166,23 +108,106 @@ export class RetroalimentacionDetalleController {
     );
 
     return {
-      message: 'Retroalimentaciones actualizadas correctamente.',
+      message: 'Lista actualizada',
       data: result,
     };
   }
 
-  // Eliminar retroalimentación
-  @Delete(':id')
-  @ApiOperation({ summary: 'Eliminar retroalimentación (soft delete)' })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    const retroalimentacion = await this.retroalimentacionDetalleService.remove(
+  // =========================
+  // FIND ALL
+  // =========================
+
+  @Get()
+  @ApiOperation({
+    summary: 'Listar retroalimentaciones',
+  })
+  async findAll() {
+    const data = await this.retroalimentacionDetalleService.findAll();
+
+    return {
+      message: 'Lista obtenida',
+      data,
+    };
+  }
+
+  // =========================
+  // FIND BY OBJETIVO
+  // =========================
+
+  @Get('objetivo/:id')
+  @ApiOperation({
+    summary: 'Listar por objetivo',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID objetivo',
+  })
+  async findByObjetivo(@Param('id', ParseIntPipe) id: number) {
+    const data =
+      await this.retroalimentacionDetalleService.findByObjetivoId(id);
+
+    return {
+      message: 'Lista por objetivo',
+      data,
+    };
+  }
+
+  // =========================
+  // FIND ONE
+  // =========================
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Obtener por id',
+  })
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.retroalimentacionDetalleService.findOne(id);
+
+    return {
+      message: 'Registro encontrado',
+      data,
+    };
+  }
+
+  // =========================
+  // UPDATE ONE
+  // =========================
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Actualizar retroalimentación',
+  })
+  async update(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateRetroalimentacionDetalleDto,
+  ) {
+    const data = await this.retroalimentacionDetalleService.update(
       user,
       id,
+      dto,
     );
 
     return {
-      message: `Retroalimentación con ID ${id} eliminada correctamente.`,
-      data: { retroalimentacion },
+      message: 'Actualizado correctamente',
+      data,
+    };
+  }
+
+  // =========================
+  // DELETE
+  // =========================
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Eliminar retroalimentación',
+  })
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    const data = await this.retroalimentacionDetalleService.remove(user, id);
+
+    return {
+      message: 'Eliminado correctamente',
+      data,
     };
   }
 }

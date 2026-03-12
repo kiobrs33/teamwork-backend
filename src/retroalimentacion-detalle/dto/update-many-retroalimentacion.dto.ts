@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsArray, IsNumber } from 'class-validator';
-import { UpdateRetroalimentacionDetalleDto } from './update-retroalimentacion-detalle.dto';
+import { UpdateRetroalimentacionDetalleItemDto } from './update-retroalimentacion-detalle-item.dto';
 
 export class UpdateManyRetroalimentacionDto {
   @ApiProperty({ example: 5 })
@@ -8,8 +8,8 @@ export class UpdateManyRetroalimentacionDto {
   idObjetivo: number;
 
   @ApiProperty({
-    type: [UpdateRetroalimentacionDetalleDto],
+    type: [UpdateRetroalimentacionDetalleItemDto],
   })
   @IsArray()
-  detalles: UpdateRetroalimentacionDetalleDto[];
+  detalles: UpdateRetroalimentacionDetalleItemDto[];
 }
