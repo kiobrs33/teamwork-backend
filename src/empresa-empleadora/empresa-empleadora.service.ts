@@ -12,6 +12,7 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { EmpresaQueryDto } from './dto/empresa-query.dto';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
+import { v2 as cloudinary } from 'cloudinary';
 
 @Injectable()
 export class EmpresaEmpleadoraService {
@@ -175,6 +176,39 @@ export class EmpresaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al eliminar empresa:', error);
+      handlePrismaError(error, 'empresa empleadora');
+    }
+  }
+
+  async updateLogo(id: number, url: string, publicId: string) {
+    try {
+      const empresa = await this.prisma.empresaEmpleadora.findUnique({
+        where: {
+          idEmpresaEmpleadora: id,
+        },
+      });
+
+      if (!empresa) {
+        throw new NotFoundException('Empresa no encontrada');
+      }
+
+      // ✅ borrar logo anterior
+      if (empresa.logoPublicId) {
+        await cloudinary.uploader.destroy(empresa.logoPublicId);
+      }
+
+      // ✅ guardar nuevo
+      return await this.prisma.empresaEmpleadora.update({
+        where: {
+          idEmpresaEmpleadora: id,
+        },
+        data: {
+          urlLogo: url,
+          logoPublicId: publicId,
+          fechaModificacion: new Date(),
+        },
+      });
+    } catch (error) {
       handlePrismaError(error, 'empresa empleadora');
     }
   }

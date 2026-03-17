@@ -68,6 +68,7 @@ model EmpresaEmpleadora {
   ruc                                        String?                       @unique
   direccionEmpresa                           String?                       @map("direccion_empresa")
   urlLogo                                    String                        @map("url_logo")
+  logoPublicId                               String?                       @map("logo_public_id") // Para almacenar el public_id de Cloudinary
   modeloEmpresa                              String // 90, 180
   fechaVigenciaInicio                        DateTime                      @map("fecha_vigencia_inicio")
   fechaVigenciaFin                           DateTime                      @map("fecha_vigencia_fin")

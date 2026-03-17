@@ -10,6 +10,8 @@ import {
   ParseIntPipe,
   UseGuards,
   Query,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import { EmpresaEmpleadoraService } from './empresa-empleadora.service';
 import { CreateEmpresaEmpleadoraDto } from './dto/create-empresa-empleadora.dto';
@@ -26,6 +28,8 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { EmpresaQueryDto } from './dto/empresa-query.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { storage } from 'src/common/interceptors/cloudinary.storage.interceptor';
 
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
@@ -48,6 +52,23 @@ export class EmpresaEmpleadoraController {
     return {
       message: 'Empresa empleadora creada exitosamente.',
       data: { empresa },
+    };
+  }
+
+  @Post(':id/logo')
+  @UseInterceptors(FileInterceptor('file', { storage }))
+  async uploadLogo(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: any,
+  ) {
+    const url = file.path;
+    const publicId = file.filename;
+
+    const empresa = await this.service.updateLogo(id, url, publicId);
+
+    return {
+      message: 'Logo subido correctamente',
+      data: empresa,
     };
   }
 
