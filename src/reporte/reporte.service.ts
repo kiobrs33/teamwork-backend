@@ -227,12 +227,16 @@ export class ReporteService {
         empresa.competenciaResultadoEsperado ?? 100;
 
       if (resultadoFinal > competenciaResultadoEsperado) {
-        superavit = Number((resultadoFinal - competenciaResultadoEsperado).toFixed(2));
+        superavit = Number(
+          (resultadoFinal - competenciaResultadoEsperado).toFixed(2),
+        );
         resultadoTexto = `${resultadoFinal}% (+${superavit})`;
       }
 
       if (resultadoFinal < competenciaResultadoEsperado) {
-        oportunidadMejora = Number((competenciaResultadoEsperado - resultadoFinal).toFixed(2));
+        oportunidadMejora = Number(
+          (competenciaResultadoEsperado - resultadoFinal).toFixed(2),
+        );
         resultadoTexto = `${resultadoFinal}% (-${oportunidadMejora})`;
       }
 
@@ -367,16 +371,41 @@ export class ReporteService {
             pesoEspecifico: true,
           },
         },
+        retroalimentacionDetalles: {
+          where: { estado: true },
+          select: {
+            descripcionObjetivo: true,
+            descripcionActividad: true,
+            descripcionFecha: true,
+            descripcionEstado: true,
+          },
+        },
       },
     });
 
     const objetivosDetalle: any[] = [];
+
+    const retroalimentaciones: any[] = [];
 
     let totalPeso = 0;
     let acumulado = 0;
     let contadorObj = 1;
 
     for (const obj of objetivos) {
+      // 🔹 Retroalimentación por objetivo
+      const retro = obj.retroalimentacionDetalles.map((r, index) => ({
+        orden: `Actividad ${index + 1}`,
+        descripcionObjetivo: r.descripcionObjetivo,
+        descripcionActividad: r.descripcionActividad,
+        descripcionFecha: r.descripcionFecha,
+        descripcionEstado: r.descripcionEstado,
+      }));
+
+      retroalimentaciones.push({
+        objetivoId: obj.idObjetivo,
+        retroalimentacion: retro,
+      });
+
       for (const det of obj.objetivoDetalles) {
         const porcentaje = det.porcentajeLogrado ?? 0;
         const orden = `Objetivo ${contadorObj}`;
@@ -442,6 +471,9 @@ export class ReporteService {
       resultadoCompetencias * pesoCompetencias +
       resultadoObjetivos * pesoObjetivos;
 
+    // TODO: Solucion de calculo
+    // const round2 = (num) => Math.round(num * 100) / 100;
+
     // ==============================
     // DATA PARA EL REPORTE
     // ==============================
@@ -474,6 +506,13 @@ export class ReporteService {
         evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
       },
 
+      // TODO: Solucion de calculo
+      // resultados: {
+      //   competencias: round2(resultadoCompetencias),
+      //   objetivos: round2(resultadoObjetivos),
+      //   evaluacionFinal: round2(resultadoFinalED),
+      // },
+
       clasificacionCompetencias: desempeno,
 
       competenciasDetalle,
@@ -484,6 +523,7 @@ export class ReporteService {
       competenciasRadarChart,
 
       objetivosDetalle,
+      retroalimentaciones,
       objetivosChart,
 
       chartData: {

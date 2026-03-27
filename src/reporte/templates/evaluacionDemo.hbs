@@ -9,11 +9,6 @@
   </head>
   <body>
     <div class="report">
-      <img
-        src={{empresa.logo}}
-        alt="logo"
-        class="report__logo"
-      />
 
       <h2 class="report__title">
         REPORTE DE RESULTADOS Y RETROALIMENTACIÓN DE LA EVALUACIÓN DE DESEMPEÑO
@@ -27,30 +22,30 @@
               <td class="table__cell table__cell--bold">
                 Codigo:
               </td>
-              <td class="table__cell">{{evaluado.codigoEmpleado}}</td>
+              <td class="table__cell"></td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">
                 Apellidos y Nombres:
               </td>
-              <td class="table__cell">{{evaluado.apellidos}} {{evaluado.nombres}}</td>
+              <td class="table__cell"></td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Puesto:</td>
-              <td class="table__cell">{{empleado.puesto}}</td>
+              <td class="table__cell"></td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Gerencia:</td>
-              <td class="table__cell">{{empleado.gerencia}}</td>
+              <td class="table__cell"></td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Área:</td>
-              <td class="table__cell">{{empleado.area}}</td>
+              <td class="table__cell"></td>
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">Grupo:</td>
               <td class="table__cell">
-                {{empleado.grupo}}
+                
               </td>
             </tr>
             <tr>
@@ -383,34 +378,95 @@
               </tr>
             </thead>
             <tbody>
-  {{#each retroalimentaciones}}
-    {{#each retroalimentacion}}
-      <tr>
-        <td class="table__cell">
-          {{descripcionObjetivo}}
-        </td>
-        <td class="table__cell">
-          {{descripcionActividad}}
-        </td>
-        <td class="table__cell table__cell--center">
-          {{descripcionFecha}}
-        </td>
-        <td class="table__cell table__cell--center">
-          {{descripcionEstado}}
-        </td>
-      </tr>
-    {{/each}}
-  {{/each}}
-
-  {{!-- 🔹 Si no hay datos --}}
-  {{#unless retroalimentaciones.length}}
-    <tr>
-      <td colspan="4" class="table__cell table__cell--center">
-        No hay plan de acción registrado
-      </td>
-    </tr>
-  {{/unless}}
-</tbody>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+                <td
+                  class="table__cell"
+                >
+                  <br><br><br><br><br><br>
+                </td>
+              </tr>
+            </tbody>
           </table>
         </div>
       </div>
