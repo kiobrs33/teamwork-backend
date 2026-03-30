@@ -456,12 +456,18 @@ export class ReporteService {
       empresa.periodoEvaluacion ?? Date.now(),
     );
 
-    const newPeriodoEvaluacion = datePeriodoEvaluacion
-      .toLocaleDateString('es-ES', {
-        month: 'long',
-        year: 'numeric',
-      })
-      .toUpperCase();
+    // const newPeriodoEvaluacion = datePeriodoEvaluacion
+    //   .toLocaleDateString('es-ES', {
+    //     month: 'long',
+    //     year: 'numeric',
+    //   })
+    //   .charAt(0)
+    //   .toUpperCase();
+
+    const fecha = new Date(datePeriodoEvaluacion);
+    const mes = fecha.toLocaleDateString('es-ES', { month: 'long' });
+    const anio = fecha.getFullYear();
+    const newPeriodoEvaluacion = `${mes.charAt(0).toUpperCase() + mes.slice(1)} de ${anio}`;
 
     // ==============================
     // RESULTADO FINAL ED
@@ -536,8 +542,6 @@ export class ReporteService {
         ],
       },
     };
-
-    console.log('DATA ===============================', data);
 
     return this.pdfRenderer.render('evaluacion', data);
   }
