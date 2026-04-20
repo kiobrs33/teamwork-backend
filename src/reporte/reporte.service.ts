@@ -478,7 +478,7 @@ export class ReporteService {
       resultadoObjetivos * pesoObjetivos;
 
     // TODO: Solucion de calculo
-    // const round2 = (num) => Math.round(num * 100) / 100;
+    const round2 = (num) => Math.round(num * 100) / 100;
 
     // ==============================
     // DATA PARA EL REPORTE
@@ -506,18 +506,19 @@ export class ReporteService {
         grupo: empleado.unidadOcupacionalEmpleadora.descripcion,
       },
 
-      resultados: {
-        competencias: Number(resultadoCompetencias.toFixed(2)),
-        objetivos: Number(resultadoObjetivos.toFixed(2)),
-        evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
-      },
+      // TODO: CALCULOS OLD
+      // resultados: {
+      //   competencias: Number(resultadoCompetencias.toFixed(2)),
+      //   objetivos: Number(resultadoObjetivos.toFixed(2)),
+      //   evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
+      // },
 
       // TODO: Solucion de calculo
-      // resultados: {
-      //   competencias: round2(resultadoCompetencias),
-      //   objetivos: round2(resultadoObjetivos),
-      //   evaluacionFinal: round2(resultadoFinalED),
-      // },
+      resultados: {
+        competencias: round2(resultadoCompetencias),
+        objetivos: round2(resultadoObjetivos),
+        evaluacionFinal: round2(resultadoFinalED),
+      },
 
       clasificacionCompetencias: desempeno,
 
