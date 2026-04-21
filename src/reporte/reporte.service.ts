@@ -142,6 +142,7 @@ export class ReporteService {
 
     const mapaCompetencias = new Map();
 
+    // TODO
     const promedio = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
@@ -217,7 +218,8 @@ export class ReporteService {
       //   resultadoFinal: Number(resultado.toFixed(2)),
       // });
 
-      const resultadoFinal = Number(resultado.toFixed(2));
+      // const resultadoFinal = Number(resultado.toFixed(2));
+      const resultadoFinal = Number(resultado);
 
       let superavit: number | null = null;
       let oportunidadMejora: number | null = null;
@@ -227,15 +229,13 @@ export class ReporteService {
         empresa.competenciaResultadoEsperado ?? 100;
 
       if (resultadoFinal > competenciaResultadoEsperado) {
-        superavit = Number(
-          (resultadoFinal - competenciaResultadoEsperado).toFixed(2),
-        );
+        superavit = Number(resultadoFinal - competenciaResultadoEsperado);
         resultadoTexto = `${resultadoFinal}% (+${superavit})`;
       }
 
       if (resultadoFinal < competenciaResultadoEsperado) {
         oportunidadMejora = Number(
-          (competenciaResultadoEsperado - resultadoFinal).toFixed(2),
+          competenciaResultadoEsperado - resultadoFinal,
         );
         resultadoTexto = `${resultadoFinal}% (-${oportunidadMejora})`;
       }
@@ -245,9 +245,9 @@ export class ReporteService {
         competencia: comp.competencia,
         nivel: comp.nivel,
 
-        autoevaluacion: Number(auto.toFixed(2)),
-        evaluacionJefe: Number(jefe.toFixed(2)),
-        evaluacionSubordinados: Number(sub.toFixed(2)),
+        autoevaluacion: Number(auto),
+        evaluacionJefe: Number(jefe),
+        evaluacionSubordinados: Number(sub),
 
         resultadoFinal,
         resultadoTexto,
@@ -263,9 +263,34 @@ export class ReporteService {
     // RESULTADO GLOBAL COMPETENCIAS
     // ==============================
 
-    const resultadoCompetencias = promedio(
-      competenciasDetalle.map((c) => c.resultadoFinal),
+    // const resultadoCompetencias = promedio(
+    //   competenciasDetalle.map((c) => c.resultadoFinal),
+    // );
+
+    const promedioJefeGlobal = promedio(
+      Array.from(mapaCompetencias.values()).flatMap((c) => c.jefe),
     );
+
+    const promedioSubGlobal = promedio(
+      Array.from(mapaCompetencias.values()).flatMap((c) => c.subordinados),
+    );
+
+    let resultadoCompetencias = 0;
+
+    if (empresa.modeloEmpresa === '90') {
+      resultadoCompetencias = promedioJefeGlobal;
+    }
+
+    if (empresa.modeloEmpresa === '180') {
+      const tieneSub = promedioSubGlobal > 0;
+
+      if (!tieneSub) {
+        resultadoCompetencias = promedioJefeGlobal;
+      } else {
+        resultadoCompetencias =
+          promedioJefeGlobal * pesoJefe + promedioSubGlobal * pesoSub;
+      }
+    }
 
     const desempeno = this.obtenerMensajeDesempeno(resultadoCompetencias);
 
@@ -473,12 +498,19 @@ export class ReporteService {
     // RESULTADO FINAL ED
     // ==============================
 
+    console.log(
+      resultadoCompetencias,
+      pesoCompetencias,
+      resultadoObjetivos,
+      pesoObjetivos,
+    );
+
     const resultadoFinalED =
       resultadoCompetencias * pesoCompetencias +
       resultadoObjetivos * pesoObjetivos;
 
     // TODO: Solucion de calculo
-    const round2 = (num) => Math.round(num * 100) / 100;
+    // const round2 = (num) => Math.round(num * 100) / 100;
 
     // ==============================
     // DATA PARA EL REPORTE
@@ -507,18 +539,18 @@ export class ReporteService {
       },
 
       // TODO: CALCULOS OLD
-      // resultados: {
-      //   competencias: Number(resultadoCompetencias.toFixed(2)),
-      //   objetivos: Number(resultadoObjetivos.toFixed(2)),
-      //   evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
-      // },
+      resultados: {
+        competencias: Number(resultadoCompetencias.toFixed(2)),
+        objetivos: Number(resultadoObjetivos.toFixed(2)),
+        evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
+      },
 
       // TODO: Solucion de calculo
-      resultados: {
-        competencias: round2(resultadoCompetencias),
-        objetivos: round2(resultadoObjetivos),
-        evaluacionFinal: round2(resultadoFinalED),
-      },
+      // resultados: {
+      //   competencias: round2(resultadoCompetencias),
+      //   objetivos: round2(resultadoObjetivos),
+      //   evaluacionFinal: round2(resultadoFinalED),
+      // },
 
       clasificacionCompetencias: desempeno,
 
@@ -543,6 +575,8 @@ export class ReporteService {
         ],
       },
     };
+
+    // console.log('DATA =>>>>>>>>>>>>>>>>>', data);
 
     return this.pdfRenderer.render('evaluacion', data);
   }
