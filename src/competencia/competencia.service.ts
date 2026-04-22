@@ -564,156 +564,6 @@ export class CompetenciaService {
     });
   }
 
-  // async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
-  //   const empleados = await this.prisma.evaluacionCompetencia.findMany({
-  //     where: {
-  //       estado: true,
-  //       idEvaluado: { not: null },
-  //       evaluado: {
-  //         idEmpresaEmpleadora,
-  //         estado: true,
-  //       },
-  //     },
-  //     distinct: ['idEvaluado'],
-  //     select: {
-  //       evaluado: {
-  //         select: {
-  //           idEmpleado: true,
-  //           nombres: true,
-  //           apellidos: true,
-  //           codigoEmpleado: true,
-  //         },
-  //       },
-  //     },
-  //   });
-
-  //   return {
-  //     total: empleados.length,
-  //     empleados: empleados.map((e) => e.evaluado),
-  //   };
-  // }
-
-  // async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
-  //   const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
-  //     where: {
-  //       estado: true,
-  //       idEvaluado: { not: null },
-  //       evaluado: {
-  //         idEmpresaEmpleadora,
-  //         estado: true,
-  //       },
-  //     },
-  //     include: {
-  //       evaluado: {
-  //         select: {
-  //           idEmpleado: true,
-  //           nombres: true,
-  //           apellidos: true,
-  //           codigoEmpleado: true,
-  //         },
-  //       },
-  //       evaluador: {
-  //         select: {
-  //           idEmpleado: true,
-  //           nombres: true,
-  //           apellidos: true,
-  //           codigoEmpleado: true,
-  //         },
-  //       },
-  //       competencia: {
-  //         select: {
-  //           idCompetencia: true,
-  //           nombre: true,
-  //         },
-  //       },
-  //       nivel: {
-  //         select: {
-  //           idCompetenciaNivel: true,
-  //           nivel: true,
-  //         },
-  //       },
-  //       itemsEvaluados: {
-  //         select: {
-  //           calificacion: true,
-  //         },
-  //       },
-  //     },
-  //     orderBy: {
-  //       fechaCreacion: 'desc',
-  //     },
-  //   });
-
-  //   // ======================================================
-  //   // AGRUPAR POR EMPLEADO EVALUADO
-  //   // ======================================================
-  //   const map = new Map<number, any>();
-
-  //   for (const ev of evaluaciones) {
-  //     const totalItems = ev.itemsEvaluados.length;
-  //     const itemsCalificados = ev.itemsEvaluados.filter(
-  //       (i) => i.calificacion !== null && i.calificacion > 0,
-  //     ).length;
-
-  //     const nivelCalificado = itemsCalificados > 0;
-
-  //     // Determinar tipo de evaluador
-  //     let tipoEvaluador = 'SIN EVALUADOR';
-  //     if (ev.idEvaluador && ev.idEvaluador === ev.idEvaluado) {
-  //       tipoEvaluador = 'AUTOEVALUACIÓN';
-  //     } else if (ev.idEvaluador) {
-  //       tipoEvaluador = 'OTRO EVALUADOR';
-  //     }
-
-  //     const evaluacionDetalle = {
-  //       evaluacionId: ev.idEvaluacionCompetencia,
-
-  //       evaluador: ev.evaluador
-  //         ? {
-  //             idEmpleado: ev.evaluador.idEmpleado,
-  //             nombres: ev.evaluador.nombres,
-  //             apellidos: ev.evaluador.apellidos,
-  //             codigoEmpleado: ev.evaluador.codigoEmpleado,
-  //             tipo: tipoEvaluador,
-  //           }
-  //         : null,
-
-  //       competencia: ev.competencia,
-
-  //       nivel: ev.nivel,
-
-  //       nivelCalificado,
-
-  //       detalleCalificacion: {
-  //         totalItems,
-  //         itemsCalificados,
-  //         itemsSinCalificar: totalItems - itemsCalificados,
-  //       },
-
-  //       estadoEvaluacion: ev.estadoEvaluacion,
-  //       fechaEvaluacion: ev.fechaCreacion,
-  //     };
-
-  //     // Agrupar por evaluado
-  //     if (ev.evaluado && !map.has(ev.evaluado.idEmpleado)) {
-  //       map.set(ev.evaluado.idEmpleado, {
-  //         evaluado: ev.evaluado,
-  //         evaluaciones: [],
-  //       });
-  //     }
-
-  //     if (ev.evaluado) {
-  //       map.get(ev.evaluado.idEmpleado).evaluaciones.push(evaluacionDetalle);
-  //     }
-  //   }
-
-  //   const resultado = Array.from(map.values());
-
-  //   return {
-  //     totalEmpleadosEvaluados: resultado.length,
-  //     empleados: resultado,
-  //   };
-  // }
-
   async empleadosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
@@ -855,248 +705,94 @@ export class CompetenciaService {
     };
   }
 
-  // async exportarResultadosEmpresaExcel(idEmpresaEmpleadora: number) {
-  //   const empresa = await this.prisma.empresaEmpleadora.findFirst({
-  //     where: {
-  //       idEmpresaEmpleadora,
-  //       estado: true,
-  //     },
-  //   });
+  // TODO: Metodos para obtener resultados finales por empleado (promedios ponderados) y exportar a Excel/PDF
+  // ===============================
+  // 🔹 UTILIDAD DE REDONDEO GLOBAL
+  // ===============================
+  private round(num: number, decimals = 2): number {
+    const factor = Math.pow(10, decimals);
+    return Math.round((num + Number.EPSILON) * factor) / factor;
+  }
 
-  //   if (!empresa) {
-  //     throw new NotFoundException('Empresa no encontrada');
-  //   }
+  // ===============================
+  // 🔹 CÁLCULO DE RESULTADOS
+  // ===============================
+  public calcularResultadosEmpleadoDesdeAgrupado(
+    empresa: any,
+    emp: {
+      autoEvaluaciones: number[];
+      evaluacionesJefe: number[];
+      evaluacionesSubordinados: number[];
+      objetivos: number[];
+    },
+    decimals = 4, // 👈 TODO: cambiar a 3,4,5 si quieres
+  ) {
+    const avg = (arr: number[]) =>
+      arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
-  //   // ===============================
-  //   // 1️⃣ OBTENER DATA
-  //   // ===============================
-  //   const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
-  //     where: {
-  //       estado: true,
-  //       evaluado: {
-  //         idEmpresaEmpleadora,
-  //         estado: true,
-  //       },
-  //     },
-  //     include: {
-  //       evaluado: {
-  //         select: {
-  //           idEmpleado: true,
-  //           nombres: true,
-  //           apellidos: true,
-  //           codigoEmpleado: true,
-  //           codigoEmpleadoJefe: true, // 🔴 clave
-  //         },
-  //       },
-  //       evaluador: {
-  //         select: {
-  //           idEmpleado: true,
-  //           codigoEmpleado: true, // 🔴 clave
-  //         },
-  //       },
-  //       itemsEvaluados: {
-  //         where: { estado: true },
-  //         select: { calificacion: true },
-  //       },
-  //     },
-  //   });
+    const jefePeso = (empresa.porcentajeEvaluacionJefeCompetencia ?? 0) / 100;
+    const subordinadoPeso =
+      (empresa.porcentajeEvaluacionSubordinadoCompetencia ?? 0) / 100;
+    const competenciaPeso = (empresa.porcentajeCompetecias ?? 0) / 100;
+    const objetivoPeso = (empresa.porcentajeObjetivos ?? 0) / 100;
 
-  //   const objetivos = await this.prisma.objetivo.findMany({
-  //     where: {
-  //       estado: true,
-  //       empleado: {
-  //         idEmpresaEmpleadora,
-  //         estado: true,
-  //       },
-  //     },
-  //     include: {
-  //       empleado: {
-  //         select: {
-  //           idEmpleado: true,
-  //           nombres: true,
-  //           apellidos: true,
-  //           codigoEmpleado: true,
-  //         },
-  //       },
-  //       objetivoDetalles: {
-  //         where: { estado: true },
-  //         select: {
-  //           porcentajeLogrado: true,
-  //           pesoEspecifico: true,
-  //         },
-  //       },
-  //     },
-  //   });
+    // ===============================
+    // 🔹 PROMEDIOS (REDONDEADOS)
+    // ===============================
+    const promedioAuto = this.round(avg(emp.autoEvaluaciones), decimals);
+    const promedioJefe = this.round(avg(emp.evaluacionesJefe), decimals);
+    const promedioSubordinados = this.round(
+      avg(emp.evaluacionesSubordinados),
+      decimals,
+    );
 
-  //   // ===============================
-  //   // 2️⃣ AGRUPAR POR EMPLEADO
-  //   // ===============================
-  //   const empleados = new Map<number, any>();
+    let resultadoCompetencias = 0;
 
-  //   for (const ev of evaluaciones) {
-  //     if (!ev.evaluado) continue;
+    // ===============================
+    // 🔹 MODELOS
+    // ===============================
+    if (empresa.modeloEmpresa === '90') {
+      resultadoCompetencias = promedioJefe;
+    }
 
-  //     if (!empleados.has(ev.evaluado.idEmpleado)) {
-  //       empleados.set(ev.evaluado.idEmpleado, {
-  //         empleado: ev.evaluado,
-  //         evaluacionesJefe: [],
-  //         evaluacionesSubordinados: [],
-  //         autoEvaluaciones: [],
-  //         objetivos: [],
-  //       });
-  //     }
+    if (empresa.modeloEmpresa === '180') {
+      const tieneSub = emp.evaluacionesSubordinados.length > 0;
 
-  //     const calificaciones = ev.itemsEvaluados
-  //       .map((i) => i.calificacion)
-  //       .filter((n) => n !== null) as number[];
+      if (!tieneSub) {
+        resultadoCompetencias = promedioJefe;
+      } else {
+        resultadoCompetencias = this.round(
+          promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso,
+          decimals,
+        );
+      }
+    }
 
-  //     const promedioEvaluacion =
-  //       calificaciones.length > 0
-  //         ? calificaciones.reduce((a, b) => a + b, 0) / calificaciones.length
-  //         : 0;
+    // ===============================
+    // 🔹 OBJETIVOS
+    // ===============================
+    const promedioObjetivos = this.round(avg(emp.objetivos), decimals);
 
-  //     const emp = empleados.get(ev.evaluado.idEmpleado);
+    // ===============================
+    // 🔹 RESULTADO FINAL
+    // ===============================
+    const resultadoFinal = this.round(
+      resultadoCompetencias * competenciaPeso +
+        promedioObjetivos * objetivoPeso,
+      decimals,
+    );
 
-  //     // ===============================
-  //     // AUTOEVALUACIÓN
-  //     // ===============================
-  //     if (ev.idEvaluador === ev.idEvaluado) {
-  //       emp.autoEvaluaciones.push(promedioEvaluacion);
-  //       continue;
-  //     }
+    return {
+      promedioAuto,
+      promedioJefe,
+      promedioSubordinados,
+      resultadoCompetencias,
+      promedioObjetivos,
+      resultadoFinal,
+    };
+  }
 
-  //     // ===============================
-  //     // JEFE
-  //     // ===============================
-  //     const codigoJefe = ev.evaluado.codigoEmpleadoJefe;
-
-  //     if (
-  //       codigoJefe &&
-  //       ev.evaluador &&
-  //       ev.evaluador.codigoEmpleado === codigoJefe
-  //     ) {
-  //       emp.evaluacionesJefe.push(promedioEvaluacion);
-  //       continue;
-  //     }
-
-  //     // ===============================
-  //     // SUBORDINADOS
-  //     // ===============================
-  //     emp.evaluacionesSubordinados.push(promedioEvaluacion);
-  //   }
-
-  //   // ===============================
-  //   // 3️⃣ OBJETIVOS
-  //   // ===============================
-  //   for (const obj of objetivos) {
-  //     const emp = empleados.get(obj.empleado.idEmpleado);
-  //     if (!emp) continue;
-
-  //     let totalPeso = 0;
-  //     let acumulado = 0;
-
-  //     for (const det of obj.objetivoDetalles) {
-  //       if (det.porcentajeLogrado !== null) {
-  //         acumulado += det.porcentajeLogrado * det.pesoEspecifico;
-  //         totalPeso += det.pesoEspecifico;
-  //       }
-  //     }
-
-  //     const porcentajeObjetivo = totalPeso > 0 ? acumulado / totalPeso : 0;
-  //     emp.objetivos.push(porcentajeObjetivo);
-  //   }
-
-  //   // ===============================
-  //   // PESOS
-  //   // ===============================
-  //   const jefePeso = (empresa.porcentajeEvaluacionJefeCompetencia ?? 0) / 100;
-  //   const subordinadoPeso =
-  //     (empresa.porcentajeEvaluacionSubordinadoCompetencia ?? 0) / 100;
-  //   const competenciaPeso = (empresa.porcentajeCompetecias ?? 0) / 100;
-  //   const objetivoPeso = (empresa.porcentajeObjetivos ?? 0) / 100;
-
-  //   // ===============================
-  //   // CREAR EXCEL
-  //   // ===============================
-  //   const workbook = new ExcelJS.Workbook();
-  //   const sheet = workbook.addWorksheet('Resultados');
-
-  //   sheet.columns = [
-  //     { header: 'Código', key: 'codigo', width: 15 },
-  //     { header: 'Empleado', key: 'empleado', width: 35 },
-  //     { header: 'Autoevaluación', key: 'auto', width: 20 },
-  //     {
-  //       header: `Competencia Evaluacion Jefe ${jefePeso * 100} %`,
-  //       key: 'jefe',
-  //       width: 35,
-  //     },
-  //     {
-  //       header: `Competencia Evaluacion Subordinados ${subordinadoPeso * 100} %`,
-  //       key: 'subordinados',
-  //       width: 40,
-  //     },
-  //     {
-  //       header: `Resultado Competencias ${competenciaPeso * 100} %`,
-  //       key: 'competencias',
-  //       width: 35,
-  //     },
-  //     {
-  //       header: `Resultado Objetivos ${objetivoPeso * 100} %`,
-  //       key: 'objetivos',
-  //       width: 20,
-  //     },
-  //     { header: 'Resultado Final', key: 'final', width: 20 },
-  //   ];
-
-  //   // ===============================
-  //   // RESULTADOS
-  //   // ===============================
-  //   for (const emp of empleados.values()) {
-  //     const avg = (arr: number[]) =>
-  //       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-
-  //     const promedioAuto = avg(emp.autoEvaluaciones);
-  //     const promedioJefe = avg(emp.evaluacionesJefe);
-  //     const promedioSubordinados = avg(emp.evaluacionesSubordinados);
-
-  //     let resultadoCompetencias = 0;
-
-  //     if (empresa.modeloEmpresa === '90') {
-  //       resultadoCompetencias = promedioJefe;
-  //     }
-
-  //     if (empresa.modeloEmpresa === '180') {
-  //       const tieneSub = emp.evaluacionesSubordinados.length > 0;
-
-  //       if (!tieneSub) {
-  //         resultadoCompetencias = promedioJefe;
-  //       } else {
-  //         resultadoCompetencias =
-  //           promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso;
-  //       }
-  //     }
-
-  //     const promedioObjetivos = avg(emp.objetivos);
-
-  //     const resultadoFinal =
-  //       resultadoCompetencias * competenciaPeso +
-  //       promedioObjetivos * objetivoPeso;
-
-  //     sheet.addRow({
-  //       codigo: emp.empleado.codigoEmpleado,
-  //       empleado: `${emp.empleado.nombres} ${emp.empleado.apellidos}`,
-  //       auto: Number(promedioAuto.toFixed(2)),
-  //       jefe: Number(promedioJefe.toFixed(2)),
-  //       subordinados: Number(promedioSubordinados.toFixed(2)),
-  //       competencias: Number(resultadoCompetencias.toFixed(2)),
-  //       objetivos: Number(promedioObjetivos.toFixed(2)),
-  //       final: Number(resultadoFinal.toFixed(2)),
-  //     });
-  //   }
-
-  //   return workbook;
-  // }
-
+  // TODO: Resultados COMPETENCIAS + OBJETIVOS
   async exportarResultadosEmpresaExcel(idEmpresaEmpleadora: number) {
     const empresa = await this.prisma.empresaEmpleadora.findFirst({
       where: {
@@ -1310,45 +1006,17 @@ export class CompetenciaService {
     // RESULTADOS
     // ===============================
     for (const emp of empleados.values()) {
-      const avg = (arr: number[]) =>
-        arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-
-      const promedioAuto = avg(emp.autoEvaluaciones);
-      const promedioJefe = avg(emp.evaluacionesJefe);
-      const promedioSubordinados = avg(emp.evaluacionesSubordinados);
-
-      let resultadoCompetencias = 0;
-
-      if (empresa.modeloEmpresa === '90') {
-        resultadoCompetencias = promedioJefe;
-      }
-
-      if (empresa.modeloEmpresa === '180') {
-        const tieneSub = emp.evaluacionesSubordinados.length > 0;
-
-        if (!tieneSub) {
-          resultadoCompetencias = promedioJefe;
-        } else {
-          resultadoCompetencias =
-            promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso;
-        }
-      }
-
-      const promedioObjetivos = avg(emp.objetivos);
-
-      const resultadoFinal =
-        resultadoCompetencias * competenciaPeso +
-        promedioObjetivos * objetivoPeso;
+      const r = this.calcularResultadosEmpleadoDesdeAgrupado(empresa, emp);
 
       sheet.addRow({
         codigo: emp.empleado.codigoEmpleado,
         empleado: `${emp.empleado.nombres} ${emp.empleado.apellidos}`,
-        auto: Number(promedioAuto.toFixed(2)),
-        jefe: Number(promedioJefe.toFixed(2)),
-        subordinados: Number(promedioSubordinados.toFixed(2)),
-        competencias: Number(resultadoCompetencias.toFixed(2)),
-        objetivos: Number(promedioObjetivos.toFixed(2)),
-        final: Number(resultadoFinal.toFixed(2)),
+        auto: r.promedioAuto,
+        jefe: r.promedioJefe,
+        subordinados: r.promedioSubordinados,
+        competencias: r.resultadoCompetencias,
+        objetivos: r.promedioObjetivos,
+        final: r.resultadoFinal,
       });
     }
 
@@ -1356,44 +1024,8 @@ export class CompetenciaService {
   }
 
   // Competencias
-  async exportarCompetenciasPorEmpresaExcel(idEmpresaEmpleadora: number) {
-    // const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
-    //   where: {
-    //     estado: true,
-    //     // estadoEvaluacion: 'PROCESO',
-    //     evaluado: {
-    //       idEmpresaEmpleadora,
-    //     },
-    //   },
-    //   include: {
-    //     evaluado: {
-    //       where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR EMPLEADOS ACTIVOS
-    //       include: {
-    //         empresaEmpleadora: true,
-    //         areaEmpleadora: true,
-    //         puestoEmpleadora: true,
-    //         unidadOcupacionalEmpleadora: true,
-    //         gerenciaEmpleadora: true,
-    //       },
-    //     },
-    //     evaluador: {
-    //       where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR EVALUADORES ACTIVOS
-    //     },
-    //     competencia: true,
-    //     nivel: true,
-    //     itemsEvaluados: {
-    //       where: { estado: true }, // FILTRO AQUÍ PARA SOLO INCLUIR ÍTEMS ACTIVOS
-    //       include: {
-    //         item: true,
-    //       },
-    //     },
-    //   },
-    //   orderBy: [
-    //     { evaluado: { apellidos: 'asc' } },
-    //     { competencia: { nombre: 'asc' } },
-    //   ],
-    // });
 
+  async exportarCompetenciasPorEmpresaExcel(idEmpresaEmpleadora: number) {
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
         estado: true, // evaluación activa
@@ -1521,79 +1153,6 @@ export class CompetenciaService {
 
     return workbook;
   }
-
-  // async exportarObjetivosPorEmpresaExcel(idEmpresaEmpleadora: number) {
-  //   const objetivos = await this.prisma.objetivo.findMany({
-  //     where: {
-  //       estado: true,
-  //       empleado: {
-  //         idEmpresaEmpleadora,
-  //       },
-  //     },
-  //     include: {
-  //       empleado: {
-  //         include: {
-  //           empresaEmpleadora: true,
-  //           areaEmpleadora: true,
-  //           puestoEmpleadora: true,
-  //           unidadOcupacionalEmpleadora: true,
-  //           gerenciaEmpleadora: true,
-  //         },
-  //       },
-  //       objetivoDetalles: {
-  //         where: { estado: true },
-  //         orderBy: { secuencial: 'asc' },
-  //       },
-  //     },
-  //     orderBy: [{ empleado: { apellidos: 'asc' } }],
-  //   });
-
-  //   const workbook = new ExcelJS.Workbook();
-  //   const sheet = workbook.addWorksheet('Objetivos');
-
-  //   sheet.columns = [
-  //     { header: 'Empresa', key: 'empresa', width: 30 },
-  //     { header: 'Codigo Empleado', key: 'codigoEmpleado', width: 35 }, //
-  //     { header: 'Empleado', key: 'empleado', width: 35 },
-  //     { header: 'Documento', key: 'documento', width: 15 },
-  //     { header: 'Codigo Jefe', key: 'codigoJefe', width: 35 }, //
-  //     // { header: 'Evaluador', key: 'evaluador', width: 30 }, // FALTA ESTO
-  //     { header: 'Área', key: 'area', width: 25 },
-  //     { header: 'Puesto', key: 'puesto', width: 25 },
-  //     { header: 'Unidad', key: 'unidad', width: 25 },
-  //     { header: 'Gerencia', key: 'gerencia', width: 25 },
-  //     { header: 'Objetivo', key: 'objetivo', width: 40 },
-  //     { header: 'Peso', key: 'peso', width: 10 },
-  //     { header: 'Meta', key: 'meta', width: 12 },
-  //     { header: 'Meta Alcanzada', key: 'metaAlcanzada', width: 15 },
-  //     { header: '% Logrado', key: 'porcentaje', width: 12 },
-  //     { header: 'Fecha Culminación', key: 'fecha', width: 18 },
-  //   ];
-
-  //   objetivos.forEach((obj) => {
-  //     obj.objetivoDetalles.forEach((det) => {
-  //       sheet.addRow({
-  //         empresa: obj.empleado.empresaEmpleadora.nombreEmpresa,
-  //         codigoEmpleado: obj.empleado.codigoEmpleado,
-  //         empleado: `${obj.empleado.nombres} ${obj.empleado.apellidos}`,
-  //         documento: obj.empleado.documento,
-  //         codigoJefe: obj.empleado.codigoEmpleadoJefe,
-  //         area: obj.empleado.areaEmpleadora.descripcion,
-  //         puesto: obj.empleado.puestoEmpleadora.descripcion,
-  //         unidad: obj.empleado.unidadOcupacionalEmpleadora.descripcion,
-  //         gerencia: obj.empleado.gerenciaEmpleadora.descripcion,
-  //         objetivo: det.descripcion,
-  //         peso: det.pesoEspecifico,
-  //         meta: det.metaObjetivo,
-  //         metaAlcanzada: det.metaAlcanzada,
-  //         porcentaje: det.porcentajeLogrado,
-  //         fecha: det.fechaCulminacion,
-  //       });
-  //     });
-  //   });
-
-  //   return workbook;
-  // }
 
   async exportarObjetivosPorEmpresaExcel(idEmpresaEmpleadora: number) {
     const objetivos = await this.prisma.objetivo.findMany({
