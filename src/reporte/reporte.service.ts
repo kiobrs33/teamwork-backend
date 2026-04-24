@@ -209,15 +209,6 @@ export class ReporteService {
           : jefe;
       }
 
-      // competenciasDetalle.push({
-      //   competencia: comp.competencia,
-      //   nivel: comp.nivel,
-      //   autoevaluacion: Number(auto.toFixed(2)),
-      //   evaluacionJefe: Number(jefe.toFixed(2)),
-      //   evaluacionSubordinados: Number(sub.toFixed(2)),
-      //   resultadoFinal: Number(resultado.toFixed(2)),
-      // });
-
       // const resultadoFinal = Number(resultado.toFixed(2));
       const resultadoFinal = Number(resultado);
 
@@ -263,10 +254,6 @@ export class ReporteService {
     // RESULTADO GLOBAL COMPETENCIAS
     // ==============================
 
-    // const resultadoCompetencias = promedio(
-    //   competenciasDetalle.map((c) => c.resultadoFinal),
-    // );
-
     const promedioJefeGlobal = promedio(
       Array.from(mapaCompetencias.values()).flatMap((c) => c.jefe),
     );
@@ -293,31 +280,6 @@ export class ReporteService {
     }
 
     const desempeno = this.obtenerMensajeDesempeno(resultadoCompetencias);
-
-    // const competenciasDoughnutChart = {
-    //   porcentaje: Number(resultadoCompetencias.toFixed(2)),
-    //   restante: Number((100 - resultadoCompetencias).toFixed(2)),
-    // };
-
-    // const competenciasRadarChart = {
-    //   labels: competenciasDetalle.map((c) => c.competencia),
-    //   datasets: [
-    //     {
-    //       label: 'Resultado Obtenido',
-    //       data: competenciasDetalle.map((c) => c.resultadoFinal),
-    //       borderColor: '#2f80ed',
-    //       backgroundColor: 'rgba(47,128,237,0.2)',
-    //       pointBackgroundColor: '#2f80ed',
-    //     },
-    //     {
-    //       label: 'Autoevaluación',
-    //       data: competenciasDetalle.map((c) => c.autoevaluacion),
-    //       borderColor: '#f2994a',
-    //       backgroundColor: 'rgba(242,153,74,0.2)',
-    //       pointBackgroundColor: '#f2994a',
-    //     },
-    //   ],
-    // };
 
     const porcentajeCompetencias = Math.min(resultadoCompetencias, 100);
 
@@ -353,32 +315,6 @@ export class ReporteService {
     // ==============================
     // OBJETIVOS
     // ==============================
-
-    // const objetivos = await this.prisma.objetivoDetalle.findMany({
-    //   where: {
-    //     estado: true,
-    //     objetivo: {
-    //       idEmpleado,
-    //       estado: true,
-    //     },
-    //   },
-    //   select: {
-    //     porcentajeLogrado: true,
-    //     pesoEspecifico: true,
-    //   },
-    // });
-
-    // let totalPeso = 0;
-    // let acumulado = 0;
-
-    // for (const obj of objetivos) {
-    //   if (obj.porcentajeLogrado === null) continue;
-
-    //   acumulado += obj.porcentajeLogrado * obj.pesoEspecifico;
-    //   totalPeso += obj.pesoEspecifico;
-    // }
-
-    // const resultadoObjetivos = totalPeso > 0 ? acumulado / totalPeso : 0;
 
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
@@ -481,14 +417,6 @@ export class ReporteService {
       empresa.periodoEvaluacion ?? Date.now(),
     );
 
-    // const newPeriodoEvaluacion = datePeriodoEvaluacion
-    //   .toLocaleDateString('es-ES', {
-    //     month: 'long',
-    //     year: 'numeric',
-    //   })
-    //   .charAt(0)
-    //   .toUpperCase();
-
     const fecha = new Date(datePeriodoEvaluacion);
     const mes = fecha.toLocaleDateString('es-ES', { month: 'long' });
     const anio = fecha.getFullYear();
@@ -510,7 +438,7 @@ export class ReporteService {
       resultadoObjetivos * pesoObjetivos;
 
     // TODO: Solucion de calculo
-    // const round2 = (num) => Math.round(num * 100) / 100;
+    const round2 = (num) => Math.round(num * 100) / 100;
 
     // ==============================
     // DATA PARA EL REPORTE
@@ -539,18 +467,18 @@ export class ReporteService {
       },
 
       // TODO: CALCULOS OLD
-      resultados: {
-        competencias: Number(resultadoCompetencias.toFixed(2)),
-        objetivos: Number(resultadoObjetivos.toFixed(2)),
-        evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
-      },
+      // resultados: {
+      //   competencias: Number(resultadoCompetencias.toFixed(2)),
+      //   objetivos: Number(resultadoObjetivos.toFixed(2)),
+      //   evaluacionFinal: Number(resultadoFinalED.toFixed(2)),
+      // },
 
       // TODO: Solucion de calculo
-      // resultados: {
-      //   competencias: round2(resultadoCompetencias),
-      //   objetivos: round2(resultadoObjetivos),
-      //   evaluacionFinal: round2(resultadoFinalED),
-      // },
+      resultados: {
+        competencias: round2(resultadoCompetencias),
+        objetivos: round2(resultadoObjetivos),
+        evaluacionFinal: round2(resultadoFinalED),
+      },
 
       clasificacionCompetencias: desempeno,
 
@@ -575,8 +503,6 @@ export class ReporteService {
         ],
       },
     };
-
-    // console.log('DATA =>>>>>>>>>>>>>>>>>', data);
 
     return this.pdfRenderer.render('evaluacion', data);
   }
