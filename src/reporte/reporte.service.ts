@@ -209,8 +209,8 @@ export class ReporteService {
           : jefe;
       }
 
-      // const resultadoFinal = Number(resultado.toFixed(2));
-      const resultadoFinal = Number(resultado);
+      const resultadoFinal = Number(resultado.toFixed(2));
+      // const resultadoFinal = Number(resultado);
 
       let superavit: number | null = null;
       let oportunidadMejora: number | null = null;
@@ -220,7 +220,8 @@ export class ReporteService {
         empresa.competenciaResultadoEsperado ?? 100;
 
       if (resultadoFinal > competenciaResultadoEsperado) {
-        superavit = Number(resultadoFinal - competenciaResultadoEsperado);
+        let diferencia = resultadoFinal - competenciaResultadoEsperado
+        superavit = Number(diferencia.toFixed(2));
         resultadoTexto = `${resultadoFinal}% (+${superavit})`;
       }
 
