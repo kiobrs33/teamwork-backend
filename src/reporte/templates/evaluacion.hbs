@@ -383,34 +383,71 @@
               </tr>
             </thead>
             <tbody>
-  {{#each retroalimentaciones}}
-    {{#each retroalimentacion}}
-      <tr>
-        <td class="table__cell">
-          {{descripcionObjetivo}}
-        </td>
-        <td class="table__cell">
-          {{descripcionActividad}}
-        </td>
-        <td class="table__cell table__cell--center">
-          {{descripcionFecha}}
-        </td>
-        <td class="table__cell table__cell--center">
-          {{descripcionEstado}}
-        </td>
-      </tr>
-    {{/each}}
-  {{/each}}
+              {{#each retroalimentaciones}}
+                {{#each retroalimentacion}}
+                  <tr>
+                    <td class="table__cell">
+                      {{descripcionObjetivo}}
+                    </td>
+                    <td class="table__cell">
+                      {{descripcionActividad}}
+                    </td>
+                    <td class="table__cell table__cell--center">
+                      {{descripcionFecha}}
+                    </td>
+                    <td class="table__cell table__cell--center">
+                      {{descripcionEstado}}
+                    </td>
+                  </tr>
+                {{/each}}
+              {{/each}}
 
-  {{!-- 🔹 Si no hay datos --}}
-  {{#unless retroalimentaciones.length}}
-    <tr>
-      <td colspan="4" class="table__cell table__cell--center">
-        No hay plan de acción registrado
-      </td>
-    </tr>
-  {{/unless}}
-</tbody>
+              {{!-- 🔹 Si no hay datos --}}
+              {{#unless retroalimentaciones.retroalimentacion.length}}
+                <tr>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                  <td class="table__cell">
+                    <br><br><br><br><br>
+                  </td>
+                </tr>
+              {{/unless}}
+            </tbody>
           </table>
         </div>
       </div>

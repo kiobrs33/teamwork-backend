@@ -220,15 +220,14 @@ export class ReporteService {
         empresa.competenciaResultadoEsperado ?? 100;
 
       if (resultadoFinal > competenciaResultadoEsperado) {
-        let diferencia = resultadoFinal - competenciaResultadoEsperado
+        let diferencia = resultadoFinal - competenciaResultadoEsperado;
         superavit = Number(diferencia.toFixed(2));
         resultadoTexto = `${resultadoFinal}% (+${superavit})`;
       }
 
       if (resultadoFinal < competenciaResultadoEsperado) {
-        oportunidadMejora = Number(
-          competenciaResultadoEsperado - resultadoFinal,
-        );
+        let diferencia = competenciaResultadoEsperado - resultadoFinal;
+        oportunidadMejora = Number(diferencia.toFixed(2));
         resultadoTexto = `${resultadoFinal}% (-${oportunidadMejora})`;
       }
 
