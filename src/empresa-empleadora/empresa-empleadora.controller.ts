@@ -29,7 +29,7 @@ import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { EmpresaQueryDto } from './dto/empresa-query.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { storage } from 'src/common/interceptors/cloudinary.storage.interceptor';
+import { empresasStorage } from '../common/interceptors/cloudinary.empresas.interceptor';
 
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
@@ -56,7 +56,7 @@ export class EmpresaEmpleadoraController {
   }
 
   @Post(':id/logo')
-  @UseInterceptors(FileInterceptor('file', { storage }))
+  @UseInterceptors(FileInterceptor('file', { storage: empresasStorage }))
   async uploadLogo(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: any,

@@ -28,6 +28,9 @@ import { UpdateAreaEmpleadoraDto } from './dto/update-area-empleadora.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { AreaQueryDto } from './dto/area-query.dto';
 
+import { Response } from 'express';
+import { Res } from '@nestjs/common';
+
 @ApiTags('Área Empleadora')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -55,11 +58,14 @@ export class AreaEmpleadoraController {
   @ApiOperation({ summary: 'Listar todas las áreas empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de áreas empleadoras.' })
   async findAll(@Query() query: AreaQueryDto) {
-    const resp = await this.areaEmpleadoraService.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 0,
-      search: query.search,
-    });
+    // const resp = await this.areaEmpleadoraService.findAll({
+    //   page: query.page ?? 1,
+    //   limit: query.limit ?? 0,
+    //   search: query.search,
+    // });
+
+    const resp = await this.areaEmpleadoraService.findAll(query);
+
     return {
       message: 'Lista de áreas empleadoras.',
       data: { areas: resp.data, meta: resp.meta },
@@ -149,5 +155,24 @@ export class AreaEmpleadoraController {
       message: 'Areas empleadora creadas exitosamente.',
       data: { count },
     };
+  }
+
+  // Exportar áreas empleadoras a Excel
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar áreas empleadoras a Excel' })
+  async exportExcel(@Query() query: AreaQueryDto, @Res() res: Response) {
+    const buffer = await this.areaEmpleadoraService.exportExcel(query);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=gerencias-empleadoras.xlsx`,
+    );
+
+    res.send(buffer);
   }
 }

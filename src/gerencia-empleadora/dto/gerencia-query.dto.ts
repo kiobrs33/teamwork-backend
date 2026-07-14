@@ -21,4 +21,25 @@ export class GerenciaQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idGerenciaEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombreEmpresaEmpleadora?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ruc?: string;
 }

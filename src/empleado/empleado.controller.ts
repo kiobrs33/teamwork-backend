@@ -27,6 +27,9 @@ import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { EmployeeQueryDto } from './dto/employee-query.dto';
 
+import { Response } from 'express';
+import { Res } from '@nestjs/common';
+
 @ApiTags('Empleados')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -76,12 +79,13 @@ export class EmpleadoController {
   @ApiOperation({ summary: 'Listar empleados (paginado o todos)' })
   @ApiResponse({ status: 200, description: 'Lista de empleados.' })
   async findAll(@Query() query: EmployeeQueryDto) {
-    const resp = await this.empleadoService.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 0,
-      search: query.search,
-    });
+    // const resp = await this.empleadoService.findAll({
+    //   page: query.page ?? 1,
+    //   limit: query.limit ?? 0,
+    //   search: query.search,
+    // });
 
+    const resp = await this.empleadoService.findAll(query);
     return {
       message: 'Lista de empleados.',
       data: { empleados: resp.data, meta: resp.meta },
@@ -261,5 +265,20 @@ export class EmpleadoController {
       message: 'Jefe y competencias obtenidos correctamente.',
       data: { jefeConCompetencias },
     };
+  }
+
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar empleados a Excel' })
+  async exportExcel(@Query() query: EmployeeQueryDto, @Res() res: Response) {
+    const buffer = await this.empleadoService.exportExcel(query);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+
+    res.setHeader('Content-Disposition', `attachment; filename=empleados.xlsx`);
+
+    res.send(buffer);
   }
 }

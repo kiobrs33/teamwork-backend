@@ -15,6 +15,8 @@ import { EmployeeQueryDto } from './dto/employee-query.dto';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
+import * as ExcelJS from 'exceljs';
+
 @Injectable()
 export class EmpleadoService {
   private readonly logger = new Logger(EmpleadoService.name);
@@ -173,21 +175,90 @@ export class EmpleadoService {
     }
   }
 
-  async findAll({ page, limit, search }: EmployeeQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idEmpleado,
+    nombres,
+    apellidos,
+    documento,
+    codigoEmpleado,
+    codigoEmpleadoJefe,
+    codigoUsuario,
+    nombreEmpresaEmpleadora,
+  }: EmployeeQueryDto) {
     try {
       const where: Prisma.EmpleadoWhereInput = {
         estado: true,
+
+        ...(idEmpleado && {
+          idEmpleado: Number(idEmpleado),
+        }),
+
+        ...(nombres && {
+          nombres: {
+            contains: nombres,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(apellidos && {
+          apellidos: {
+            contains: apellidos,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(documento && {
+          documento: {
+            contains: documento,
+          },
+        }),
+
+        ...(codigoEmpleado && {
+          codigoEmpleado: {
+            contains: codigoEmpleado,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(codigoEmpleadoJefe && {
+          codigoEmpleadoJefe: {
+            contains: codigoEmpleadoJefe,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(codigoUsuario && {
+          usuario: {
+            codigoUsuario: {
+              contains: codigoUsuario,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
         ...(search && {
           OR: [
             { nombres: { contains: search, mode: 'insensitive' } },
             { apellidos: { contains: search, mode: 'insensitive' } },
             { documento: { contains: search } },
+            { codigoEmpleado: { contains: search, mode: 'insensitive' } },
             {
               usuario: {
                 codigoUsuario: { contains: search, mode: 'insensitive' },
               },
             },
-            { codigoEmpleado: { contains: search, mode: 'insensitive' } },
             {
               empresaEmpleadora: {
                 nombreEmpresa: {
@@ -401,79 +472,6 @@ export class EmpleadoService {
       handlePrismaError(error, 'empleado');
     }
   }
-
-  // ============================================================
-  // CREATE MASSIVE
-  // ============================================================
-  // async createMany(user: AuthUser, data: CreateEmpleadoDto[]) {
-  //   try {
-  //     const codesUser = new Set();
-  //     const codesEmpleado = new Set();
-
-  //     for (const body of data) {
-  //       if (codesUser.has(body.codigoUsuario)) {
-  //         throw new BadRequestException(
-  //           `Código de usuario duplicado dentro del archivo: ${body.codigoUsuario}`,
-  //         );
-  //       }
-  //       codesUser.add(body.codigoUsuario);
-
-  //       if (codesEmpleado.has(body.codigoEmpleado)) {
-  //         throw new BadRequestException(
-  //           `Código de empleado duplicado dentro del archivo: ${body.codigoEmpleado}`,
-  //         );
-  //       }
-  //       codesEmpleado.add(body.codigoEmpleado);
-
-  //       await this.validateUniqueFields(body);
-  //     }
-
-  //     return await this.prisma.$transaction(async (tx) => {
-  //       const createdEmployees: any[] = [];
-
-  //       for (const body of data) {
-  //         const hashedPassword = await hash(body.contrasena, 10);
-
-  //         const usuario = await tx.usuario.create({
-  //           data: {
-  //             codigoUsuario: body.codigoUsuario,
-  //             contrasena: hashedPassword,
-  //             rol: body.rol,
-  //             creadoPorId: user.idUsuario,
-  //           },
-  //         });
-
-  //         const empleado = await tx.empleado.create({
-  //           data: {
-  //             codigoEmpleado: body.codigoEmpleado,
-  //             nombres: body.nombres,
-  //             apellidos: body.apellidos,
-  //             documento: body.documento,
-  //             sede: body.sede,
-  //             tiempoEmpresaValor: body.tiempoEmpresaValor,
-  //             tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
-  //             idEmpresaEmpleadora: body.idEmpresaEmpleadora,
-  //             idAreaEmpleadora: body.idAreaEmpleadora,
-  //             idPuestoEmpleadora: body.idPuestoEmpleadora,
-  //             idGerenciaEmpleadora: body.idGerenciaEmpleadora,
-  //             idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
-  //             codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
-  //             idUsuario: usuario.idUsuario,
-  //             creadoPorId: user.idUsuario,
-  //           },
-  //           include: { usuario: true },
-  //         });
-
-  //         createdEmployees.push(empleado);
-  //       }
-
-  //       return createdEmployees;
-  //     });
-  //   } catch (error) {
-  //     this.logger.error('Error en creación masiva de empleados:', error);
-  //     handlePrismaError(error, 'empleado');
-  //   }
-  // }
 
   async createMany(user: AuthUser, data: CreateEmpleadoDto[]) {
     const BATCH_SIZE = 10;
@@ -914,6 +912,169 @@ export class EmpleadoService {
         error,
       );
       handlePrismaError(error, 'empleado');
+    }
+  }
+
+  async exportExcel(query: EmployeeQueryDto) {
+    try {
+      const where: Prisma.EmpleadoWhereInput = {
+        estado: true,
+
+        ...(query.idEmpleado && {
+          idEmpleado: Number(query.idEmpleado),
+        }),
+
+        ...(query && {
+          nombres: {
+            contains: query.nombres,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query && {
+          apellidos: {
+            contains: query.apellidos,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query && {
+          documento: {
+            contains: query.documento,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query && {
+          codigoEmpleado: {
+            contains: query.codigoEmpleado,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query && {
+          codigoEmpleadoJefe: {
+            contains: query.codigoEmpleadoJefe,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query.nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: query.nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.search && {
+          OR: [
+            { nombres: { contains: query.search, mode: 'insensitive' } },
+            { apellidos: { contains: query.search, mode: 'insensitive' } },
+            { documento: { contains: query.search } },
+            { codigoEmpleado: { contains: query.search, mode: 'insensitive' } },
+            {
+              usuario: {
+                codigoUsuario: { contains: query.search, mode: 'insensitive' },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
+      };
+
+      const empleados = await this.prisma.empleado.findMany({
+        where,
+        include: {
+          empresaEmpleadora: true,
+          usuario: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Empleados');
+
+      worksheet.columns = [
+        {
+          header: 'ID Empleado',
+          key: 'idEmpleado',
+          width: 20,
+        },
+        {
+          header: 'Nombres',
+          key: 'nombres',
+          width: 40,
+        },
+        {
+          header: 'Apellidos',
+          key: 'apellidos',
+          width: 40,
+        },
+        {
+          header: 'Documento',
+          key: 'documento',
+          width: 40,
+        },
+        {
+          header: 'Codigo Empleado',
+          key: 'codigoEmpleado',
+          width: 40,
+        },
+        {
+          header: 'Codigo Jefe',
+          key: 'codigoEmpleadoJefe',
+          width: 40,
+        },
+        {
+          header: 'Username',
+          key: 'codigoUsuario',
+          width: 20,
+        },
+        {
+          header: 'Empresa',
+          key: 'empresa',
+          width: 50,
+        },
+      ];
+
+      empleados.forEach((item) => {
+        worksheet.addRow({
+          idEmpleado: item.idEmpleado,
+          nombres: item.nombres,
+          apellidos: item.apellidos,
+          documento: item.documento,
+          codigoEmpleado: item.codigoEmpleado,
+          codigoEmpleadoJefe: item.codigoEmpleadoJefe,
+          codigoUsuario: item.usuario.codigoUsuario,
+          empresa: item.empresaEmpleadora.nombreEmpresa,
+        });
+      });
+
+      worksheet.getRow(1).font = {
+        bold: true,
+      };
+
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: 'H1',
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return buffer;
+    } catch (error) {
+      handlePrismaError(error, 'empleados');
     }
   }
 }

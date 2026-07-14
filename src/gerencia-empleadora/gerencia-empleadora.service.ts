@@ -13,6 +13,8 @@ import { GerenciaQueryDto } from './dto/gerencia-query.dto';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
+import * as ExcelJS from 'exceljs';
+
 @Injectable()
 export class GerenciaEmpleadoraService {
   private readonly logger = new Logger(GerenciaEmpleadoraService.name);
@@ -34,17 +36,70 @@ export class GerenciaEmpleadoraService {
     }
   }
 
-  async findAll({ page, limit, search }: GerenciaQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idGerenciaEmpleadora,
+    descripcion,
+    ruc,
+    nombreEmpresaEmpleadora,
+  }: GerenciaQueryDto) {
     try {
       const where: Prisma.GerenciaEmpleadoraWhereInput = {
         estado: true,
+
+        ...(idGerenciaEmpleadora && {
+          idGerenciaEmpleadora: Number(idGerenciaEmpleadora),
+        }),
+
+        ...(descripcion && {
+          descripcion: {
+            contains: descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
         ...(search && {
           OR: [
-            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              descripcion: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
             {
               empresaEmpleadora: {
-                nombreEmpresa: { contains: search, mode: 'insensitive' },
-                ruc: { contains: search, mode: 'insensitive' },
+                nombreEmpresa: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           ],
@@ -202,6 +257,130 @@ export class GerenciaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al obtener gerencias por empresa:', error);
+      handlePrismaError(error, 'gerencia empleadora');
+    }
+  }
+
+  async exportExcel(query: GerenciaQueryDto) {
+    try {
+      const where: Prisma.GerenciaEmpleadoraWhereInput = {
+        estado: true,
+
+        ...(query.idGerenciaEmpleadora && {
+          idGerenciaEmpleadora: Number(query.idGerenciaEmpleadora),
+        }),
+
+        ...(query.descripcion && {
+          descripcion: {
+            contains: query.descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query.nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: query.nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: query.ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.search && {
+          OR: [
+            {
+              descripcion: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
+      };
+
+      const gerencias = await this.prisma.gerenciaEmpleadora.findMany({
+        where,
+        include: {
+          empresaEmpleadora: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Gerencias');
+
+      worksheet.columns = [
+        {
+          header: 'ID Gerencia',
+          key: 'idGerenciaEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Descripción',
+          key: 'descripcion',
+          width: 40,
+        },
+        {
+          header: 'ID Empresa',
+          key: 'idEmpresaEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Empresa',
+          key: 'empresa',
+          width: 50,
+        },
+      ];
+
+      gerencias.forEach((item) => {
+        worksheet.addRow({
+          idGerenciaEmpleadora: item.idGerenciaEmpleadora,
+          descripcion: item.descripcion,
+          idEmpresaEmpleadora: item.idEmpresaEmpleadora,
+          empresa: item.empresaEmpleadora.nombreEmpresa,
+        });
+      });
+
+      worksheet.getRow(1).font = {
+        bold: true,
+      };
+
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: 'D1',
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return buffer;
+    } catch (error) {
       handlePrismaError(error, 'gerencia empleadora');
     }
   }

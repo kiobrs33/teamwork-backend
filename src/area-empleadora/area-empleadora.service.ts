@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { AreaQueryDto } from './dto/area-query.dto';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
+import * as ExcelJS from 'exceljs';
 @Injectable()
 export class AreaEmpleadoraService {
   private readonly logger = new Logger(AreaEmpleadoraService.name);
@@ -33,16 +34,70 @@ export class AreaEmpleadoraService {
     }
   }
 
-  async findAll({ page, limit, search }: AreaQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idAreaEmpleadora,
+    descripcion,
+    nombreEmpresaEmpleadora,
+    ruc,
+  }: AreaQueryDto) {
     try {
       const where: Prisma.AreaEmpleadoraWhereInput = {
         estado: true,
+
+        ...(idAreaEmpleadora && {
+          idAreaEmpleadora: Number(idAreaEmpleadora),
+        }),
+
+        ...(descripcion && {
+          descripcion: {
+            contains: descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
         ...(search && {
           OR: [
-            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              descripcion: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
             {
               empresaEmpleadora: {
-                nombreEmpresa: { contains: search, mode: 'insensitive' },
+                nombreEmpresa: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           ],
@@ -202,6 +257,130 @@ export class AreaEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al obtener areas por empresa:', error);
+      handlePrismaError(error, 'area empleadora');
+    }
+  }
+
+  async exportExcel(query: AreaQueryDto) {
+    try {
+      const where: Prisma.AreaEmpleadoraWhereInput = {
+        estado: true,
+
+        ...(query.idAreaEmpleadora && {
+          idAreaEmpleadora: Number(query.idAreaEmpleadora),
+        }),
+
+        ...(query.descripcion && {
+          descripcion: {
+            contains: query.descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query.nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: query.nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: query.ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.search && {
+          OR: [
+            {
+              descripcion: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
+      };
+
+      const areas = await this.prisma.areaEmpleadora.findMany({
+        where,
+        include: {
+          empresaEmpleadora: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Áreas Empleadoras');
+
+      worksheet.columns = [
+        {
+          header: 'ID Área',
+          key: 'idAreaEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Descripción',
+          key: 'descripcion',
+          width: 40,
+        },
+        {
+          header: 'ID Empresa',
+          key: 'idEmpresaEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Empresa',
+          key: 'empresa',
+          width: 50,
+        },
+      ];
+
+      areas.forEach((item) => {
+        worksheet.addRow({
+          idAreaEmpleadora: item.idAreaEmpleadora,
+          descripcion: item.descripcion,
+          idEmpresaEmpleadora: item.idEmpresaEmpleadora,
+          empresa: item.empresaEmpleadora.nombreEmpresa,
+        });
+      });
+
+      worksheet.getRow(1).font = {
+        bold: true,
+      };
+
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: 'D1',
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return buffer;
+    } catch (error) {
       handlePrismaError(error, 'area empleadora');
     }
   }

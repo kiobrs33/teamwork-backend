@@ -21,4 +21,25 @@ export class AreaQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idAreaEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombreEmpresaEmpleadora?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ruc?: string;
 }

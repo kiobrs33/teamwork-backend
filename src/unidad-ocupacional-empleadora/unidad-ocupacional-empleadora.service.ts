@@ -16,6 +16,8 @@ import { Prisma } from '@prisma/client';
 import { UnidadOcupacionalQueryDto } from './dto/unidad-ocupacional-query.dto';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
+import * as ExcelJS from 'exceljs';
+
 @Injectable()
 export class UnidadOcupacionalEmpleadoraService {
   private readonly logger = new Logger(UnidadOcupacionalEmpleadoraService.name);
@@ -56,17 +58,70 @@ export class UnidadOcupacionalEmpleadoraService {
   //   }
   // }
 
-  async findAll({ page, limit, search }: UnidadOcupacionalQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idUnidadOcupacionalEmpleadora,
+    descripcion,
+    ruc,
+    nombreEmpresaEmpleadora,
+  }: UnidadOcupacionalQueryDto) {
     try {
       const where: Prisma.UnidadOcupacionalEmpleadoraWhereInput = {
         estado: true,
+
+        ...(idUnidadOcupacionalEmpleadora && {
+          idUnidadOcupacionalEmpleadora: Number(idUnidadOcupacionalEmpleadora),
+        }),
+
+        ...(descripcion && {
+          descripcion: {
+            contains: descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
         ...(search && {
           OR: [
-            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              descripcion: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
             {
               empresaEmpleadora: {
-                nombreEmpresa: { contains: search, mode: 'insensitive' },
-                ruc: { contains: search, mode: 'insensitive' },
+                nombreEmpresa: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           ],
@@ -500,6 +555,132 @@ export class UnidadOcupacionalEmpleadoraService {
       return unidades;
     } catch (error) {
       console.error('Error al obtener unidades ocupacionales:', error);
+      handlePrismaError(error, 'unidad ocupacional');
+    }
+  }
+
+  async exportExcel(query: UnidadOcupacionalQueryDto) {
+    try {
+      const where: Prisma.UnidadOcupacionalEmpleadoraWhereInput = {
+        estado: true,
+
+        ...(query.idUnidadOcupacionalEmpleadora && {
+          idUnidadOcupacionalEmpleadora: Number(
+            query.idUnidadOcupacionalEmpleadora,
+          ),
+        }),
+
+        ...(query.descripcion && {
+          descripcion: {
+            contains: query.descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query.nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: query.nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: query.ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.search && {
+          OR: [
+            {
+              descripcion: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
+      };
+
+      const unidades = await this.prisma.unidadOcupacionalEmpleadora.findMany({
+        where,
+        include: {
+          empresaEmpleadora: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Unidades Ocupacionales');
+
+      worksheet.columns = [
+        {
+          header: 'ID Unidad Ocupacional',
+          key: 'idUnidadOcupacionalEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Descripción',
+          key: 'descripcion',
+          width: 40,
+        },
+        {
+          header: 'ID Empresa',
+          key: 'idEmpresaEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Empresa',
+          key: 'empresa',
+          width: 50,
+        },
+      ];
+
+      unidades.forEach((item) => {
+        worksheet.addRow({
+          idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
+          descripcion: item.descripcion,
+          idEmpresaEmpleadora: item.idEmpresaEmpleadora,
+          empresa: item.empresaEmpleadora.nombreEmpresa,
+        });
+      });
+
+      worksheet.getRow(1).font = {
+        bold: true,
+      };
+
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: 'D1',
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return buffer;
+    } catch (error) {
       handlePrismaError(error, 'unidad ocupacional');
     }
   }

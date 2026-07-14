@@ -1,7 +1,7 @@
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import cloudinary from '../../config/cloudinary';
 
-export const storage = new CloudinaryStorage({
+export const empresasStorage = new CloudinaryStorage({
   cloudinary,
   params: async () => ({
     folder: 'empresas',

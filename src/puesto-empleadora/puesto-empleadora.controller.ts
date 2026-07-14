@@ -29,6 +29,9 @@ import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { PuestoQueryDto } from './dto/puesto-query.dto';
 
+import { Response } from 'express';
+import { Res } from '@nestjs/common';
+
 @ApiTags('Puesto Empleadora')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -56,11 +59,14 @@ export class PuestoEmpleadoraController {
   @ApiOperation({ summary: 'Listar todos los puestos empleadora' })
   @ApiResponse({ status: 200, description: 'Lista de puestos empleadora.' })
   async findAll(@Query() query: PuestoQueryDto) {
-    const resp = await this.puestoEmpleadoraService.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 0,
-      search: query.search,
-    });
+    // const resp = await this.puestoEmpleadoraService.findAll({
+    //   page: query.page ?? 1,
+    //   limit: query.limit ?? 0,
+    //   search: query.search,
+    // });
+
+    const resp = await this.puestoEmpleadoraService.findAll(query);
+
     return {
       message: 'Lista de puestos empleadora.',
       data: { puestos: resp.data, meta: resp.meta },
@@ -78,7 +84,7 @@ export class PuestoEmpleadoraController {
       Number(id),
     );
     return {
-      message: 'Lista de gerencias empleadoras de la empresa.',
+      message: 'Lista de puestos empleadoras de la empresa.',
       data: { puestos },
     };
   }
@@ -132,10 +138,10 @@ export class PuestoEmpleadoraController {
   @Post('import')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreatePuestoEmpleadoraDto] })
-  @ApiOperation({ summary: 'Importar Area empleadora' })
+  @ApiOperation({ summary: 'Importar Puesto empleadora' })
   @ApiResponse({
     status: 201,
-    description: 'Importacion de area empleadora creada exitosamente.',
+    description: 'Importacion de puesto empleadora creada exitosamente.',
   })
   async importExcelData(
     @User() user: AuthUser,
@@ -143,8 +149,26 @@ export class PuestoEmpleadoraController {
   ) {
     const { count } = await this.puestoEmpleadoraService.importData(user, data);
     return {
-      message: 'Areas empleadora creadas exitosamente.',
+      message: 'Puestos empleadora creados exitosamente.',
       data: { count },
     };
+  }
+
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar puestos empleadoras a Excel' })
+  async exportExcel(@Query() query: PuestoQueryDto, @Res() res: Response) {
+    const buffer = await this.puestoEmpleadoraService.exportExcel(query);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=puestos-empleadoras.xlsx`,
+    );
+
+    res.send(buffer);
   }
 }

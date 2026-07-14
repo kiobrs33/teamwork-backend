@@ -43,6 +43,7 @@ model Empleado {
   objetivos                       Objetivo[]
   evaluacionCompetenciasEvaluador EvaluacionCompetencia[]     @relation("evaluador")
   evaluacionCompetenciasEvaluado  EvaluacionCompetencia[]     @relation("evaluado")
+  evidencias                      Evidencia[]
 
   @@map("empleado")
 }
@@ -169,6 +170,7 @@ model Objetivo {
   fechaModificacion         DateTime?                  @map("fecha_modificacion")
   objetivoDetalles          ObjetivoDetalle[]
   retroalimentacionDetalles RetroalimentacionDetalle[]
+  evidencias                Evidencia[]
 
   @@map("objetivo")
 }
@@ -324,6 +326,7 @@ model EvaluacionCompetencia {
   fechaModificacion       DateTime?                   @map("fecha_modificacion")
   // Relación a ítems evaluados
   itemsEvaluados          EvaluacionCompetenciaItem[]
+  evidencias              Evidencia[]
 
   @@map("evaluacion_competencia")
 }
@@ -406,3 +409,26 @@ model RetroalimentacionDetalle {
 
   @@map("retroalimentacion_detalle")
 }
+
+model Evidencia {
+  idEvidencia             Int                    @id @default(autoincrement())
+  idEvaluacionCompetencia Int?                   @map("id_evaluacion_competencia")
+  evaluacion              EvaluacionCompetencia? @relation(fields: [idEvaluacionCompetencia], references: [idEvaluacionCompetencia])
+  idObjetivo              Int?                   @map("id_objetivo")
+  objetivo                Objetivo?              @relation(fields: [idObjetivo], references: [idObjetivo])
+  idEmpleado              Int                    @map("id_empleado")
+  empleado                Empleado               @relation(fields: [idEmpleado], references: [idEmpleado])
+  nombreArchivo           String
+  urlArchivo              String
+  publicId                String? // útil si usas Cloudinary o S3
+  tipoArchivo             String // pdf, docx, etc.
+  estado                  Boolean                @default(true)
+  creadoPorId             Int                    @map("creado_por_id")
+  actualizadoPorId        Int?                   @map("actualizado_por_id")
+  fechaCreacion           DateTime               @default(now()) @map("fecha_creacion")
+  fechaModificacion       DateTime?              @map("fecha_modificacion")
+
+  @@map("evidencia")
+}
+
+// Relacionado al idEmpleado  

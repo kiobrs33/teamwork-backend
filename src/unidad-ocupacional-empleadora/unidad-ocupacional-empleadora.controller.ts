@@ -32,6 +32,9 @@ import { CreateAreaEmpleadoraDto } from '../area-empleadora/dto/create-area-empl
 import { AsignarCompetenciasDto } from './dto/create-unidad-competencia.dto';
 import { UnidadOcupacionalQueryDto } from './dto/unidad-ocupacional-query.dto';
 
+import { Response } from 'express';
+import { Res } from '@nestjs/common';
+
 @ApiTags('Unidad Ocupacional Empleadora')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -70,11 +73,13 @@ export class UnidadOcupacionalEmpleadoraController {
     description: 'Lista de unidades ocupacionales empleadoras.',
   })
   async findAll(@Query() query: UnidadOcupacionalQueryDto) {
-    const resp = await this.unidadOcupacionalEmpleadoraService.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 0,
-      search: query.search,
-    });
+    // const resp = await this.unidadOcupacionalEmpleadoraService.findAll({
+    //   page: query.page ?? 1,
+    //   limit: query.limit ?? 0,
+    //   search: query.search,
+    // });
+
+    const resp = await this.unidadOcupacionalEmpleadoraService.findAll(query);
     return {
       message: 'Lista de unidades ocupacionales empleadoras.',
       data: { unidades: resp.data, meta: resp.meta },
@@ -264,5 +269,29 @@ export class UnidadOcupacionalEmpleadoraController {
       message: 'Competencias asignadas correctamente.',
       data: resultado,
     };
+  }
+
+  @Get('export/excel')
+  @ApiOperation({
+    summary: 'Exportar unidades ocupacionales empleadoras a Excel',
+  })
+  async exportExcel(
+    @Query() query: UnidadOcupacionalQueryDto,
+    @Res() res: Response,
+  ) {
+    const buffer =
+      await this.unidadOcupacionalEmpleadoraService.exportExcel(query);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=unidades-ocupacionales-empleadoras.xlsx`,
+    );
+
+    res.send(buffer);
   }
 }

@@ -21,4 +21,45 @@ export class EmployeeQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idEmpleado?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombres?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  apellidos?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  documento?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  codigoEmpleado?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  codigoEmpleadoJefe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  codigoUsuario?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombreEmpresaEmpleadora?: string;
 }

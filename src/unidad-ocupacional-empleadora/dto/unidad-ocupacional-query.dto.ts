@@ -21,4 +21,26 @@ export class UnidadOcupacionalQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idUnidadOcupacionalEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombreEmpresaEmpleadora?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ruc?: string;
 }

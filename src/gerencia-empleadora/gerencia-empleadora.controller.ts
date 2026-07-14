@@ -30,6 +30,9 @@ import { UpdateGerenciaEmpleadoraDto } from './dto/update-gerencia-empleadora.dt
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { GerenciaQueryDto } from './dto/gerencia-query.dto';
 
+import { Response } from 'express';
+import { Res } from '@nestjs/common';
+
 @ApiTags('Gerencia Empleadora')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -62,11 +65,13 @@ export class GerenciaEmpleadoraController {
   @ApiOperation({ summary: 'Listar todas las gerencias empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de gerencias empleadoras.' })
   async findAll(@Query() query: GerenciaQueryDto) {
-    const resp = await this.gerenciaEmpleadoraService.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 0,
-      search: query.search,
-    });
+    // const resp = await this.gerenciaEmpleadoraService.findAll({
+    //   page: query.page ?? 1,
+    //   limit: query.limit ?? 0,
+    //   search: query.search,
+    // });
+
+    const resp = await this.gerenciaEmpleadoraService.findAll(query);
     return {
       message: 'Lista de gerencias empleadoras.',
       data: { gerencias: resp.data, meta: resp.meta },
@@ -161,5 +166,23 @@ export class GerenciaEmpleadoraController {
       message: 'Gerencias empleadora creadas exitosamente.',
       data: { count },
     };
+  }
+
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar gerencias empleadoras a Excel' })
+  async exportExcel(@Query() query: GerenciaQueryDto, @Res() res: Response) {
+    const buffer = await this.gerenciaEmpleadoraService.exportExcel(query);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=gerencias-empleadoras.xlsx`,
+    );
+
+    res.send(buffer);
   }
 }

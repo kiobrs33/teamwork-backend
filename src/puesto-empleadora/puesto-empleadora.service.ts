@@ -13,6 +13,8 @@ import { Prisma } from '@prisma/client';
 import { PuestoQueryDto } from './dto/puesto-query.dto';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
+import * as ExcelJS from 'exceljs';
+
 @Injectable()
 export class PuestoEmpleadoraService {
   private readonly logger = new Logger(PuestoEmpleadoraService.name);
@@ -35,35 +37,70 @@ export class PuestoEmpleadoraService {
     }
   }
 
-  // async findAll() {
-  //   try {
-  //     const puestos = await this.prisma.puestoEmpleadora.findMany({
-  //       include: { empresaEmpleadora: true },
-  //       where: { estado: true },
-  //       orderBy: {
-  //         fechaCreacion: 'desc',
-  //       },
-  //     });
-  //     return puestos;
-  //   } catch (error) {
-  //     console.error('Error al obtener puestos:', error);
-  //     throw new InternalServerErrorException(
-  //       'No se pudieron obtener los puestos.',
-  //     );
-  //   }
-  // }
-
-  async findAll({ page, limit, search }: PuestoQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idPuestoEmpleadora,
+    descripcion,
+    ruc,
+    nombreEmpresaEmpleadora,
+  }: PuestoQueryDto) {
     try {
       const where: Prisma.PuestoEmpleadoraWhereInput = {
         estado: true,
+
+        ...(idPuestoEmpleadora && {
+          idPuestoEmpleadora: Number(idPuestoEmpleadora),
+        }),
+
+        ...(descripcion && {
+          descripcion: {
+            contains: descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
         ...(search && {
           OR: [
-            { descripcion: { contains: search, mode: 'insensitive' } },
+            {
+              descripcion: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
             {
               empresaEmpleadora: {
-                nombreEmpresa: { contains: search, mode: 'insensitive' },
-                ruc: { contains: search, mode: 'insensitive' },
+                nombreEmpresa: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
             },
           ],
@@ -221,6 +258,130 @@ export class PuestoEmpleadoraService {
       });
     } catch (error) {
       console.error('Error al obtener puestos por empresa:', error);
+      handlePrismaError(error, 'puesto empleadora');
+    }
+  }
+
+  async exportExcel(query: PuestoQueryDto) {
+    try {
+      const where: Prisma.PuestoEmpleadoraWhereInput = {
+        estado: true,
+
+        ...(query.idPuestoEmpleadora && {
+          idPuestoEmpleadora: Number(query.idPuestoEmpleadora),
+        }),
+
+        ...(query.descripcion && {
+          descripcion: {
+            contains: query.descripcion,
+            mode: 'insensitive',
+          },
+        }),
+
+        ...(query.nombreEmpresaEmpleadora && {
+          empresaEmpleadora: {
+            nombreEmpresa: {
+              contains: query.nombreEmpresaEmpleadora,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.ruc && {
+          empresaEmpleadora: {
+            ruc: {
+              contains: query.ruc,
+              mode: 'insensitive',
+            },
+          },
+        }),
+
+        ...(query.search && {
+          OR: [
+            {
+              descripcion: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              empresaEmpleadora: {
+                nombreEmpresa: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              empresaEmpleadora: {
+                ruc: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
+      };
+
+      const puestos = await this.prisma.puestoEmpleadora.findMany({
+        where,
+        include: {
+          empresaEmpleadora: true,
+        },
+        orderBy: {
+          fechaCreacion: 'desc',
+        },
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Puestos');
+
+      worksheet.columns = [
+        {
+          header: 'ID Puesto',
+          key: 'idPuestoEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Descripción',
+          key: 'descripcion',
+          width: 40,
+        },
+        {
+          header: 'ID Empresa',
+          key: 'idEmpresaEmpleadora',
+          width: 20,
+        },
+        {
+          header: 'Empresa',
+          key: 'empresa',
+          width: 50,
+        },
+      ];
+
+      puestos.forEach((item) => {
+        worksheet.addRow({
+          idPuestoEmpleadora: item.idPuestoEmpleadora,
+          descripcion: item.descripcion,
+          idEmpresaEmpleadora: item.idEmpresaEmpleadora,
+          empresa: item.empresaEmpleadora.nombreEmpresa,
+        });
+      });
+
+      worksheet.getRow(1).font = {
+        bold: true,
+      };
+
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: 'D1',
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return buffer;
+    } catch (error) {
       handlePrismaError(error, 'puesto empleadora');
     }
   }
