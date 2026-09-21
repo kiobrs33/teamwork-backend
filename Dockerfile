@@ -23,6 +23,7 @@ RUN npm run build
 # instalar chromium y dependencias
 RUN apt-get update && apt-get install -y \
   chromium \
+  libnspr4 \
   libnss3 \
   libatk1.0-0 \
   libatk-bridge2.0-0 \

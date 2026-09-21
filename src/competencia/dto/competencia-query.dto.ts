@@ -21,4 +21,32 @@ export class CompetenciaQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  // ================= FILTROS POR COLUMNA =================
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idCompetencia?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  codigo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  titulo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombreEmpresaEmpleadora?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ruc?: string;
 }

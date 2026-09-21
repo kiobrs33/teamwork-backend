@@ -653,6 +653,7 @@ export class EmpleadoService {
           estado: true,
         },
         select: {
+          idEmpleado: true,
           codigoEmpleadoJefe: true,
         },
       });
@@ -705,9 +706,17 @@ export class EmpleadoService {
           },
         });
 
+      // Evaluación al jefe: el subordinado evalúa, el jefe es el evaluado.
+      const progreso = await this.calcularProgresoCompetencias(
+        jefe.idEmpleado,
+        empleado.idEmpleado,
+        competencias,
+      );
+
       return {
         jefe,
-        competenciasAsignadas: competencias,
+        competenciasAsignadas: progreso.competenciasAsignadas,
+        progresoEvaluacion: progreso.progresoEvaluacion,
       };
     } catch (error) {
       this.logger.error(
@@ -847,9 +856,17 @@ export class EmpleadoService {
             },
           });
 
+        // El jefe es el evaluador de cada uno de sus subordinados.
+        const progreso = await this.calcularProgresoCompetencias(
+          sub.idEmpleado,
+          idEmpleadoJefe,
+          competencias,
+        );
+
         results.push({
           subordinado: sub,
-          competenciasAsignadas: competencias,
+          competenciasAsignadas: progreso.competenciasAsignadas,
+          progresoEvaluacion: progreso.progresoEvaluacion,
         });
       }
 
@@ -866,6 +883,91 @@ export class EmpleadoService {
   // ============================================================
   // COMPETENCIAS ASIGNADAS DE UN EMPLEADO (POR ID EMPLEADO)
   // ============================================================
+  // ============================================================
+  // PROGRESO DE EVALUACIÓN DE COMPETENCIAS
+  // ------------------------------------------------------------
+  // Devuelve las competencias recibidas con su progreso individual, más el
+  // acumulado. Un ítem cuenta como evaluado cuando su calificación NO es null;
+  // 0 es una calificación válida (0% existe en LIKERT y en MANUAL).
+  // ============================================================
+  private async calcularProgresoCompetencias<
+    T extends {
+      idCompetencia: number;
+      competenciaNivel: { items: { idCompetenciaNivelItem: number }[] };
+    },
+  >(idEvaluado: number, idEvaluador: number, competencias: T[]) {
+    const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+      where: {
+        idEvaluado,
+        idEvaluador,
+        estado: true,
+        estadoEvaluacion: { not: 'ANULADA' },
+        idCompetencia: { in: competencias.map((c) => c.idCompetencia) },
+      },
+      select: {
+        idCompetencia: true,
+        itemsEvaluados: {
+          where: { estado: true },
+          select: { idCompetenciaNivelItem: true, calificacion: true },
+        },
+      },
+    });
+
+    const calificadosPorCompetencia = new Map<number, Set<number>>();
+
+    for (const ev of evaluaciones) {
+      const calificados =
+        calificadosPorCompetencia.get(ev.idCompetencia) ?? new Set<number>();
+
+      for (const item of ev.itemsEvaluados) {
+        if (item.calificacion !== null) {
+          calificados.add(item.idCompetenciaNivelItem);
+        }
+      }
+
+      calificadosPorCompetencia.set(ev.idCompetencia, calificados);
+    }
+
+    let totalItems = 0;
+    let itemsEvaluados = 0;
+
+    const competenciasAsignadas = competencias.map((c) => {
+      // Solo cuentan los ítems del nivel asignado hoy: si la unidad
+      // ocupacional cambió de nivel, los del nivel viejo no deben inflar
+      // ni bloquear el progreso.
+      const asignados = new Set(
+        c.competenciaNivel.items.map((i) => i.idCompetenciaNivelItem),
+      );
+      const calificados =
+        calificadosPorCompetencia.get(c.idCompetencia) ?? new Set<number>();
+
+      const evaluados = [...calificados].filter((id) =>
+        asignados.has(id),
+      ).length;
+
+      totalItems += asignados.size;
+      itemsEvaluados += evaluados;
+
+      return {
+        ...c,
+        progresoEvaluacion: {
+          totalItems: asignados.size,
+          itemsEvaluados: evaluados,
+          completo: asignados.size > 0 && evaluados === asignados.size,
+        },
+      };
+    });
+
+    return {
+      competenciasAsignadas,
+      progresoEvaluacion: {
+        totalItems,
+        itemsEvaluados,
+        completo: totalItems > 0 && itemsEvaluados === totalItems,
+      },
+    };
+  }
+
   async findCompetenciasByEmpleado(idEmpleado: number) {
     try {
       // 1. Buscar empleado
@@ -902,9 +1004,17 @@ export class EmpleadoService {
           },
         });
 
+      // Autoevaluación: el empleado es a la vez evaluado y evaluador.
+      const progreso = await this.calcularProgresoCompetencias(
+        idEmpleado,
+        idEmpleado,
+        competencias,
+      );
+
       return {
         empleado,
-        competenciasAsignadas: competencias,
+        competenciasAsignadas: progreso.competenciasAsignadas,
+        progresoEvaluacion: progreso.progresoEvaluacion,
       };
     } catch (error) {
       this.logger.error(

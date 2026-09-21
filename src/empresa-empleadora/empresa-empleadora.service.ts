@@ -39,6 +39,9 @@ export class EmpresaEmpleadoraService {
       return await this.prisma.empresaEmpleadora.create({
         data: {
           ...dto,
+          // El logo se sube en un segundo paso (POST /:id/logo), porque
+          // Cloudinary necesita el id de la empresa ya creada.
+          urlLogo: dto.urlLogo ?? '',
           creadoPorId: user.idUsuario,
         },
       });
@@ -49,15 +52,48 @@ export class EmpresaEmpleadoraService {
   }
 
   // FIND ALL
-  async findAll({ page, limit, search }: EmpresaQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idEmpresaEmpleadora,
+    nombreEmpresa,
+    ruc,
+    modeloEmpresa,
+    direccionEmpresa,
+  }: EmpresaQueryDto) {
     try {
       const where: Prisma.EmpresaEmpleadoraWhereInput = {
         estado: true,
+
+        // ============ FILTROS POR COLUMNA (se combinan con AND) ============
+        ...(idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(idEmpresaEmpleadora),
+        }),
+
+        ...(nombreEmpresa && {
+          nombreEmpresa: { contains: nombreEmpresa, mode: 'insensitive' },
+        }),
+
+        ...(ruc && {
+          ruc: { contains: ruc },
+        }),
+
+        ...(modeloEmpresa && {
+          modeloEmpresa: { contains: modeloEmpresa, mode: 'insensitive' },
+        }),
+
+        ...(direccionEmpresa && {
+          direccionEmpresa: { contains: direccionEmpresa, mode: 'insensitive' },
+        }),
+
+        // ============ BÚSQUEDA GLOBAL ============
         ...(search && {
           OR: [
             { nombreEmpresa: { contains: search, mode: 'insensitive' } },
             { ruc: { contains: search } },
             { modeloEmpresa: { contains: search, mode: 'insensitive' } },
+            { direccionEmpresa: { contains: search, mode: 'insensitive' } },
           ],
         }),
       };

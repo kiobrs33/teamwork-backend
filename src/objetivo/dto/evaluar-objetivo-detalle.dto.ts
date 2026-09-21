@@ -1,6 +1,6 @@
 // dto/evaluar-objetivo-detalle.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNumber, IsOptional } from 'class-validator';
 
 export class EvaluarObjetivoDetalleDto {
   @ApiProperty({
@@ -10,18 +10,24 @@ export class EvaluarObjetivoDetalleDto {
   @IsNumber()
   idObjetivoDetalle: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 85,
-    description: 'Valor alcanzado del objetivo',
+    nullable: true,
+    description:
+      'Valor alcanzado del objetivo. `null` significa SIN EVALUAR; `0` es un valor válido.',
   })
+  @IsOptional()
   @IsNumber()
-  metaAlcanzada: number;
+  metaAlcanzada?: number | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 85,
-    description: 'Porcentaje logrado del detalle (0 - 100)',
+    nullable: true,
     minimum: 0,
+    description:
+      'Porcentaje logrado del detalle. `null` significa SIN EVALUAR; `0` es un valor válido.',
   })
+  @IsOptional()
   @IsNumber()
-  porcentajeLogrado: number;
+  porcentajeLogrado?: number | null;
 }

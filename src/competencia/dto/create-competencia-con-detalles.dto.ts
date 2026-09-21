@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsInt, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CompetenciaDetalleDto {
@@ -9,12 +15,16 @@ export class CompetenciaDetalleDto {
 
 export class CreateCompetenciaConDetallesDto {
   @ApiProperty({ example: 'COM-001', description: 'Código de la competencia' })
+  @IsString({ message: 'El código de la competencia debe ser una cadena.' })
+  @IsNotEmpty({ message: 'El código de la competencia es obligatorio.' })
   codigo: string;
 
   @ApiProperty({
     example: 'Liderazgo',
     description: 'Título de la competencia',
   })
+  @IsString({ message: 'El título debe ser una cadena.' })
+  @IsNotEmpty({ message: 'El título es obligatorio.' })
   titulo: string;
 
   @ApiProperty({ example: 1, description: 'Nivel de la competencia' })

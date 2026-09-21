@@ -21,4 +21,32 @@ export class EmpresaQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  // ================= FILTROS POR COLUMNA =================
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idEmpresaEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nombreEmpresa?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ruc?: string;
+
+  @ApiPropertyOptional({ example: '90' })
+  @IsOptional()
+  @IsString()
+  modeloEmpresa?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  direccionEmpresa?: string;
 }

@@ -18,6 +18,17 @@ import { Type } from 'class-transformer';
 // =====================================================
 export class ObjetivoDetalleDto {
   @ApiProperty({
+    example: 101,
+    required: false,
+    description:
+      'ID del detalle existente. Si viene, se actualiza ese detalle y se ' +
+      'conservan su calificación y su historial; si no viene, se crea uno nuevo.',
+  })
+  @IsOptional()
+  @IsInt()
+  idObjetivoDetalle?: number;
+
+  @ApiProperty({
     example: 'ASCENDENTE',
     enum: ['ASCENDENTE', 'DESCENDENTE', 'MANUAL'],
   })
@@ -49,27 +60,18 @@ export class ObjetivoDetalleDto {
   @IsNumber()
   metaObjetivo: number;
 
-  @ApiProperty({ example: 0.2, required: false })
-  @IsOptional()
-  @IsNumber()
-  metaAlcanzada?: number;
-
   @ApiProperty({
     example: '2025-12-31',
     description: 'Fecha de culminación del objetivo',
   })
   @IsDateString()
   fechaCulminacion: string;
-
-  @ApiProperty({
-    example: 75,
-    required: false,
-    description: 'Porcentaje logrado hasta la fecha',
-  })
-  @IsOptional()
-  @IsNumber()
-  porcentajeLogrado?: number;
 }
+
+// NOTA: `metaAlcanzada` y `porcentajeLogrado` NO se aceptan acá a propósito.
+// Un objetivo se define en este módulo y se califica únicamente desde
+// evaluaciones (PATCH /objetivo/:id/evaluar). Como el ValidationPipe global
+// usa `whitelist: true`, si un cliente los envía se descartan en silencio.
 
 // =====================================================
 // CREATE OBJETIVO INDIVIDUAL

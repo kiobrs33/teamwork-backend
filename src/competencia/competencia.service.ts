@@ -28,20 +28,62 @@ export class CompetenciaService {
 
   constructor(private prisma: PrismaService) {}
 
-  async findAll({ page, limit, search }: CompetenciaQueryDto) {
+  async findAll({
+    page,
+    limit,
+    search,
+    idCompetencia,
+    codigo,
+    titulo,
+    nombreEmpresaEmpleadora,
+    ruc,
+  }: CompetenciaQueryDto) {
     try {
+      // Los filtros de empresa se arman juntos: si se escribieran como dos
+      // spreads de `empresaEmpleadora`, el segundo pisaría al primero.
+      const empresaFiltro: Prisma.EmpresaEmpleadoraWhereInput = {
+        ...(nombreEmpresaEmpleadora && {
+          nombreEmpresa: {
+            contains: nombreEmpresaEmpleadora,
+            mode: 'insensitive' as const,
+          },
+        }),
+        ...(ruc && { ruc: { contains: ruc } }),
+      };
+
       const where: Prisma.CompetenciaWhereInput = {
         estado: true,
+
+        // ============ FILTROS POR COLUMNA (se combinan con AND) ============
+        ...(idCompetencia && { idCompetencia: Number(idCompetencia) }),
+
+        ...(codigo && {
+          codigo: { contains: codigo, mode: 'insensitive' },
+        }),
+
+        ...(titulo && {
+          titulo: { contains: titulo, mode: 'insensitive' },
+        }),
+
+        ...(Object.keys(empresaFiltro).length > 0 && {
+          empresaEmpleadora: empresaFiltro,
+        }),
+
+        // ============ BÚSQUEDA GLOBAL ============
         ...(search && {
           OR: [
             { nombre: { contains: search, mode: 'insensitive' } },
             { titulo: { contains: search, mode: 'insensitive' } },
             { codigo: { contains: search, mode: 'insensitive' } },
+            // Nombre y RUC van en ramas separadas: dentro de un mismo filtro
+            // de relación, Prisma los combinaría con AND y nunca coincidirían.
             {
               empresaEmpleadora: {
                 nombreEmpresa: { contains: search, mode: 'insensitive' },
-                ruc: { contains: search, mode: 'insensitive' },
               },
+            },
+            {
+              empresaEmpleadora: { ruc: { contains: search } },
             },
           ],
         }),
@@ -153,47 +195,172 @@ export class CompetenciaService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Actualizar competencia
+        const fechaModificacion = new Date();
+
+        // 1. Actualizar solo los campos enviados.
         await tx.competencia.update({
           where: { idCompetencia: id },
           data: {
-            nombre: dto.nombre,
-            titulo: dto.titulo,
-            codigo: dto.codigo,
-            idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
+            ...(dto.nombre !== undefined && { nombre: dto.nombre }),
+            ...(dto.titulo !== undefined && { titulo: dto.titulo }),
+            ...(dto.codigo !== undefined && { codigo: dto.codigo }),
+            ...(dto.idEmpresaEmpleadora !== undefined && {
+              idEmpresaEmpleadora: dto.idEmpresaEmpleadora,
+            }),
             actualizadoPorId: user.idUsuario,
-            fechaModificacion: new Date(),
+            fechaModificacion,
           },
         });
 
-        // 2. Eliminar niveles e items previos
-        await tx.competenciaNivelItem.deleteMany({
-          where: { nivel: { idCompetencia: id } },
-        });
-
-        await tx.competenciaNivel.deleteMany({
+        // 2. No se eliminan niveles ni items: pueden estar referenciados por
+        // evaluaciones históricas. Se mantienen sus IDs y se usa estado para
+        // controlar qué estructura estará disponible para nuevas evaluaciones.
+        const nivelesActuales = await tx.competenciaNivel.findMany({
           where: { idCompetencia: id },
+          include: { items: true },
         });
 
-        // 3. Crear los nuevos niveles e items
-        for (const nivel of niveles) {
-          const nuevoNivel = await tx.competenciaNivel.create({
+        const nivelesEnviados = new Set<number>();
+
+        for (const nivelDto of niveles) {
+          if (nivelesEnviados.has(nivelDto.nivel)) {
+            throw new BadRequestException(
+              `El nivel ${nivelDto.nivel} está repetido.`,
+            );
+          }
+          nivelesEnviados.add(nivelDto.nivel);
+
+          const nivelActual = nivelesActuales.find(
+            (nivel) => nivel.nivel === nivelDto.nivel,
+          );
+
+          const nivel = nivelActual
+            ? await tx.competenciaNivel.update({
+                where: {
+                  idCompetenciaNivel: nivelActual.idCompetenciaNivel,
+                },
+                data: {
+                  estado: true,
+                  actualizadoPorId: user.idUsuario,
+                  fechaModificacion,
+                },
+              })
+            : await tx.competenciaNivel.create({
+                data: {
+                  idCompetencia: id,
+                  nivel: nivelDto.nivel,
+                  creadoPorId: user.idUsuario,
+                },
+              });
+
+          const itemsActuales = nivelActual?.items ?? [];
+          const itemsEnviados = new Set<number>();
+
+          for (const [index, itemDto] of nivelDto.items.entries()) {
+            const secuencial = index + 1;
+
+            if (itemsEnviados.has(secuencial)) {
+              throw new BadRequestException(
+                `El item ${secuencial} del nivel ${nivelDto.nivel} está repetido.`,
+              );
+            }
+            itemsEnviados.add(secuencial);
+
+            const itemActual = itemsActuales.find(
+              (item) => item.secuencial === secuencial,
+            );
+
+            const itemTieneHistorial = itemActual
+              ? await tx.evaluacionCompetenciaItem.count({
+                  where: {
+                    idCompetenciaNivelItem:
+                      itemActual.idCompetenciaNivelItem,
+                  },
+                })
+              : 0;
+
+            if (itemActual && itemActual.enunciado === itemDto.enunciado) {
+              await tx.competenciaNivelItem.update({
+                where: {
+                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
+                },
+                data: {
+                  enunciado: itemDto.enunciado,
+                  secuencial,
+                  estado: true,
+                  actualizadoPorId: user.idUsuario,
+                  fechaModificacion,
+                },
+              });
+            } else if (itemActual && itemTieneHistorial > 0) {
+              await tx.competenciaNivelItem.update({
+                where: {
+                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
+                },
+                data: {
+                  estado: false,
+                  actualizadoPorId: user.idUsuario,
+                  fechaModificacion,
+                },
+              });
+
+              await tx.competenciaNivelItem.create({
+                data: {
+                  idCompetenciaNivel: nivel.idCompetenciaNivel,
+                  enunciado: itemDto.enunciado,
+                  secuencial,
+                  creadoPorId: user.idUsuario,
+                },
+              });
+            } else if (itemActual) {
+              await tx.competenciaNivelItem.update({
+                where: {
+                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
+                },
+                data: {
+                  enunciado: itemDto.enunciado,
+                  secuencial,
+                  estado: true,
+                  actualizadoPorId: user.idUsuario,
+                  fechaModificacion,
+                },
+              });
+            } else {
+              await tx.competenciaNivelItem.create({
+                data: {
+                  idCompetenciaNivel: nivel.idCompetenciaNivel,
+                  enunciado: itemDto.enunciado,
+                  secuencial,
+                  creadoPorId: user.idUsuario,
+                },
+              });
+            }
+          }
+
+          await tx.competenciaNivelItem.updateMany({
+            where: {
+              idCompetenciaNivel: nivel.idCompetenciaNivel,
+              secuencial: { notIn: Array.from(itemsEnviados) },
+            },
             data: {
-              idCompetencia: id,
-              nivel: nivel.nivel,
-              creadoPorId: user.idUsuario,
+              estado: false,
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion,
             },
           });
-
-          await tx.competenciaNivelItem.createMany({
-            data: nivel.items.map((item, index) => ({
-              idCompetenciaNivel: nuevoNivel.idCompetenciaNivel,
-              enunciado: item.enunciado,
-              secuencial: index + 1,
-              creadoPorId: user.idUsuario,
-            })),
-          });
         }
+
+        await tx.competenciaNivel.updateMany({
+          where: {
+            idCompetencia: id,
+            nivel: { notIn: Array.from(nivelesEnviados) },
+          },
+          data: {
+            estado: false,
+            actualizadoPorId: user.idUsuario,
+            fechaModificacion,
+          },
+        });
 
         return await tx.competencia.findUnique({
           where: { idCompetencia: id },
@@ -275,6 +442,7 @@ export class CompetenciaService {
           },
           include: {
             niveles: { include: { items: true } },
+            empresaEmpleadora: true,
           },
         });
 

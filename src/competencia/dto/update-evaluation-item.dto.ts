@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsInt,
@@ -19,12 +19,15 @@ export class UpdateEvaluacionItemDto {
   @IsInt({ message: 'idEvaluacionCompetenciaItem debe ser un número entero.' })
   idEvaluacionCompetenciaItem: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 4,
-    description: 'Calificación asignada al ítem (ejemplo: escala 1 a 5)',
+    nullable: true,
+    description:
+      'Calificación del ítem. `null` significa SIN CALIFICAR; `0` es una calificación válida (0% en LIKERT y en MANUAL). Se usa para saber si la evaluación está completa.',
   })
+  @IsOptional()
   @IsInt()
-  calificacion: number;
+  calificacion?: number | null;
 }
 
 export class UpdateEvaluacionDto {

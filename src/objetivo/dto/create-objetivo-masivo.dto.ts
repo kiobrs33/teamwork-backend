@@ -49,27 +49,17 @@ export class ObjetivoDetalleMasivoDto {
   @IsNumber()
   metaObjetivo: number;
 
-  @ApiProperty({ example: 0.2, required: false })
-  @IsOptional()
-  @IsNumber()
-  metaAlcanzada?: number;
-
   @ApiProperty({
     example: '2025-12-31',
     description: 'Fecha de culminación',
   })
   @IsDateString()
   fechaCulminacion: string;
-
-  @ApiProperty({
-    example: 80,
-    required: false,
-    description: 'Porcentaje logrado (opcional)',
-  })
-  @IsOptional()
-  @IsNumber()
-  porcentajeLogrado?: number;
 }
+
+// NOTA: igual que en la carga individual, la importación masiva define
+// objetivos pero no los califica: `metaAlcanzada` y `porcentajeLogrado` solo
+// se escriben desde evaluaciones (PATCH /objetivo/:id/evaluar).
 
 // =====================================================
 // ITEM MASIVO

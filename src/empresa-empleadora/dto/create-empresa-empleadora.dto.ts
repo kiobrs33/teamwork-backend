@@ -518,12 +518,14 @@ export class CreateEmpresaEmpleadoraDto {
   @Length(5, 200)
   direccionEmpresa?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'https://empresa.com/logo.png',
+    description:
+      'URL del logo. Opcional al crear: el archivo se sube despues con POST /empresa-empleadora/:id/logo, que necesita el id de la empresa ya creada.',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  urlLogo: string;
+  urlLogo?: string;
 
   @ApiProperty({
     example: '90',

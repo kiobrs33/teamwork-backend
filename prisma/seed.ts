@@ -93,7 +93,7 @@ async function main() {
   const jefeUser = await crearUsuarioYEmpleado('jefe', 'JEFE');
   const empleadoUser = await crearUsuarioYEmpleado('empleado', 'EMPLEADO');
 
-  const TOTAL = 500;
+  const TOTAL = 20;
   const BATCH_SIZE = 20;
 
   for (let i = 1; i <= TOTAL; i += BATCH_SIZE) {

@@ -82,29 +82,88 @@ export class ObjetivoService {
         },
       });
 
-      await tx.objetivoDetalle.deleteMany({
+      // --------------------------------------------------
+      // Detalles: actualizar / crear / eliminar.
+      //
+      // NO se borran y recrean todos, porque eso destruiría `metaAlcanzada` y
+      // `porcentajeLogrado` (que solo escribe el módulo de evaluaciones), y
+      // además perdería los IDs y la auditoría en cada edición. Este método
+      // nunca toca esas dos columnas.
+      // --------------------------------------------------
+      // Si el PATCH no trae detalles, no se tocan: omitir el campo no puede
+      // significar "borrarlos todos".
+      if (!dto.objetivoDetalles) {
+        return await tx.objetivo.findUnique({
+          where: { idObjetivo: id },
+          include: { objetivoDetalles: true, empleado: true },
+        });
+      }
+
+      const detallesEnviados = dto.objetivoDetalles;
+
+      const detallesActuales = await tx.objetivoDetalle.findMany({
         where: { idObjetivo: id },
+        select: { idObjetivoDetalle: true },
       });
 
-      await tx.objetivoDetalle.createMany({
-        data:
-          dto.objetivoDetalles?.map((d, i) => ({
+      const idsActuales = new Set(
+        detallesActuales.map((d) => d.idObjetivoDetalle),
+      );
+
+      const idsConservados = new Set<number>();
+
+      for (const [i, d] of detallesEnviados.entries()) {
+        const campos = {
+          secuencial: i + 1,
+          tipoCalculo: d.tipoCalculo,
+          descripcion: d.descripcion,
+          descripcionIniciativa: d.descripcionIniciativa || null,
+          unidadMedida: d.unidadMedida,
+          pesoEspecifico: d.pesoEspecifico,
+          metaObjetivo: d.metaObjetivo,
+          fechaCulminacion: new Date(d.fechaCulminacion),
+        };
+
+        // Solo se reutiliza el id si pertenece a este objetivo.
+        if (d.idObjetivoDetalle && idsActuales.has(d.idObjetivoDetalle)) {
+          idsConservados.add(d.idObjetivoDetalle);
+
+          await tx.objetivoDetalle.update({
+            where: { idObjetivoDetalle: d.idObjetivoDetalle },
+            data: {
+              ...campos,
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion: new Date(),
+            },
+          });
+
+          continue;
+        }
+
+        await tx.objetivoDetalle.create({
+          data: {
+            ...campos,
             idObjetivo: id,
-            secuencial: i + 1,
-            tipoCalculo: d.tipoCalculo,
-            descripcion: d.descripcion,
-            descripcionIniciativa: d.descripcionIniciativa || null,
-            unidadMedida: d.unidadMedida,
-            pesoEspecifico: d.pesoEspecifico,
-            metaObjetivo: d.metaObjetivo,
-            metaAlcanzada: d.metaAlcanzada ?? null,
-            fechaCulminacion: new Date(d.fechaCulminacion),
-            porcentajeLogrado: d.porcentajeLogrado ?? null,
+            // Un detalle nuevo nace sin calificar.
+            metaAlcanzada: null,
+            porcentajeLogrado: null,
             estado: true,
             creadoPorId: user.idUsuario,
             actualizadoPorId: user.idUsuario,
-          })) ?? [],
-      });
+          },
+        });
+      }
+
+      // Los que el usuario quitó del formulario sí se eliminan.
+      const idsEliminados = [...idsActuales].filter(
+        (idDetalle) => !idsConservados.has(idDetalle),
+      );
+
+      if (idsEliminados.length > 0) {
+        await tx.objetivoDetalle.deleteMany({
+          where: { idObjetivoDetalle: { in: idsEliminados } },
+        });
+      }
 
       return await tx.objetivo.findUnique({
         where: { idObjetivo: id },
@@ -168,9 +227,10 @@ export class ObjetivoService {
                 unidadMedida: detalle.unidadMedida,
                 pesoEspecifico: detalle.pesoEspecifico,
                 metaObjetivo: detalle.metaObjetivo,
-                metaAlcanzada: detalle.metaAlcanzada ?? null,
+                // Nace sin calificar: solo evaluaciones escribe estos campos.
+                metaAlcanzada: null,
                 fechaCulminacion: new Date(detalle.fechaCulminacion), // ← FIX CLAVE
-                porcentajeLogrado: detalle.porcentajeLogrado ?? null,
+                porcentajeLogrado: null,
                 estado: true,
                 creadoPorId: user.idUsuario,
               })),
@@ -228,9 +288,10 @@ export class ObjetivoService {
                 unidadMedida: d.unidadMedida,
                 pesoEspecifico: d.pesoEspecifico,
                 metaObjetivo: d.metaObjetivo,
-                metaAlcanzada: d.metaAlcanzada ?? null,
+                // Nace sin calificar: solo evaluaciones escribe estos campos.
+                metaAlcanzada: null,
                 fechaCulminacion: new Date(d.fechaCulminacion),
-                porcentajeLogrado: d.porcentajeLogrado ?? null,
+                porcentajeLogrado: null,
                 estado: true,
                 creadoPorId: user.idUsuario,
               })),
