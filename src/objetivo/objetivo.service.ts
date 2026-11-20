@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   HttpException,
@@ -7,6 +8,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { construirLibroExcel } from 'src/common/excel/libro-excel';
+import { ObjetivoExportQueryDto } from './dto/objetivo-export-query.dto';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
 import { CreateObjetivoConDetallesDto } from './dto/create-objetivo-detalle.dto';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
@@ -95,6 +98,145 @@ export class ObjetivoService {
       });
     } catch (error) {
       this.logger.error('Error al obtener objetivos:', error);
+      handlePrismaError(error, 'objetivos');
+    }
+  }
+
+  // ======================================================
+  // EXPORTAR A EXCEL
+  // ======================================================
+  /**
+   * Hoja "Objetivos": una fila por detalle con las columnas de la carga
+   * masiva (`codigoEmpleado`, `tipoCalculo`, ...), así que el archivo sirve de
+   * base para volver a importar; a la derecha, lo que el importador no lleva
+   * (trabajador, empresa y la calificación). Hoja "Retroalimentación": lo que
+   * el jefe registró por objetivo, que no salía en ningún Excel.
+   */
+  async exportExcel(query: ObjetivoExportQueryDto) {
+    try {
+      const idEmpresa = query.idEmpresaEmpleadora
+        ? Number(query.idEmpresaEmpleadora)
+        : undefined;
+      const search = query.search?.trim();
+
+      const and: Prisma.ObjetivoWhereInput[] = [
+        { estado: true },
+        { empleado: { estado: true } },
+      ];
+      if (idEmpresa) and.push({ empleado: { idEmpresaEmpleadora: idEmpresa } });
+      if (search) {
+        for (const palabra of search.split(/\s+/)) {
+          const c = { contains: palabra, mode: 'insensitive' as const };
+          and.push({
+            OR: [
+              { empleado: { nombres: c } },
+              { empleado: { apellidos: c } },
+              { empleado: { codigoEmpleado: c } },
+              { empleado: { documento: c } },
+              { objetivoDetalles: { some: { estado: true, descripcion: c } } },
+            ],
+          });
+        }
+      }
+
+      const objetivos = await this.prisma.objetivo.findMany({
+        where: { AND: and },
+        orderBy: [{ empleado: { apellidos: 'asc' } }, { idObjetivo: 'asc' }],
+        include: {
+          empleado: {
+            select: {
+              codigoEmpleado: true,
+              nombres: true,
+              apellidos: true,
+              documento: true,
+              codigoEmpleadoJefe: true,
+              empresaEmpleadora: { select: { nombreEmpresa: true } },
+            },
+          },
+          objetivoDetalles: {
+            where: { estado: true },
+            orderBy: { secuencial: 'asc' },
+          },
+          retroalimentacionDetalles: {
+            where: { estado: true },
+            orderBy: { idRetroalimentacionDetalle: 'asc' },
+          },
+        },
+      });
+
+      const trabajador = (o: (typeof objetivos)[number]) => ({
+        codigoEmpleado: o.empleado.codigoEmpleado,
+        trabajador: `${o.empleado.nombres} ${o.empleado.apellidos}`,
+        documento: o.empleado.documento,
+        empresa: o.empleado.empresaEmpleadora?.nombreEmpresa,
+        codigoEmpleadoJefe: o.empleado.codigoEmpleadoJefe,
+        idObjetivo: o.idObjetivo,
+      });
+
+      return await construirLibroExcel([
+        {
+          nombre: 'Objetivos',
+          columnas: [
+            { header: 'codigoEmpleado', key: 'codigoEmpleado', tipo: 'texto' },
+            { header: 'tipoCalculo', key: 'tipoCalculo' },
+            { header: 'descripcion', key: 'descripcion', width: 40 },
+            { header: 'descripcionIniciativa', key: 'descripcionIniciativa', width: 36 },
+            { header: 'unidadMedida', key: 'unidadMedida' },
+            { header: 'pesoEspecifico', key: 'pesoEspecifico' },
+            { header: 'metaObjetivo', key: 'metaObjetivo' },
+            { header: 'fechaCulminacion', key: 'fechaCulminacion', tipo: 'fecha' },
+            { header: 'Trabajador', key: 'trabajador', width: 28 },
+            { header: 'Documento', key: 'documento', tipo: 'texto' },
+            { header: 'Empresa', key: 'empresa', width: 26 },
+            { header: 'Código del jefe', key: 'codigoEmpleadoJefe', tipo: 'texto' },
+            { header: 'ID objetivo', key: 'idObjetivo' },
+            // Vacío = sin calificar; 0 es una calificación real.
+            { header: 'Meta alcanzada', key: 'metaAlcanzada' },
+            { header: '% logrado', key: 'porcentajeLogrado' },
+          ],
+          filas: objetivos.flatMap((o) =>
+            o.objetivoDetalles.map((d) => ({
+              ...trabajador(o),
+              tipoCalculo: d.tipoCalculo,
+              descripcion: d.descripcion,
+              descripcionIniciativa: d.descripcionIniciativa,
+              unidadMedida: d.unidadMedida,
+              pesoEspecifico: d.pesoEspecifico,
+              metaObjetivo: d.metaObjetivo,
+              fechaCulminacion: d.fechaCulminacion,
+              metaAlcanzada: d.metaAlcanzada,
+              porcentajeLogrado:
+                d.porcentajeLogrado === null
+                  ? null
+                  : Math.round(d.porcentajeLogrado * 100) / 100,
+            })),
+          ),
+        },
+        {
+          nombre: 'Retroalimentación',
+          columnas: [
+            { header: 'Código de empleado', key: 'codigoEmpleado', tipo: 'texto' },
+            { header: 'Trabajador', key: 'trabajador', width: 28 },
+            { header: 'Empresa', key: 'empresa', width: 26 },
+            { header: 'ID objetivo', key: 'idObjetivo' },
+            { header: 'Objetivo', key: 'descripcionObjetivo', width: 36 },
+            { header: 'Actividad', key: 'descripcionActividad', width: 36 },
+            { header: 'Fecha', key: 'descripcionFecha', width: 16 },
+            { header: 'Estado', key: 'descripcionEstado', width: 16 },
+          ],
+          filas: objetivos.flatMap((o) =>
+            o.retroalimentacionDetalles.map((r) => ({
+              ...trabajador(o),
+              descripcionObjetivo: r.descripcionObjetivo,
+              descripcionActividad: r.descripcionActividad,
+              descripcionFecha: r.descripcionFecha,
+              descripcionEstado: r.descripcionEstado,
+            })),
+          ),
+        },
+      ]);
+    } catch (error) {
+      this.logger.error('Error al exportar objetivos:', error);
       handlePrismaError(error, 'objetivos');
     }
   }

@@ -252,6 +252,20 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   Los dos de competencias aceptan además `periodoEvaluacion` y, si no llega,
   usan el periodo vigente de la empresa; los dos descartan las evaluaciones
   `ANULADA`, igual que el indicador de avance.
+  `GET /competencia/evaluaciones/empresa/:id/periodos` lista las campañas con
+  evaluaciones (más la vigente) para el selector del front.
+- **Exportaciones de listados (`GET <recurso>/export/excel`)**: empleados,
+  empresas, áreas, gerencias, puestos, unidades, competencias, objetivos y
+  evidencias. Las nuevas se arman con `construirLibroExcel` / `enviarExcel`
+  (`src/common/excel/libro-excel.ts`), que pone cabecera, autofiltro y
+  `tipo: 'texto'` para documentos y códigos (como número pierden los ceros a
+  la izquierda). **Usan el mismo filtro que su listado**, extraído a un
+  método (`construirListado`, `construirWhere`), y van declaradas **antes de
+  `@Get(':id')`**. Las de competencias, objetivos y trabajadores llevan **las
+  columnas de su carga masiva con el mismo nombre**, para que el archivo
+  sirva de base para volver a importar; competencias agrega la hoja
+  "Asignaciones" (nivel por unidad) y objetivos la de "Retroalimentación".
+  La de evidencias respeta el alcance por rol del listado.
 - Los errores de Prisma pasan por `handlePrismaError()`
   (`src/prisma/helpers/prisma-error.handler.ts`).
 - **Los listados pasan el query DTO entero al servicio.** `GET /empresa-empleadora`

@@ -1,3 +1,4 @@
+import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   ConflictException,
   HttpException,
@@ -19,7 +20,6 @@ import {
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
-import * as ExcelJS from 'exceljs';
 import {
   filtroEvaluacionesVigentes,
   normalizarPeriodo,
@@ -1755,6 +1755,10 @@ export class EmpleadoService {
         orderBy,
         include: {
           empresaEmpleadora: true,
+          gerenciaEmpleadora: { select: { descripcion: true } },
+          areaEmpleadora: { select: { descripcion: true } },
+          unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+          puestoEmpleadora: { select: { descripcion: true } },
           usuario: {
             select: { idUsuario: true, codigoUsuario: true, rol: true },
           },
@@ -1767,72 +1771,73 @@ export class EmpleadoService {
       // y no estaba.
       const filas = await this.conAgregados(empleados);
 
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Trabajadores');
-
-      worksheet.columns = [
-        { header: 'ID', key: 'idEmpleado', width: 10 },
-        { header: 'Nombres', key: 'nombres', width: 24 },
-        { header: 'Apellidos', key: 'apellidos', width: 24 },
-        { header: 'Documento', key: 'documento', width: 16 },
-        { header: 'Código de empleado', key: 'codigoEmpleado', width: 20 },
-        { header: 'Empresa', key: 'empresa', width: 32 },
-        { header: 'Jefe', key: 'jefe', width: 28 },
-        { header: 'Código del jefe', key: 'codigoEmpleadoJefe', width: 18 },
-        { header: 'Usuario', key: 'codigoUsuario', width: 18 },
-        // Cuatro números en vez de un "1/2" de texto: así se pueden sumar y
-        // cruzar en una tabla dinámica, que es para lo que se exporta.
+      // Trae TODOS los campos de la carga masiva, con nombre e ID: el archivo
+      // sirve para leerlo y también como base para volver a importar.
+      return await construirLibroExcel([
         {
-          header: 'Competencias evaluadas por el jefe',
-          key: 'competenciasJefe',
-          width: 30,
+          nombre: 'Trabajadores',
+          columnas: [
+            { header: 'ID', key: 'idEmpleado', width: 8 },
+            { header: 'Código de empleado', key: 'codigoEmpleado', tipo: 'texto' },
+            { header: 'Nombres', key: 'nombres', width: 24 },
+            { header: 'Apellidos', key: 'apellidos', width: 24 },
+            { header: 'Documento', key: 'documento', tipo: 'texto' },
+            { header: 'Usuario', key: 'codigoUsuario', tipo: 'texto' },
+            { header: 'Rol', key: 'rol' },
+            { header: 'Empresa', key: 'empresa', width: 28 },
+            { header: 'ID empresa', key: 'idEmpresaEmpleadora' },
+            { header: 'Gerencia', key: 'gerencia', width: 24 },
+            { header: 'ID gerencia', key: 'idGerenciaEmpleadora' },
+            { header: 'Área', key: 'area', width: 24 },
+            { header: 'ID área', key: 'idAreaEmpleadora' },
+            { header: 'Unidad ocupacional', key: 'unidad', width: 26 },
+            { header: 'ID unidad', key: 'idUnidadOcupacionalEmpleadora' },
+            { header: 'Puesto', key: 'puesto', width: 24 },
+            { header: 'ID puesto', key: 'idPuestoEmpleadora' },
+            { header: 'Jefe', key: 'jefe', width: 28 },
+            { header: 'Código del jefe', key: 'codigoEmpleadoJefe', tipo: 'texto' },
+            { header: 'Sede', key: 'sede', width: 18 },
+            { header: 'Tiempo en la empresa', key: 'tiempoEmpresaValor' },
+            { header: 'Unidad de tiempo', key: 'tiempoEmpresaUnidad' },
+            // Cuatro números en vez de un "1/2" de texto: así se pueden sumar
+            // y cruzar en una tabla dinámica, que es para lo que se exporta.
+            { header: 'Competencias evaluadas por el jefe', key: 'competenciasJefe' },
+            { header: 'Competencias autoevaluadas', key: 'competenciasAuto' },
+            { header: 'Competencias totales', key: 'competenciasTotal' },
+            { header: 'Objetivos evaluados', key: 'objetivosHechas' },
+            { header: 'Objetivos totales', key: 'objetivosTotal' },
+          ],
+          filas: filas.map((item) => ({
+            idEmpleado: item.idEmpleado,
+            codigoEmpleado: item.codigoEmpleado,
+            nombres: item.nombres,
+            apellidos: item.apellidos,
+            documento: item.documento,
+            codigoUsuario: item.usuario.codigoUsuario,
+            rol: item.usuario.rol,
+            empresa: item.empresaEmpleadora.nombreEmpresa,
+            idEmpresaEmpleadora: item.idEmpresaEmpleadora,
+            gerencia: item.gerenciaEmpleadora?.descripcion,
+            idGerenciaEmpleadora: item.idGerenciaEmpleadora,
+            area: item.areaEmpleadora?.descripcion,
+            idAreaEmpleadora: item.idAreaEmpleadora,
+            unidad: item.unidadOcupacionalEmpleadora?.descripcion,
+            idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
+            puesto: item.puestoEmpleadora?.descripcion,
+            idPuestoEmpleadora: item.idPuestoEmpleadora,
+            jefe: item.jefe ? `${item.jefe.nombres} ${item.jefe.apellidos}` : '',
+            codigoEmpleadoJefe: item.codigoEmpleadoJefe,
+            sede: item.sede,
+            tiempoEmpresaValor: item.tiempoEmpresaValor,
+            tiempoEmpresaUnidad: item.tiempoEmpresaUnidad,
+            competenciasJefe: item.avanceCompetencias.hechasJefe,
+            competenciasAuto: item.avanceCompetencias.hechasAuto,
+            competenciasTotal: item.avanceCompetencias.total,
+            objetivosHechas: item.avanceObjetivos.hechas,
+            objetivosTotal: item.avanceObjetivos.total,
+          })),
         },
-        {
-          header: 'Competencias autoevaluadas',
-          key: 'competenciasAuto',
-          width: 26,
-        },
-        {
-          header: 'Competencias totales',
-          key: 'competenciasTotal',
-          width: 20,
-        },
-        { header: 'Objetivos evaluados', key: 'objetivosHechas', width: 20 },
-        { header: 'Objetivos totales', key: 'objetivosTotal', width: 18 },
-      ];
-
-      filas.forEach((item) => {
-        worksheet.addRow({
-          idEmpleado: item.idEmpleado,
-          nombres: item.nombres,
-          apellidos: item.apellidos,
-          documento: item.documento,
-          codigoEmpleado: item.codigoEmpleado,
-          empresa: item.empresaEmpleadora.nombreEmpresa,
-          jefe: item.jefe ? `${item.jefe.nombres} ${item.jefe.apellidos}` : '',
-          codigoEmpleadoJefe: item.codigoEmpleadoJefe,
-          codigoUsuario: item.usuario.codigoUsuario,
-          competenciasJefe: item.avanceCompetencias.hechasJefe,
-          competenciasAuto: item.avanceCompetencias.hechasAuto,
-          competenciasTotal: item.avanceCompetencias.total,
-          objetivosHechas: item.avanceObjetivos.hechas,
-          objetivosTotal: item.avanceObjetivos.total,
-        });
-      });
-
-      worksheet.getRow(1).font = { bold: true };
-
-      // Calculados, no escritos a mano: el autofiltro estaba fijo en 'H1' y se
-      // quedaba corto en cuanto se tocaba una columna.
-      const ultima = worksheet.getColumn(worksheet.columnCount).letter;
-      worksheet.autoFilter = { from: 'A1', to: `${ultima}1` };
-
-      // La cabecera se queda a la vista al bajar por el archivo.
-      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-
-      const buffer = await workbook.xlsx.writeBuffer();
-
-      return buffer;
+      ]);
     } catch (error) {
       handlePrismaError(error, 'empleados');
     }

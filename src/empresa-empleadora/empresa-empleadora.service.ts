@@ -1,3 +1,4 @@
+import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   BadRequestException,
   ConflictException,
@@ -279,63 +280,121 @@ export class EmpresaEmpleadoraService {
     }));
   }
 
+  async exportExcel(query: EmpresaQueryDto) {
+    try {
+      const { where, orderBy } = this.construirListado(query);
+      const empresas = await this.prisma.empresaEmpleadora.findMany({
+        where,
+        orderBy,
+        include: {
+          _count: {
+            select: { empleados: { where: { estado: true } } },
+          },
+        },
+      });
+
+      return await construirLibroExcel([
+        {
+          nombre: 'Empresas',
+          columnas: [
+            { header: 'ID', key: 'idEmpresaEmpleadora', width: 8 },
+            { header: 'Empresa', key: 'nombreEmpresa', width: 32 },
+            { header: 'RUC', key: 'ruc', tipo: 'texto', width: 16 },
+            { header: 'Dirección', key: 'direccionEmpresa', width: 32 },
+            { header: 'Modelo', key: 'modeloEmpresa' },
+            { header: 'Periodo de evaluación', key: 'periodoEvaluacion' },
+            { header: 'Tipo de calificación', key: 'tipoCalificacionCompetencia' },
+            { header: '% Competencias', key: 'porcentajeCompetecias' },
+            { header: '% Objetivos', key: 'porcentajeObjetivos' },
+            { header: '% Jefe', key: 'porcentajeEvaluacionJefeCompetencia' },
+            { header: '% Subordinados', key: 'porcentajeEvaluacionSubordinadoCompetencia' },
+            { header: 'Resultado esperado', key: 'competenciaResultadoEsperado' },
+            { header: 'Inicio evaluación', key: 'fechaVigenciaInicio', tipo: 'fecha' },
+            { header: 'Fin evaluación', key: 'fechaVigenciaFin', tipo: 'fecha' },
+            { header: 'Inicio objetivos', key: 'fechaVigenciaInicioObjetivo', tipo: 'fecha' },
+            { header: 'Fin objetivos', key: 'fechaVigenciaFinObjetivo', tipo: 'fecha' },
+            { header: 'Trabajadores activos', key: 'trabajadores' },
+          ],
+          filas: empresas.map((e) => ({
+            ...e,
+            // En 90° el reparto jefe/subordinado no aplica: el jefe pesa 100.
+            porcentajeEvaluacionJefeCompetencia:
+              e.modeloEmpresa === '90' ? 100 : e.porcentajeEvaluacionJefeCompetencia,
+            porcentajeEvaluacionSubordinadoCompetencia:
+              e.modeloEmpresa === '90' ? null : e.porcentajeEvaluacionSubordinadoCompetencia,
+            trabajadores: e._count.empleados,
+          })),
+        },
+      ]);
+    } catch (error) {
+      handlePrismaError(error, 'empresa');
+    }
+  }
+
+  /** Filtro y orden del listado; los comparte la exportación a Excel. */
+  private construirListado(query: EmpresaQueryDto) {
+    const idEmpresaEmpleadora = aEntero(query.idEmpresaEmpleadora);
+    const nombreEmpresa = aTexto(query.nombreEmpresa);
+    const ruc = aTexto(query.ruc);
+    const modeloEmpresa = aTexto(query.modeloEmpresa);
+    const direccionEmpresa = aTexto(query.direccionEmpresa);
+    const periodoEvaluacion = aTexto(query.periodoEvaluacion);
+    const search = aTexto(query.search);
+
+    const where: Prisma.EmpresaEmpleadoraWhereInput = {
+      estado: true,
+
+      // ============ FILTROS POR COLUMNA (se combinan con AND) ============
+      ...(idEmpresaEmpleadora !== undefined && { idEmpresaEmpleadora }),
+
+      ...(nombreEmpresa && {
+        nombreEmpresa: { contains: nombreEmpresa, mode: 'insensitive' },
+      }),
+
+      ...(ruc && {
+        ruc: { contains: ruc },
+      }),
+
+      ...(modeloEmpresa && {
+        modeloEmpresa: { contains: modeloEmpresa, mode: 'insensitive' },
+      }),
+
+      ...(direccionEmpresa && {
+        direccionEmpresa: { contains: direccionEmpresa, mode: 'insensitive' },
+      }),
+
+      // Parcial a propósito: "2026" debe traer todas las campañas del año.
+      ...(periodoEvaluacion && {
+        periodoEvaluacion: { contains: periodoEvaluacion },
+      }),
+
+      // ============ BÚSQUEDA GLOBAL ============
+      ...(search && {
+        OR: [
+          { nombreEmpresa: { contains: search, mode: 'insensitive' } },
+          { ruc: { contains: search } },
+          { modeloEmpresa: { contains: search, mode: 'insensitive' } },
+          { direccionEmpresa: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
+    };
+
+    const sortBy = EMPRESA_SORT_FIELDS.includes(
+      query.sortBy as EmpresaSortField,
+    )
+      ? (query.sortBy as EmpresaSortField)
+      : 'fechaCreacion';
+    const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
+    const orderBy: Prisma.EmpresaEmpleadoraOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    };
+
+    return { where, orderBy };
+  }
+
   async findAll(query: EmpresaQueryDto) {
     try {
-      const idEmpresaEmpleadora = aEntero(query.idEmpresaEmpleadora);
-      const nombreEmpresa = aTexto(query.nombreEmpresa);
-      const ruc = aTexto(query.ruc);
-      const modeloEmpresa = aTexto(query.modeloEmpresa);
-      const direccionEmpresa = aTexto(query.direccionEmpresa);
-      const periodoEvaluacion = aTexto(query.periodoEvaluacion);
-      const search = aTexto(query.search);
-
-      const where: Prisma.EmpresaEmpleadoraWhereInput = {
-        estado: true,
-
-        // ============ FILTROS POR COLUMNA (se combinan con AND) ============
-        ...(idEmpresaEmpleadora !== undefined && { idEmpresaEmpleadora }),
-
-        ...(nombreEmpresa && {
-          nombreEmpresa: { contains: nombreEmpresa, mode: 'insensitive' },
-        }),
-
-        ...(ruc && {
-          ruc: { contains: ruc },
-        }),
-
-        ...(modeloEmpresa && {
-          modeloEmpresa: { contains: modeloEmpresa, mode: 'insensitive' },
-        }),
-
-        ...(direccionEmpresa && {
-          direccionEmpresa: { contains: direccionEmpresa, mode: 'insensitive' },
-        }),
-
-        // Parcial a propósito: "2026" debe traer todas las campañas del año.
-        ...(periodoEvaluacion && {
-          periodoEvaluacion: { contains: periodoEvaluacion },
-        }),
-
-        // ============ BÚSQUEDA GLOBAL ============
-        ...(search && {
-          OR: [
-            { nombreEmpresa: { contains: search, mode: 'insensitive' } },
-            { ruc: { contains: search } },
-            { modeloEmpresa: { contains: search, mode: 'insensitive' } },
-            { direccionEmpresa: { contains: search, mode: 'insensitive' } },
-          ],
-        }),
-      };
-
-      const sortBy = EMPRESA_SORT_FIELDS.includes(
-        query.sortBy as EmpresaSortField,
-      )
-        ? (query.sortBy as EmpresaSortField)
-        : 'fechaCreacion';
-      const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
-      const orderBy: Prisma.EmpresaEmpleadoraOrderByWithRelationInput = {
-        [sortBy]: sortOrder,
-      };
+      const { where, orderBy } = this.construirListado(query);
 
       const limit = aEntero(query.limit) ?? 0;
 

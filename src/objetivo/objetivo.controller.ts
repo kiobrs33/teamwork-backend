@@ -1,3 +1,6 @@
+import { enviarExcel } from 'src/common/excel/libro-excel';
+import { ObjetivoExportQueryDto } from './dto/objetivo-export-query.dto';
+import type { Response } from 'express';
 import {
   Controller,
   Get,
@@ -8,6 +11,8 @@ import {
   Delete,
   ParseIntPipe,
   UseGuards,
+  Query,
+  Res,
 } from '@nestjs/common';
 import { ObjetivoService } from './objetivo.service';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
@@ -38,6 +43,12 @@ export class ObjetivoController {
   async findAll() {
     const objetivos = await this.objetivoService.findAll();
     return { message: 'Lista de objetivos', data: { objetivos } };
+  }
+
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar objetivos (formato de la carga masiva) y retroalimentación' })
+  async exportExcel(@Query() query: ObjetivoExportQueryDto, @Res() res: Response) {
+    enviarExcel(res, await this.objetivoService.exportExcel(query), 'objetivos');
   }
 
   @Get('subordinados/:id')

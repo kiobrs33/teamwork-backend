@@ -1,3 +1,4 @@
+import { enviarExcel } from 'src/common/excel/libro-excel';
 // empresa-empleadora.controller.ts
 import {
   BadRequestException,
@@ -13,7 +14,9 @@ import {
   Query,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { EmpresaEmpleadoraService } from './empresa-empleadora.service';
 import { CreateEmpresaEmpleadoraDto } from './dto/create-empresa-empleadora.dto';
 import { UpdateEmpresaEmpleadoraDto } from './dto/update-empresa-empleadora.dto';
@@ -115,6 +118,13 @@ export class EmpresaEmpleadoraController {
       message: 'Lista de empresas empleadoras.',
       data: { empresas: resp.data, meta: resp.meta },
     };
+  }
+
+  // Antes de ':id', o 'export' entra como id y el ParseIntPipe responde 400.
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar empresas a Excel (mismos filtros que el listado)' })
+  async exportExcel(@Query() query: EmpresaQueryDto, @Res() res: Response) {
+    enviarExcel(res, await this.service.exportExcel(query), 'empresas');
   }
 
   @Get(':id')

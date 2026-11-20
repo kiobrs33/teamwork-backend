@@ -1,3 +1,4 @@
+import { enviarExcel } from 'src/common/excel/libro-excel';
 import {
   Controller,
   Get,
@@ -61,6 +62,15 @@ export class CompetenciaController {
       message: 'Lista de competencias.',
       data: { competencias: resp.data, meta: resp.meta },
     };
+  }
+
+  // Antes de ':id', o 'export' entra como id y el ParseIntPipe responde 400.
+  @Get('export/excel')
+  @ApiOperation({
+    summary: 'Exportar el catálogo de competencias (formato del importador) y sus asignaciones',
+  })
+  async exportCatalogo(@Query() query: CompetenciaQueryDto, @Res() res: Response) {
+    enviarExcel(res, await this.competenciaService.exportCatalogoExcel(query), 'competencias');
   }
 
   @Get('company/:id')
@@ -316,6 +326,17 @@ export class CompetenciaController {
     return {
       message: 'Evaluación anulada correctamente.',
       data: { evaluacion },
+    };
+  }
+
+  @Get('evaluaciones/empresa/:idEmpresaEmpleadora/periodos')
+  @ApiOperation({ summary: 'Campañas con evaluaciones de la empresa (y la vigente)' })
+  async periodosDeEmpresa(
+    @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+  ) {
+    return {
+      message: 'Periodos de evaluación de la empresa.',
+      data: await this.competenciaService.periodosDeEmpresa(idEmpresaEmpleadora),
     };
   }
 

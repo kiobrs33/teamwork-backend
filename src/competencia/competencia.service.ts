@@ -1,3 +1,4 @@
+import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   BadRequestException,
   HttpException,
@@ -44,6 +45,100 @@ export class CompetenciaService {
   private readonly logger = new Logger(CompetenciaService.name);
 
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Catálogo de competencias en Excel, con los mismos filtros que el listado.
+   * La hoja "Competencias" tiene las columnas del importador (una fila por
+   * enunciado), así que el archivo vuelve a entrar tal cual por
+   * `POST /competencia/import`. "Asignaciones" dice qué nivel pide cada unidad
+   * ocupacional, que no se veía en ningún reporte.
+   */
+  async exportCatalogoExcel(query: CompetenciaQueryDto) {
+    try {
+      const { data: competencias } = await this.findAll({ ...query, limit: 0 });
+      const ids = competencias.map((c) => c.idCompetencia);
+
+      const asignaciones = ids.length
+        ? await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+            where: {
+              idCompetencia: { in: ids },
+              unidadOcupacionalEmpleadora: { estado: true },
+            },
+            include: {
+              competencia: { select: { codigo: true, titulo: true } },
+              competenciaNivel: { select: { nivel: true } },
+              unidadOcupacionalEmpleadora: {
+                select: {
+                  idUnidadOcupacionalEmpleadora: true,
+                  descripcion: true,
+                  empresaEmpleadora: { select: { nombreEmpresa: true } },
+                  _count: { select: { empleados: { where: { estado: true } } } },
+                },
+              },
+            },
+            orderBy: [
+              { idUnidadOcupacionalEmpleadora: 'asc' },
+              { idCompetencia: 'asc' },
+            ],
+          })
+        : [];
+
+      const filas = competencias.flatMap((c: any) =>
+        c.niveles.flatMap((n: any) =>
+          n.items.map((i: any) => ({
+            codigo: c.codigo,
+            titulo: c.titulo,
+            nombre: c.nombre,
+            idEmpresaEmpleadora: c.idEmpresaEmpleadora,
+            empresa: c.empresaEmpleadora?.nombreEmpresa,
+            nivel: n.nivel,
+            secuencial: i.secuencial,
+            enunciado: i.enunciado,
+          })),
+        ),
+      );
+
+      return await construirLibroExcel([
+        {
+          nombre: 'Competencias',
+          columnas: [
+            { header: 'codigo', key: 'codigo', tipo: 'texto', width: 14 },
+            { header: 'titulo', key: 'titulo', width: 28 },
+            { header: 'nombre', key: 'nombre', width: 36 },
+            { header: 'idEmpresaEmpleadora', key: 'idEmpresaEmpleadora' },
+            { header: 'nivel', key: 'nivel', width: 8 },
+            { header: 'enunciado', key: 'enunciado', width: 60 },
+            { header: 'Empresa', key: 'empresa', width: 28 },
+            { header: 'Orden', key: 'secuencial', width: 8 },
+          ],
+          filas,
+        },
+        {
+          nombre: 'Asignaciones',
+          columnas: [
+            { header: 'Empresa', key: 'empresa', width: 28 },
+            { header: 'ID unidad', key: 'idUnidad' },
+            { header: 'Unidad ocupacional', key: 'unidad', width: 30 },
+            { header: 'Trabajadores en la unidad', key: 'trabajadores' },
+            { header: 'Código competencia', key: 'codigo', tipo: 'texto' },
+            { header: 'Competencia', key: 'competencia', width: 28 },
+            { header: 'Nivel requerido', key: 'nivel' },
+          ],
+          filas: asignaciones.map((a) => ({
+            empresa: a.unidadOcupacionalEmpleadora.empresaEmpleadora.nombreEmpresa,
+            idUnidad: a.unidadOcupacionalEmpleadora.idUnidadOcupacionalEmpleadora,
+            unidad: a.unidadOcupacionalEmpleadora.descripcion,
+            trabajadores: a.unidadOcupacionalEmpleadora._count.empleados,
+            codigo: a.competencia.codigo,
+            competencia: a.competencia.titulo,
+            nivel: a.competenciaNivel.nivel,
+          })),
+        },
+      ]);
+    } catch (error) {
+      handlePrismaError(error, 'competencia');
+    }
+  }
 
   async findAll({
     page,
@@ -772,6 +867,43 @@ export class CompetenciaService {
    * estampadas con la forma larga — dejarían de encontrarse, se crearían
    * nuevas y las notas quedarían huérfanas.
    */
+  /**
+   * Campañas con evaluaciones de la empresa, de la más reciente a la más
+   * vieja, más la vigente aunque todavía no tenga ninguna. Alimenta el
+   * selector del modal de exportación: el backend ya aceptaba un periodo
+   * pasado, pero desde la pantalla no había forma de pedirlo.
+   */
+  async periodosDeEmpresa(idEmpresaEmpleadora: number) {
+    const empresa = await this.prisma.empresaEmpleadora.findUnique({
+      where: { idEmpresaEmpleadora },
+      select: { periodoEvaluacion: true },
+    });
+    if (!empresa) throw new NotFoundException('Empresa no encontrada');
+
+    const filas = await this.prisma.evaluacionCompetencia.findMany({
+      where: {
+        estado: true,
+        periodoEvaluacion: { not: null },
+        evaluado: { idEmpresaEmpleadora },
+      },
+      distinct: ['periodoEvaluacion'],
+      select: { periodoEvaluacion: true },
+    });
+
+    const vigente = this.normalizarPeriodo(empresa.periodoEvaluacion);
+    const periodos = new Set(
+      filas
+        .map((f) => this.normalizarPeriodo(f.periodoEvaluacion))
+        .filter((p): p is string => !!p),
+    );
+    if (vigente) periodos.add(vigente);
+
+    return {
+      vigente,
+      periodos: [...periodos].sort().reverse(),
+    };
+  }
+
   private normalizarPeriodo(periodo?: string | null): string | null {
     return normalizarPeriodoCompartido(periodo);
   }
@@ -1867,7 +1999,7 @@ export class CompetenciaService {
       { header: 'Empresa', key: 'empresa', width: 30 },
       { header: 'Código Empleado', key: 'codigoEmpleado', width: 20 },
       { header: 'Empleado', key: 'empleado', width: 35 },
-      { header: 'Documento', key: 'documento', width: 15 },
+      { header: 'Documento', key: 'documento', width: 15, style: { numFmt: '@' } },
       { header: 'Código Jefe', key: 'codigoJefe', width: 20 },
       { header: 'Evaluador', key: 'evaluador', width: 35 },
       { header: 'Área', key: 'area', width: 25 },
@@ -1875,6 +2007,9 @@ export class CompetenciaService {
       { header: 'Unidad', key: 'unidad', width: 25 },
       { header: 'Gerencia', key: 'gerencia', width: 25 },
       { header: 'Objetivo', key: 'objetivo', width: 40 },
+      { header: 'Iniciativa', key: 'iniciativa', width: 36 },
+      { header: 'Tipo de cálculo', key: 'tipoCalculo', width: 16 },
+      { header: 'Unidad de medida', key: 'unidadMedida', width: 16 },
       { header: 'Peso', key: 'peso', width: 10 },
       { header: 'Meta', key: 'meta', width: 12 },
       { header: 'Meta Alcanzada', key: 'metaAlcanzada', width: 15 },
@@ -1888,7 +2023,9 @@ export class CompetenciaService {
           empresa: obj.empleado.empresaEmpleadora.nombreEmpresa,
           codigoEmpleado: obj.empleado.codigoEmpleado,
           empleado: `${obj.empleado.nombres} ${obj.empleado.apellidos}`,
-          documento: Number(obj.empleado.documento),
+          // Texto, no número: `Number()` quitaba los ceros a la izquierda del
+          // DNI y daba NaN con documentos alfanuméricos.
+          documento: obj.empleado.documento ?? '',
           codigoJefe: obj.empleado.codigoEmpleadoJefe,
           evaluador: obj.empleado.codigoEmpleadoJefe
             ? evaluadorMap.get(obj.empleado.codigoEmpleadoJefe)
@@ -1898,6 +2035,9 @@ export class CompetenciaService {
           unidad: obj.empleado.unidadOcupacionalEmpleadora.descripcion,
           gerencia: obj.empleado.gerenciaEmpleadora.descripcion,
           objetivo: det.descripcion,
+          iniciativa: det.descripcionIniciativa,
+          tipoCalculo: det.tipoCalculo,
+          unidadMedida: det.unidadMedida,
           peso: det.pesoEspecifico,
           meta: det.metaObjetivo,
           metaAlcanzada: det.metaAlcanzada,

@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from 'src/prisma/prisma.service';
+import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Rol } from 'src/empleado/types/empleadoTypes';
 
@@ -224,64 +225,73 @@ export class EvidenciaService {
 
   // ─────────────────────────────── listado ───────────────────────────────
 
+  /** Filtro del listado; lo comparte la exportación. */
+  private construirWhere(
+    alcance: Alcance,
+    query: EvidenciaQueryDto,
+  ): Prisma.EvidenciaWhereInput {
+    // Con `transform` desactivado en el ValidationPipe, todo llega como texto.
+    const idEmpleado = query.idEmpleado ? Number(query.idEmpleado) : undefined;
+    const idEmpresa = query.idEmpresaEmpleadora
+      ? Number(query.idEmpresaEmpleadora)
+      : undefined;
+    const search = query.search?.trim();
+    const tipo = TIPOS_EVIDENCIA.includes(query.tipo as any)
+      ? query.tipo
+      : undefined;
+
+    const and: Prisma.EvidenciaWhereInput[] = [{ estado: true }];
+
+    if (!alcance.todo) and.push({ idEmpleado: { in: alcance.lectura } });
+    if (idEmpleado) and.push({ idEmpleado });
+
+    const empleadoWhere: Prisma.EmpleadoWhereInput = {};
+    if (idEmpresa) empleadoWhere.idEmpresaEmpleadora = idEmpresa;
+    if (query.codigoEmpleadoJefe?.trim()) {
+      empleadoWhere.codigoEmpleadoJefe = query.codigoEmpleadoJefe.trim();
+    }
+    if (Object.keys(empleadoWhere).length) {
+      and.push({ empleado: empleadoWhere });
+    }
+
+    if (search) {
+      // Cada palabra tiene que aparecer en algún campo del trabajador o en
+      // el nombre del archivo: "perez juan" encuentra a "Juan Perez".
+      for (const palabra of search.split(/\s+/)) {
+        const c = { contains: palabra, mode: 'insensitive' as const };
+        and.push({
+          OR: [
+            { nombreArchivo: c },
+            { empleado: { nombres: c } },
+            { empleado: { apellidos: c } },
+            { empleado: { codigoEmpleado: c } },
+            { empleado: { documento: c } },
+          ],
+        });
+      }
+    }
+
+    if (tipo === 'OBJETIVO') and.push({ idObjetivo: { not: null } });
+    if (tipo === 'COMPETENCIA') {
+      and.push({ idEvaluacionCompetencia: { not: null } });
+    }
+
+    if (query.fechaDesde || query.fechaHasta) {
+      const rango: Prisma.DateTimeFilter = {};
+      if (query.fechaDesde) rango.gte = new Date(`${query.fechaDesde}T00:00:00-05:00`);
+      if (query.fechaHasta) rango.lte = new Date(`${query.fechaHasta}T23:59:59.999-05:00`);
+      and.push({ fechaCreacion: rango });
+    }
+
+    return { AND: and };
+  }
+
+
   async findAll(user: AuthUser, query: EvidenciaQueryDto) {
     try {
       const alcance = await this.alcanceDe(user);
 
-      // Con `transform` desactivado en el ValidationPipe, todo llega como texto.
-      const idEmpleado = query.idEmpleado ? Number(query.idEmpleado) : undefined;
-      const idEmpresa = query.idEmpresaEmpleadora
-        ? Number(query.idEmpresaEmpleadora)
-        : undefined;
-      const search = query.search?.trim();
-      const tipo = TIPOS_EVIDENCIA.includes(query.tipo as any)
-        ? query.tipo
-        : undefined;
-
-      const and: Prisma.EvidenciaWhereInput[] = [{ estado: true }];
-
-      if (!alcance.todo) and.push({ idEmpleado: { in: alcance.lectura } });
-      if (idEmpleado) and.push({ idEmpleado });
-
-      const empleadoWhere: Prisma.EmpleadoWhereInput = {};
-      if (idEmpresa) empleadoWhere.idEmpresaEmpleadora = idEmpresa;
-      if (query.codigoEmpleadoJefe?.trim()) {
-        empleadoWhere.codigoEmpleadoJefe = query.codigoEmpleadoJefe.trim();
-      }
-      if (Object.keys(empleadoWhere).length) {
-        and.push({ empleado: empleadoWhere });
-      }
-
-      if (search) {
-        // Cada palabra tiene que aparecer en algún campo del trabajador o en
-        // el nombre del archivo: "perez juan" encuentra a "Juan Perez".
-        for (const palabra of search.split(/\s+/)) {
-          const c = { contains: palabra, mode: 'insensitive' as const };
-          and.push({
-            OR: [
-              { nombreArchivo: c },
-              { empleado: { nombres: c } },
-              { empleado: { apellidos: c } },
-              { empleado: { codigoEmpleado: c } },
-              { empleado: { documento: c } },
-            ],
-          });
-        }
-      }
-
-      if (tipo === 'OBJETIVO') and.push({ idObjetivo: { not: null } });
-      if (tipo === 'COMPETENCIA') {
-        and.push({ idEvaluacionCompetencia: { not: null } });
-      }
-
-      if (query.fechaDesde || query.fechaHasta) {
-        const rango: Prisma.DateTimeFilter = {};
-        if (query.fechaDesde) rango.gte = new Date(`${query.fechaDesde}T00:00:00-05:00`);
-        if (query.fechaHasta) rango.lte = new Date(`${query.fechaHasta}T23:59:59.999-05:00`);
-        and.push({ fechaCreacion: rango });
-      }
-
-      const where: Prisma.EvidenciaWhereInput = { AND: and };
+      const where = this.construirWhere(alcance, query);
       const limit = Number(query.limit ?? 10);
 
       if (limit === 0) {
@@ -321,6 +331,64 @@ export class EvidenciaService {
       };
     } catch (error) {
       this.logger.error('Error al listar evidencias', error);
+      handlePrismaError(error, 'evidencia');
+    }
+  }
+
+  async exportExcel(user: AuthUser, query: EvidenciaQueryDto) {
+    try {
+      const alcance = await this.alcanceDe(user);
+      const data = await this.prisma.evidencia.findMany({
+        where: this.construirWhere(alcance, query),
+        include: includeListado,
+        orderBy: { fechaCreacion: 'desc' },
+      });
+      const evidencias = await this.conAutor(data);
+
+      return await construirLibroExcel([
+        {
+          nombre: 'Evidencias',
+          columnas: [
+            { header: 'ID', key: 'idEvidencia', width: 8 },
+            { header: 'Archivo', key: 'nombreArchivo', width: 36 },
+            { header: 'Tipo de archivo', key: 'tipoArchivo', width: 20 },
+            { header: 'Enlace', key: 'urlArchivo', width: 50 },
+            { header: 'Código de empleado', key: 'codigoEmpleado', tipo: 'texto' },
+            { header: 'Trabajador', key: 'trabajador', width: 28 },
+            { header: 'Documento', key: 'documento', tipo: 'texto' },
+            { header: 'Empresa', key: 'empresa', width: 26 },
+            { header: 'Sustenta', key: 'sustenta', width: 14 },
+            { header: 'Competencia', key: 'competencia', width: 26 },
+            { header: 'Periodo', key: 'periodo' },
+            { header: 'Subido por', key: 'subidoPor', width: 26 },
+            { header: 'Rol de quien subió', key: 'rol' },
+            { header: 'Fecha de subida', key: 'fechaSubida', tipo: 'fecha' },
+          ],
+          filas: evidencias.map((e) => ({
+            idEvidencia: e.idEvidencia,
+            nombreArchivo: e.nombreArchivo,
+            tipoArchivo: e.tipoArchivo,
+            urlArchivo: e.urlArchivo,
+            codigoEmpleado: e.empleado.codigoEmpleado,
+            trabajador: `${e.empleado.nombres} ${e.empleado.apellidos}`,
+            documento: e.empleado.documento,
+            empresa: e.empleado.empresaEmpleadora?.nombreEmpresa,
+            sustenta:
+              e.tipo === 'OBJETIVO'
+                ? 'Objetivos'
+                : e.tipo === 'COMPETENCIA'
+                  ? 'Competencia'
+                  : 'Sin asociar',
+            competencia: e.evaluacion?.competencia.titulo,
+            periodo: e.evaluacion?.periodoEvaluacion,
+            subidoPor: e.subidoPor?.nombre,
+            rol: e.subidoPor?.rol,
+            fechaSubida: e.fechaSubida,
+          })),
+        },
+      ]);
+    } catch (error) {
+      this.logger.error('Error al exportar evidencias', error);
       handlePrismaError(error, 'evidencia');
     }
   }

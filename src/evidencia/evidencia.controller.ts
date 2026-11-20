@@ -11,7 +11,10 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { enviarExcel } from 'src/common/excel/libro-excel';
 
 import {
   ApiTags,
@@ -82,6 +85,16 @@ export class EvidenciaController {
       message: 'Lista de evidencias',
       data: resp,
     };
+  }
+
+  @Get('export/excel')
+  @ApiOperation({ summary: 'Exportar evidencias (mismos filtros y alcance por rol que el listado)' })
+  async exportExcel(
+    @User() user: AuthUser,
+    @Query() query: EvidenciaQueryDto,
+    @Res() res: Response,
+  ) {
+    enviarExcel(res, await this.service.exportExcel(user, query), 'evidencias');
   }
 
   @Get('/empleado/:idEmpleado')
