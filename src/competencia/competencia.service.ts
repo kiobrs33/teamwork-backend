@@ -19,8 +19,25 @@ import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 import { CompetenciaQueryDto } from './dto/competencia-query.dto';
+import { ExportEmpresaQueryDto } from './dto/export-empresa-query.dto';
 import { Prisma } from '@prisma/client';
 import { styleText } from 'util';
+import {
+  calcularResultados,
+  calificacionValida,
+  CALIFICACION_MAXIMA_MANUAL,
+  OPCIONES_LIKERT,
+  filtroEvaluacionesVigentes,
+  normalizarPeriodo as normalizarPeriodoCompartido,
+  notaDeEvaluacion,
+  notasVacias,
+  origenDeEvaluacion,
+  redondear,
+  resultadoDeCompetenciasAsignadas,
+  resultadoDeObjetivo,
+  type ConfiguracionEmpresa,
+  type NotasDeEvaluado,
+} from 'src/common/resultados/resultados-evaluacion';
 
 @Injectable()
 export class CompetenciaService {
@@ -273,8 +290,7 @@ export class CompetenciaService {
             const itemTieneHistorial = itemActual
               ? await tx.evaluacionCompetenciaItem.count({
                   where: {
-                    idCompetenciaNivelItem:
-                      itemActual.idCompetenciaNivelItem,
+                    idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
                   },
                 })
               : 0;
@@ -304,12 +320,39 @@ export class CompetenciaService {
                 },
               });
 
-              await tx.competenciaNivelItem.create({
+              const reemplazo = await tx.competenciaNivelItem.create({
                 data: {
                   idCompetenciaNivel: nivel.idCompetenciaNivel,
                   enunciado: itemDto.enunciado,
                   secuencial,
                   creadoPorId: user.idUsuario,
+                },
+              });
+
+              // Las evaluaciones que siguen en PROCESO tienen que apuntar al
+              // ítem nuevo. Si se quedan con el que acabamos de dar de baja,
+              // su avance ya no cierra nunca: el progreso solo cuenta ítems
+              // vigentes del nivel, así que la evaluación queda congelada en
+              // "0 de N" sin ninguna forma de terminarla desde la interfaz.
+              // Se conserva la calificación y se actualiza el enunciado, que
+              // es el texto que el evaluador está viendo ahora.
+              //
+              // Las CERRADAS y ANULADAS no se tocan a propósito: para eso
+              // existe el snapshot `textoItemEvaluado`.
+              await tx.evaluacionCompetenciaItem.updateMany({
+                where: {
+                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
+                  estado: true,
+                  evaluacion: {
+                    estado: true,
+                    estadoEvaluacion: 'PROCESO',
+                  },
+                },
+                data: {
+                  idCompetenciaNivelItem: reemplazo.idCompetenciaNivelItem,
+                  textoItemEvaluado: itemDto.enunciado,
+                  actualizadoPorId: user.idUsuario,
+                  fechaModificacion,
                 },
               });
             } else if (itemActual) {
@@ -348,6 +391,14 @@ export class CompetenciaService {
               fechaModificacion,
             },
           });
+
+          // Editar el nivel en plena campaña dejaba a las evaluaciones ya
+          // abiertas con la lista de ítems vieja.
+          await this.sincronizarItemsDeNivel(
+            tx,
+            user,
+            nivel.idCompetenciaNivel,
+          );
         }
 
         await tx.competenciaNivel.updateMany({
@@ -388,19 +439,56 @@ export class CompetenciaService {
         throw new NotFoundException(`Competencia con ID ${id} no encontrada.`);
       }
 
-      return await this.prisma.competencia.update({
-        where: { idCompetencia: id },
-        data: {
-          estado: false,
+      // Dar de baja solo la competencia y sus niveles dejaba la eliminación a
+      // medias: los ítems seguían activos, la asignación por unidad ocupacional
+      // seguía en pie —así que la competencia borrada continuaba apareciendo
+      // como pendiente para todo el que ocupara esa unidad— y las evaluaciones
+      // abiertas seguían promediando en el Excel de resultados.
+      return await this.prisma.$transaction(async (tx) => {
+        const fechaModificacion = new Date();
+        const auditoria = {
           actualizadoPorId: user.idUsuario,
-          fechaModificacion: new Date(),
-          niveles: {
-            updateMany: {
-              where: { idCompetencia: id },
-              data: { estado: false },
+          fechaModificacion,
+        };
+
+        const niveles = await tx.competenciaNivel.findMany({
+          where: { idCompetencia: id },
+          select: { idCompetenciaNivel: true },
+        });
+
+        await tx.competenciaNivelItem.updateMany({
+          where: {
+            idCompetenciaNivel: {
+              in: niveles.map((n) => n.idCompetenciaNivel),
             },
           },
-        },
+          data: { estado: false, ...auditoria },
+        });
+
+        await tx.competenciaNivel.updateMany({
+          where: { idCompetencia: id },
+          data: { estado: false, ...auditoria },
+        });
+
+        // Esta tabla no tiene soft delete, así que la asignación se borra.
+        await tx.unidadOcupacionalCompetenciaNivel.deleteMany({
+          where: { idCompetencia: id },
+        });
+
+        // Nadie puede terminar de calificar una competencia que ya no existe.
+        await tx.evaluacionCompetencia.updateMany({
+          where: {
+            idCompetencia: id,
+            estado: true,
+            estadoEvaluacion: 'PROCESO',
+          },
+          data: { estadoEvaluacion: 'ANULADA', ...auditoria },
+        });
+
+        return await tx.competencia.update({
+          where: { idCompetencia: id },
+          data: { estado: false, ...auditoria },
+        });
       });
     } catch (error) {
       this.logger.error(`Error al eliminar competencia con ID ${id}:`, error);
@@ -523,28 +611,188 @@ export class CompetenciaService {
   // PATCH /evaluaciones/:id/anular
 
   // ======================================================
+  //          SINCRONIZAR ÍTEMS DE EVALUACIONES ABIERTAS
+  // ======================================================
+  /**
+   * Alinea las evaluaciones en PROCESO de un nivel con sus ítems vigentes.
+   *
+   * El enunciado se congela en `textoItemEvaluado` para que editar el catálogo
+   * no reescriba evaluaciones antiguas, pero la lista de "lo que falta por
+   * calificar" se arma contra los ítems vigentes del nivel. Cuando el nivel
+   * gana o pierde un ítem en plena campaña, las evaluaciones ya abiertas se
+   * quedan con la foto vieja y el avance deja de cuadrar: o piden calificar
+   * algo que ya no existe, o nunca llegan al 100 % porque les falta un ítem
+   * que nunca se les creó.
+   *
+   * Solo toca evaluaciones en PROCESO y nunca borra calificaciones puestas.
+   */
+  private async sincronizarItemsDeNivel(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    idCompetenciaNivel: number,
+  ) {
+    const evaluaciones = await tx.evaluacionCompetencia.findMany({
+      where: {
+        idCompetenciaNivel,
+        estado: true,
+        estadoEvaluacion: 'PROCESO',
+      },
+      select: {
+        idEvaluacionCompetencia: true,
+        itemsEvaluados: {
+          where: { estado: true },
+          select: { idCompetenciaNivelItem: true },
+        },
+      },
+    });
+
+    if (evaluaciones.length === 0) return;
+
+    const itemsVigentes = await tx.competenciaNivelItem.findMany({
+      where: { idCompetenciaNivel, estado: true },
+      select: { idCompetenciaNivelItem: true, enunciado: true },
+      orderBy: { secuencial: 'asc' },
+    });
+
+    const idsEvaluaciones = evaluaciones.map((e) => e.idEvaluacionCompetencia);
+    const idsVigentes = itemsVigentes.map((i) => i.idCompetenciaNivelItem);
+    const fechaModificacion = new Date();
+
+    // 1) Fuera lo que el nivel ya no tiene. Si el nivel se quedó sin ítems
+    // vigentes no hay ninguno que conservar, y el filtro se omite en vez de
+    // depender de cómo interpreta Prisma un `notIn` vacío.
+    await tx.evaluacionCompetenciaItem.updateMany({
+      where: {
+        idEvaluacionCompetencia: { in: idsEvaluaciones },
+        estado: true,
+        ...(idsVigentes.length > 0 && {
+          idCompetenciaNivelItem: { notIn: idsVigentes },
+        }),
+      },
+      data: {
+        estado: false,
+        actualizadoPorId: user.idUsuario,
+        fechaModificacion,
+      },
+    });
+
+    // 2) Y dentro lo que se agregó después de abrir la evaluación.
+    const faltantes = evaluaciones.flatMap((ev) => {
+      const yaTiene = new Set(
+        ev.itemsEvaluados.map((i) => i.idCompetenciaNivelItem),
+      );
+
+      return itemsVigentes
+        .filter((item) => !yaTiene.has(item.idCompetenciaNivelItem))
+        .map((item) => ({
+          idEvaluacionCompetencia: ev.idEvaluacionCompetencia,
+          idCompetenciaNivelItem: item.idCompetenciaNivelItem,
+          textoItemEvaluado: item.enunciado,
+          calificacion: null,
+          creadoPorId: user.idUsuario,
+        }));
+    });
+
+    if (faltantes.length > 0) {
+      await tx.evaluacionCompetenciaItem.createMany({ data: faltantes });
+    }
+  }
+
+  /**
+   * Recorta un periodo a "YYYY-MM".
+   *
+   * `EmpresaEmpleadora.periodoEvaluacion` se guarda como "YYYY-MM" y el DTO lo
+   * valida así, pero quedan filas antiguas con el ISO completo
+   * ("2026-09-04T05:00:00.000Z"). Las dos formas no coinciden comparadas como
+   * texto, así que el periodo se normaliza SIEMPRE antes de guardarlo en una
+   * evaluación o de filtrar por él: si no, editar y guardar una empresa vieja
+   * cambiaría su periodo a la forma corta y sus evaluaciones abiertas —
+   * estampadas con la forma larga — dejarían de encontrarse, se crearían
+   * nuevas y las notas quedarían huérfanas.
+   */
+  private normalizarPeriodo(periodo?: string | null): string | null {
+    return normalizarPeriodoCompartido(periodo);
+  }
+
+
+  /**
+   * Periodo de campaña ("YYYY-MM") que le corresponde a un evaluado, tomado de
+   * la empresa a la que pertenece. Es lo que separa una campaña de la
+   * siguiente en `EvaluacionCompetencia`.
+   */
+  private async periodoDeEvaluado(idEvaluado?: number | null) {
+    if (!idEvaluado) return null;
+
+    const empleado = await this.prisma.empleado.findFirst({
+      where: { idEmpleado: idEvaluado },
+      select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+    });
+
+    return this.normalizarPeriodo(
+      empleado?.empresaEmpleadora?.periodoEvaluacion,
+    );
+  }
+
+  // ======================================================
   //                  INICIAR EVALUACIÓN
   // ======================================================
   async iniciarEvaluacion(user: AuthUser, dto: IniciarEvaluacionDto) {
     const { idEvaluado, idEvaluador, idCompetencia, idCompetenciaNivel } = dto;
 
     try {
-      // 1) Buscar una evaluación en PROCESO
+      const periodoEvaluacion = await this.periodoDeEvaluado(idEvaluado);
+
+      // 1) Buscar una evaluación en PROCESO **de esta campaña**.
+      //
+      // Antes se buscaba sin periodo: al abrir la campaña siguiente aparecía
+      // la evaluación del periodo anterior y el evaluador terminaba
+      // sobrescribiendo sus calificaciones.
       let evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
         where: {
           idEvaluado,
           idEvaluador,
           idCompetencia,
-          idCompetenciaNivel,
+          periodoEvaluacion,
           estadoEvaluacion: 'PROCESO',
           estado: true,
         },
         include: {
-          itemsEvaluados: { include: { item: true } },
+          itemsEvaluados: {
+            // Sin este filtro volverían los ítems dados de baja al
+            // sincronizar el nivel, y la pantalla los pintaría como
+            // filas por calificar.
+            where: { estado: true },
+            include: { item: true },
+            orderBy: { idEvaluacionCompetenciaItem: 'asc' },
+          },
         },
       });
 
-      if (evaluacion) return evaluacion;
+      if (evaluacion) {
+        // El nivel asignado a la unidad ocupacional puede haber cambiado desde
+        // que se abrió. Reutilizar la evaluación del nivel viejo mezclaría dos
+        // niveles en el mismo periodo, así que se anula y se abre una nueva.
+        if (evaluacion.idCompetenciaNivel !== idCompetenciaNivel) {
+          await this.prisma.evaluacionCompetencia.update({
+            where: {
+              idEvaluacionCompetencia: evaluacion.idEvaluacionCompetencia,
+            },
+            data: {
+              estadoEvaluacion: 'ANULADA',
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion: new Date(),
+            },
+          });
+        } else {
+          const idNivel = evaluacion.idCompetenciaNivel;
+
+          await this.prisma.$transaction((tx) =>
+            this.sincronizarItemsDeNivel(tx, user, idNivel),
+          );
+
+          return this.obtenerEvaluacion(evaluacion.idEvaluacionCompetencia);
+        }
+      }
 
       // 2) Validar que el nivel pertenece a la competencia
       const nivel = await this.prisma.competenciaNivel.findFirst({
@@ -567,11 +815,18 @@ export class CompetenciaService {
           idEvaluador,
           idCompetencia,
           idCompetenciaNivel,
+          periodoEvaluacion,
           estadoEvaluacion: 'PROCESO',
           creadoPorId: user.idUsuario,
         },
+        // El include mantiene el tipo de `evaluacion` igual al de la búsqueda
+        // de arriba; recién creada no tiene ítems todavía.
         include: {
-          itemsEvaluados: { include: { item: true } },
+          itemsEvaluados: {
+            where: { estado: true },
+            include: { item: true },
+            orderBy: { idEvaluacionCompetenciaItem: 'asc' },
+          },
         },
       });
 
@@ -613,7 +868,14 @@ export class CompetenciaService {
         evaluador: true,
         competencia: true,
         nivel: true,
-        itemsEvaluados: { include: { item: true } },
+        itemsEvaluados: {
+          // Sin este filtro volverían los ítems dados de baja al
+          // sincronizar el nivel, y la pantalla los pintaría como
+          // filas por calificar.
+          where: { estado: true },
+          include: { item: true },
+          orderBy: { idEvaluacionCompetenciaItem: 'asc' },
+        },
       },
     });
 
@@ -642,6 +904,58 @@ export class CompetenciaService {
       );
     }
 
+    // La escala la fija la empresa del evaluado, y hasta ahora nadie la
+    // comprobaba: por la API entraban un 9999 o un -500 y se guardaban tal
+    // cual, arrastrando el promedio de la competencia entera.
+    const empresaDelEvaluado = evaluacion.idEvaluado
+      ? await this.prisma.empleado.findUnique({
+          where: { idEmpleado: evaluacion.idEvaluado },
+          select: {
+            empresaEmpleadora: {
+              select: { tipoCalificacionCompetencia: true },
+            },
+          },
+        })
+      : null;
+
+    const tipoCalificacion =
+      empresaDelEvaluado?.empresaEmpleadora?.tipoCalificacionCompetencia;
+
+    const fueraDeEscala = (dto.items ?? []).filter(
+      (i) => !calificacionValida(i.calificacion, tipoCalificacion),
+    );
+
+    if (fueraDeEscala.length > 0) {
+      throw new BadRequestException(
+        tipoCalificacion === 'LIKERT'
+          ? `Con la escala LIKERT la calificación solo puede ser ${OPCIONES_LIKERT.join(', ')}.`
+          : `La calificación debe estar entre 0 y ${CALIFICACION_MAXIMA_MANUAL}.`,
+      );
+    }
+
+    // Los ítems llegan identificados por su id suelto, sin nada que los ate a
+    // la evaluación de la URL: mandando ids ajenos se calificaba la evaluación
+    // de cualquier otro trabajador.
+    const items = dto.items ?? [];
+    const idsEnviados = new Set(
+      items.map((it) => it.idEvaluacionCompetenciaItem),
+    );
+
+    if (idsEnviados.size > 0) {
+      const propios = await this.prisma.evaluacionCompetenciaItem.count({
+        where: {
+          idEvaluacionCompetenciaItem: { in: [...idsEnviados] },
+          idEvaluacionCompetencia: idEvaluacion,
+        },
+      });
+
+      if (propios !== idsEnviados.size) {
+        throw new BadRequestException(
+          'Alguno de los ítems enviados no pertenece a esta evaluación.',
+        );
+      }
+    }
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         // 1) Actualizar comentario general si existe
@@ -656,11 +970,18 @@ export class CompetenciaService {
           });
         }
 
-        // 2) Actualizar calificación por ítem
-        for (const it of dto.items) {
-          await tx.evaluacionCompetenciaItem.update({
+        // 2) Actualizar calificación por ítem.
+        //
+        // `updateMany` con la evaluación en el `where` en vez de `update` por
+        // id: así el ítem no se puede calificar desde otra evaluación ni
+        // revivir uno dado de baja porque el nivel cambió mientras la pantalla
+        // estaba abierta. Lo que ya no está vigente simplemente no se escribe.
+        for (const it of items) {
+          await tx.evaluacionCompetenciaItem.updateMany({
             where: {
               idEvaluacionCompetenciaItem: it.idEvaluacionCompetenciaItem,
+              idEvaluacionCompetencia: idEvaluacion,
+              estado: true,
             },
             data: {
               calificacion: it.calificacion,
@@ -678,7 +999,14 @@ export class CompetenciaService {
             evaluador: true,
             competencia: true,
             nivel: true,
-            itemsEvaluados: { include: { item: true } },
+            itemsEvaluados: {
+              // Sin este filtro volverían los ítems dados de baja al
+              // sincronizar el nivel, y la pantalla los pintaría como
+              // filas por calificar.
+              where: { estado: true },
+              include: { item: true },
+              orderBy: { idEvaluacionCompetenciaItem: 'asc' },
+            },
           },
         });
       });
@@ -772,6 +1100,10 @@ export class CompetenciaService {
           },
         },
         itemsEvaluados: {
+          // Los ítems dados de baja (porque el nivel cambió durante la
+          // campaña) inflaban el total y la evaluación no llegaba nunca a
+          // aparecer como completa.
+          where: { estado: true },
           select: {
             calificacion: true,
           },
@@ -792,11 +1124,17 @@ export class CompetenciaService {
       if (!ev.evaluado) continue;
 
       const totalItems = ev.itemsEvaluados.length;
+      // `null` es SIN CALIFICAR; 0 es una calificación real. El criterio
+      // anterior (`> 0`) contaba un 0 como pendiente.
       const itemsCalificados = ev.itemsEvaluados.filter(
-        (i) => i.calificacion !== null && i.calificacion > 0,
+        (i) => i.calificacion !== null,
       ).length;
 
-      const nivelCalificado = itemsCalificados > 0;
+      // "Calificada" es la evaluación completa, no la que tiene un ítem
+      // suelto: con el criterio anterior bastaba una nota para que la pantalla
+      // la diera por terminada. Es el mismo criterio que el indicador de
+      // avance del jefe.
+      const nivelCalificado = totalItems > 0 && itemsCalificados === totalItems;
 
       // Tipo de evaluador
       let tipoEvaluador = 'SIN EVALUADOR';
@@ -878,90 +1216,68 @@ export class CompetenciaService {
   // 🔹 UTILIDAD DE REDONDEO GLOBAL
   // ===============================
   private round(num: number, decimals = 2): number {
-    const factor = Math.pow(10, decimals);
-    return Math.round((num + Number.EPSILON) * factor) / factor;
+    return redondear(num, decimals);
   }
 
   // ===============================
   // 🔹 CÁLCULO DE RESULTADOS
   // ===============================
+  /**
+   * Conservado como puerta de entrada del Excel; la regla vive en
+   * `src/common/resultados`, que es de donde la lee también el PDF individual.
+   */
   public calcularResultadosEmpleadoDesdeAgrupado(
-    empresa: any,
-    emp: {
-      autoEvaluaciones: number[];
-      evaluacionesJefe: number[];
-      evaluacionesSubordinados: number[];
-      objetivos: number[];
-    },
-    decimals = 4, // 👈 TODO: cambiar a 3,4,5 si quieres
+    empresa: ConfiguracionEmpresa,
+    emp: NotasDeEvaluado,
   ) {
-    const avg = (arr: number[]) =>
-      arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    return calcularResultados(empresa, emp);
+  }
 
-    const jefePeso = (empresa.porcentajeEvaluacionJefeCompetencia ?? 0) / 100;
-    const subordinadoPeso =
-      (empresa.porcentajeEvaluacionSubordinadoCompetencia ?? 0) / 100;
-    const competenciaPeso = (empresa.porcentajeCompetecias ?? 0) / 100;
-    const objetivoPeso = (empresa.porcentajeObjetivos ?? 0) / 100;
 
-    // ===============================
-    // 🔹 PROMEDIOS (REDONDEADOS)
-    // ===============================
-    const promedioAuto = this.round(avg(emp.autoEvaluaciones), decimals);
-    const promedioJefe = this.round(avg(emp.evaluacionesJefe), decimals);
-    const promedioSubordinados = this.round(
-      avg(emp.evaluacionesSubordinados),
-      decimals,
-    );
-
-    let resultadoCompetencias = 0;
-
-    // ===============================
-    // 🔹 MODELOS
-    // ===============================
-    if (empresa.modeloEmpresa === '90') {
-      resultadoCompetencias = promedioJefe;
-    }
-
-    if (empresa.modeloEmpresa === '180') {
-      const tieneSub = emp.evaluacionesSubordinados.length > 0;
-
-      if (!tieneSub) {
-        resultadoCompetencias = promedioJefe;
-      } else {
-        resultadoCompetencias = this.round(
-          promedioJefe * jefePeso + promedioSubordinados * subordinadoPeso,
-          decimals,
-        );
-      }
-    }
-
-    // ===============================
-    // 🔹 OBJETIVOS
-    // ===============================
-    const promedioObjetivos = this.round(avg(emp.objetivos), decimals);
-
-    // ===============================
-    // 🔹 RESULTADO FINAL
-    // ===============================
-    const resultadoFinal = this.round(
-      resultadoCompetencias * competenciaPeso +
-        promedioObjetivos * objetivoPeso,
-      decimals,
-    );
+  /**
+   * Filtro sobre el empleado que comparten los tres reportes Excel.
+   *
+   * Se aplica a la relación (`evaluado` en competencias, `empleado` en
+   * objetivos), así que se devuelve suelto para incrustarlo donde toque.
+   */
+  private filtroEmpleadoExport(
+    idEmpresaEmpleadora: number,
+    filtros: ExportEmpresaQueryDto = {},
+  ): Prisma.EmpleadoWhereInput {
+    const search = filtros.search?.trim();
 
     return {
-      promedioAuto,
-      promedioJefe,
-      promedioSubordinados,
-      resultadoCompetencias,
-      promedioObjetivos,
-      resultadoFinal,
+      idEmpresaEmpleadora,
+      estado: true,
+      ...(filtros.idGerenciaEmpleadora && {
+        idGerenciaEmpleadora: Number(filtros.idGerenciaEmpleadora),
+      }),
+      ...(filtros.idAreaEmpleadora && {
+        idAreaEmpleadora: Number(filtros.idAreaEmpleadora),
+      }),
+      ...(filtros.idUnidadOcupacionalEmpleadora && {
+        idUnidadOcupacionalEmpleadora: Number(
+          filtros.idUnidadOcupacionalEmpleadora,
+        ),
+      }),
+      ...(filtros.idPuestoEmpleadora && {
+        idPuestoEmpleadora: Number(filtros.idPuestoEmpleadora),
+      }),
+      ...(search && {
+        OR: [
+          { nombres: { contains: search, mode: 'insensitive' } },
+          { apellidos: { contains: search, mode: 'insensitive' } },
+          { codigoEmpleado: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
     };
   }
 
   // TODO: Resultados COMPETENCIAS + OBJETIVOS
-  async exportarResultadosEmpresaExcel(idEmpresaEmpleadora: number) {
+  async exportarResultadosEmpresaExcel(
+    idEmpresaEmpleadora: number,
+    filtros: ExportEmpresaQueryDto = {},
+  ) {
     const empresa = await this.prisma.empresaEmpleadora.findFirst({
       where: {
         idEmpresaEmpleadora,
@@ -976,13 +1292,17 @@ export class CompetenciaService {
     // ===============================
     // 1️⃣ OBTENER DATA
     // ===============================
+    const whereEmpleado = this.filtroEmpleadoExport(
+      idEmpresaEmpleadora,
+      filtros,
+    );
+
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
-        estado: true,
-        evaluado: {
-          idEmpresaEmpleadora,
-          estado: true,
-        },
+        ...filtroEvaluacionesVigentes(
+          filtros.periodoEvaluacion ?? empresa.periodoEvaluacion,
+        ),
+        evaluado: whereEmpleado,
       },
       include: {
         evaluado: {
@@ -992,12 +1312,14 @@ export class CompetenciaService {
             apellidos: true,
             codigoEmpleado: true,
             codigoEmpleadoJefe: true,
+            idUnidadOcupacionalEmpleadora: true,
           },
         },
         evaluador: {
           select: {
             idEmpleado: true,
             codigoEmpleado: true,
+            codigoEmpleadoJefe: true,
           },
         },
         itemsEvaluados: {
@@ -1010,10 +1332,7 @@ export class CompetenciaService {
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
         estado: true,
-        empleado: {
-          idEmpresaEmpleadora,
-          estado: true,
-        },
+        empleado: whereEmpleado,
       },
       include: {
         empleado: {
@@ -1022,6 +1341,7 @@ export class CompetenciaService {
             nombres: true,
             apellidos: true,
             codigoEmpleado: true,
+            idUnidadOcupacionalEmpleadora: true,
           },
         },
         objetivoDetalles: {
@@ -1045,87 +1365,72 @@ export class CompetenciaService {
       if (!empleados.has(ev.evaluado.idEmpleado)) {
         empleados.set(ev.evaluado.idEmpleado, {
           empleado: ev.evaluado,
-          evaluacionesJefe: [],
-          evaluacionesSubordinados: [],
-          autoEvaluaciones: [],
-          objetivos: [],
+          porCompetencia: new Map<number, NotasDeEvaluado>(),
+          ...notasVacias(),
         });
       }
 
       const emp = empleados.get(ev.evaluado.idEmpleado);
 
-      // =====================================
-      // FILTRAR NULL / UNDEFINED CALIFICACIONES
-      // =====================================
-      const calificaciones: number[] = [];
+      // `null` es sin evaluar: una evaluación abierta pero sin ninguna nota
+      // puesta no entra al promedio.
+      const nota = notaDeEvaluacion(ev.itemsEvaluados);
+      if (nota === null) continue;
 
-      for (const item of ev.itemsEvaluados) {
-        if (item.calificacion === null || item.calificacion === undefined) {
-          continue;
-        }
+      const origen = origenDeEvaluacion({
+        idEvaluado: ev.idEvaluado,
+        idEvaluador: ev.idEvaluador,
+        codigoEvaluado: ev.evaluado.codigoEmpleado,
+        codigoEvaluador: ev.evaluador?.codigoEmpleado,
+        codigoEmpleadoJefe: ev.evaluado.codigoEmpleadoJefe,
+        codigoJefeDelEvaluador: ev.evaluador?.codigoEmpleadoJefe,
+      });
 
-        calificaciones.push(item.calificacion);
+      // Ni evaluado, ni jefe, ni a su cargo: fuera del modelo, no puntúa.
+      if (origen === 'otro') continue;
+
+      if (origen === 'auto') emp.autoEvaluaciones.push(nota);
+      else if (origen === 'jefe') emp.evaluacionesJefe.push(nota);
+      else emp.evaluacionesSubordinados.push(nota);
+
+      // También por competencia: el resultado se promedia sobre las que tiene
+      // ASIGNADAS su unidad, contando 0 las que nadie evaluó. Igual que el PDF
+      // individual; promediando solo las evaluadas, evaluar una de cinco daba
+      // el mismo resultado que evaluarlas las cinco con esa nota.
+      if (!emp.porCompetencia.has(ev.idCompetencia)) {
+        emp.porCompetencia.set(ev.idCompetencia, notasVacias());
       }
 
-      if (calificaciones.length === 0) {
-        continue;
-      }
+      const deCompetencia = emp.porCompetencia.get(ev.idCompetencia);
 
-      const promedioEvaluacion =
-        calificaciones.reduce((a, b) => a + b, 0) / calificaciones.length;
-
-      // =====================================
-      // AUTOEVALUACIÓN
-      // =====================================
-      if (ev.idEvaluador === ev.idEvaluado) {
-        emp.autoEvaluaciones.push(promedioEvaluacion);
-        continue;
-      }
-
-      // =====================================
-      // IDENTIFICAR JEFE
-      // =====================================
-      const codigoJefe = ev.evaluado.codigoEmpleadoJefe;
-
-      if (
-        codigoJefe &&
-        ev.evaluador &&
-        ev.evaluador.codigoEmpleado === codigoJefe
-      ) {
-        emp.evaluacionesJefe.push(promedioEvaluacion);
-        continue;
-      }
-
-      // =====================================
-      // SUBORDINADOS
-      // =====================================
-      emp.evaluacionesSubordinados.push(promedioEvaluacion);
+      if (origen === 'auto') deCompetencia.autoEvaluaciones.push(nota);
+      else if (origen === 'jefe') deCompetencia.evaluacionesJefe.push(nota);
+      else deCompetencia.evaluacionesSubordinados.push(nota);
     }
 
     // ===============================
     // 3️⃣ OBJETIVOS
     // ===============================
     for (const obj of objetivos) {
-      const emp = empleados.get(obj.empleado.idEmpleado);
-      if (!emp) continue;
-
-      let totalPeso = 0;
-      let acumulado = 0;
-
-      for (const det of obj.objetivoDetalles) {
-        if (
-          det.porcentajeLogrado === null ||
-          det.porcentajeLogrado === undefined
-        )
-          continue;
-
-        acumulado += det.porcentajeLogrado * det.pesoEspecifico;
-        totalPeso += det.pesoEspecifico;
+      // Quien tiene objetivos pero ninguna evaluación de competencias vigente
+      // no estaba en el mapa —se llenaba solo recorriendo evaluaciones— y se
+      // caía del reporte entero, con sus objetivos calificados y todo.
+      if (!empleados.has(obj.empleado.idEmpleado)) {
+        empleados.set(obj.empleado.idEmpleado, {
+          empleado: obj.empleado,
+          porCompetencia: new Map<number, NotasDeEvaluado>(),
+          ...notasVacias(),
+        });
       }
 
-      const porcentajeObjetivo = totalPeso > 0 ? acumulado / totalPeso : 0;
+      const emp = empleados.get(obj.empleado.idEmpleado);
 
-      emp.objetivos.push(porcentajeObjetivo);
+      // `null` cuando ninguno de sus detalles está calificado: antes entraba
+      // como un 0 y hundía el promedio de quien no tenía nada puesto todavía.
+      const resultado = resultadoDeObjetivo(obj.objetivoDetalles);
+      if (resultado === null) continue;
+
+      emp.objetivos.push(resultado);
     }
 
     // ===============================
@@ -1147,13 +1452,22 @@ export class CompetenciaService {
       { header: 'Código', key: 'codigo', width: 15 },
       { header: 'Empleado', key: 'empleado', width: 35 },
       { header: 'Autoevaluación', key: 'auto', width: 20 },
+      // En 90° el reparto jefe/subordinado no se aplica: la nota del jefe vale
+      // el 100 %. Imprimir "Evaluacion Jefe 60 %" ahí era una cifra falsa en
+      // un reporte que alguien usa para decidir.
       {
-        header: `Competencia Evaluacion Jefe ${jefePeso * 100} %`,
+        header:
+          empresa.modeloEmpresa === '180'
+            ? `Competencia Evaluacion Jefe ${jefePeso * 100} %`
+            : 'Competencia Evaluacion Jefe 100 %',
         key: 'jefe',
         width: 35,
       },
       {
-        header: `Competencia Evaluacion Subordinados ${subordinadoPeso * 100} %`,
+        header:
+          empresa.modeloEmpresa === '180'
+            ? `Competencia Evaluacion Subordinados ${subordinadoPeso * 100} %`
+            : 'Competencia Evaluacion Subordinados (no aplica en 90°)',
         key: 'subordinados',
         width: 40,
       },
@@ -1168,23 +1482,110 @@ export class CompetenciaService {
         width: 20,
       },
       { header: 'Resultado Final', key: 'final', width: 20 },
+      { header: 'Observación', key: 'observacion', width: 45 },
     ];
 
     // ===============================
     // RESULTADOS
     // ===============================
+    // Las competencias que le tocan a cada quien salen de su unidad
+    // ocupacional. Una consulta para todas las unidades en juego, no una por
+    // trabajador.
+    const unidades = [
+      ...new Set(
+        [...empleados.values()]
+          .map((e) => e.empleado.idUnidadOcupacionalEmpleadora)
+          .filter((id): id is number => !!id),
+      ),
+    ];
+
+    const asignadas = await this.prisma.unidadOcupacionalCompetenciaNivel.findMany(
+      {
+        where: {
+          idUnidadOcupacionalEmpleadora: { in: unidades },
+          competencia: { estado: true },
+          competenciaNivel: { estado: true },
+        },
+        select: {
+          idUnidadOcupacionalEmpleadora: true,
+          idCompetencia: true,
+        },
+      },
+    );
+
+    const competenciasPorUnidad = new Map<number, number[]>();
+
+    for (const a of asignadas) {
+      const lista =
+        competenciasPorUnidad.get(a.idUnidadOcupacionalEmpleadora) ?? [];
+      lista.push(a.idCompetencia);
+      competenciasPorUnidad.set(a.idUnidadOcupacionalEmpleadora, lista);
+    }
+
     for (const emp of empleados.values()) {
-      const r = this.calcularResultadosEmpleadoDesdeAgrupado(empresa, emp);
+      const base = this.calcularResultadosEmpleadoDesdeAgrupado(empresa, emp);
+
+      // Mismo criterio que el PDF individual: se promedia sobre las asignadas,
+      // contando 0 las que nadie evaluó.
+      const deAsignadas = resultadoDeCompetenciasAsignadas(
+        empresa,
+        competenciasPorUnidad.get(
+          emp.empleado.idUnidadOcupacionalEmpleadora,
+        ) ?? [],
+        emp.porCompetencia,
+      );
+
+      const r = {
+        ...base,
+        resultadoCompetencias: deAsignadas.resultado,
+        competenciasSinEvaluar: deAsignadas.sinEvaluar,
+        resultadoFinal: redondear(
+          deAsignadas.resultado * (empresa.porcentajeCompetecias ?? 80) / 100 +
+            base.promedioObjetivos *
+              ((empresa.porcentajeObjetivos ?? 20) / 100),
+          2,
+        ),
+      };
+
+      r.sinEvaluar = r.competenciasSinEvaluar && r.objetivosSinEvaluar;
+
+      // Celda vacía, no 0, cuando no hay nada evaluado. En una hoja de cálculo
+      // el vacío es "sin dato" y el 0 es un cero: escribir 0 hacía que alguien
+      // con la evaluación abierta y sin notas apareciera como un suspenso, y
+      // además falseaba cualquier promedio hecho sobre la columna. Es lo mismo
+      // que el PDF resuelve escribiendo "Sin evaluar".
+      const oVacio = (valor: number, sinEvaluar: boolean) =>
+        sinEvaluar ? null : valor;
+
+      // Una competencia asignada y sin evaluar vale 0 y ese 0 cuenta, así que
+      // la celda lleva el número. Lo que no se puede es dejarlo sin explicar:
+      // la columna de observación dice por qué es 0, que es lo que separa "le
+      // pusieron cero" de "nadie lo evaluó".
+      const observaciones: string[] = [];
+
+      if (deAsignadas.asignadas === 0) {
+        observaciones.push('Su unidad no tiene competencias asignadas');
+      } else if (deAsignadas.ningunaEvaluada) {
+        observaciones.push(
+          `${deAsignadas.asignadas} competencias sin evaluar, cuentan como 0`,
+        );
+      }
+
+      if (r.objetivosSinEvaluar) observaciones.push('Objetivos sin evaluar');
 
       sheet.addRow({
         codigo: emp.empleado.codigoEmpleado,
         empleado: `${emp.empleado.nombres} ${emp.empleado.apellidos}`,
-        auto: r.promedioAuto,
-        jefe: r.promedioJefe,
-        subordinados: r.promedioSubordinados,
-        competencias: r.resultadoCompetencias,
-        objetivos: r.promedioObjetivos,
-        final: r.resultadoFinal,
+        auto: oVacio(r.promedioAuto, r.competenciasSinEvaluar),
+        jefe: oVacio(r.promedioJefe, r.competenciasSinEvaluar),
+        subordinados: oVacio(r.promedioSubordinados, r.competenciasSinEvaluar),
+        // Mismo criterio que el PDF: el 0 de una competencia sin evaluar se
+        // enseña —la observación explica por qué— y solo se deja en blanco a
+        // quien no tiene absolutamente nada evaluado.
+        competencias: oVacio(r.resultadoCompetencias, r.sinEvaluar),
+        objetivos: oVacio(r.promedioObjetivos, r.objetivosSinEvaluar),
+        final: oVacio(r.resultadoFinal, r.sinEvaluar),
+        observacion: observaciones.join(' · '),
       });
     }
 
@@ -1193,15 +1594,30 @@ export class CompetenciaService {
 
   // Competencias
 
-  async exportarCompetenciasPorEmpresaExcel(idEmpresaEmpleadora: number) {
+  async exportarCompetenciasPorEmpresaExcel(
+    idEmpresaEmpleadora: number,
+    filtros: ExportEmpresaQueryDto = {},
+  ) {
+    const empresa = await this.prisma.empresaEmpleadora.findFirst({
+      where: { idEmpresaEmpleadora, estado: true },
+      select: { periodoEvaluacion: true },
+    });
+
+    if (!empresa) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
         estado: true, // evaluación activa
+        // Ambos criterios, igual que en el export de resultados: las anuladas
+        // no cuentan y solo se exporta la campaña pedida.
+        estadoEvaluacion: { not: 'ANULADA' },
+        periodoEvaluacion: this.normalizarPeriodo(
+          filtros.periodoEvaluacion ?? empresa.periodoEvaluacion,
+        ),
         evaluado: {
-          is: {
-            estado: true, // 👈 empleado activo
-            idEmpresaEmpleadora,
-          },
+          is: this.filtroEmpleadoExport(idEmpresaEmpleadora, filtros),
         },
         competencia: {
           estado: true,
@@ -1240,8 +1656,6 @@ export class CompetenciaService {
         { competencia: { nombre: 'asc' } },
       ],
     });
-
-    console.log('COMPETENCIAS', evaluaciones);
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Competencias');
@@ -1322,13 +1736,14 @@ export class CompetenciaService {
     return workbook;
   }
 
-  async exportarObjetivosPorEmpresaExcel(idEmpresaEmpleadora: number) {
+  async exportarObjetivosPorEmpresaExcel(
+    idEmpresaEmpleadora: number,
+    filtros: ExportEmpresaQueryDto = {},
+  ) {
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
         estado: true,
-        empleado: {
-          idEmpresaEmpleadora,
-        },
+        empleado: this.filtroEmpleadoExport(idEmpresaEmpleadora, filtros),
       },
       include: {
         empleado: {
@@ -1359,8 +1774,6 @@ export class CompetenciaService {
       ),
     ];
 
-    console.log('CODIGOS JEFE', codigosJefe);
-
     /* ===============================
      2. Buscar empleados evaluadores
      =============================== */
@@ -1375,16 +1788,12 @@ export class CompetenciaService {
       },
     });
 
-    console.log('JEFES', jefes);
-
     /* ===============================
      3. Crear mapa de evaluadores
      =============================== */
     const evaluadorMap = new Map(
       jefes.map((j) => [j.codigoEmpleado, `${j.nombres} ${j.apellidos}`]),
     );
-
-    console.log('EVALUDOR MAP', evaluadorMap);
 
     /* ===============================
      4. Excel

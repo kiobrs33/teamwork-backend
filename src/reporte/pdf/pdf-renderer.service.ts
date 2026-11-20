@@ -90,27 +90,53 @@ export class PdfRendererService implements OnModuleInit {
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
-    const page = await browser.newPage();
+    // `finally` y no una llamada suelta al final: si algo falla entre medias,
+    // el navegador se quedaba abierto. Dos informes fallidos dejaron 49
+    // procesos de Chromium vivos en la máquina.
+    try {
+      const page = await browser.newPage();
 
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+      // `domcontentloaded` y no `networkidle0`: el `networkidle0` espera
+      // también a las imágenes, y el logo de la empresa es una URL externa.
+      // Con una que no responde —pasó con el `loremflickr` de los datos de
+      // prueba— Puppeteer agotaba sus 30 s por defecto y el informe entero
+      // respondía un 500. Los `<script>` del CDN sí bloquean
+      // `domcontentloaded`, así que Chart.js ya está cargado en este punto.
+      await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
-    // await new Promise((resolve) => setTimeout(resolve, 2000)); prod
+      // Lo que de verdad hay que esperar: que Chart.js haya pintado. Con
+      // `animation: false` es inmediato, pero el margen cubre una máquina
+      // lenta. Un informe "sin evaluar" no monta ningún canvas.
+      await page
+        .waitForFunction(
+          () => {
+            const canvas = Array.from(document.querySelectorAll('canvas'));
+            return (
+              canvas.length === 0 ||
+              canvas.every((c) => c.toDataURL().length > 5000)
+            );
+          },
+          { timeout: 15000 },
+        )
+        .catch(() => undefined);
 
-    await page.waitForSelector('canvas');
+      // Las imágenes van aparte y con poco margen: si el logo no carga, el
+      // informe sale sin logo, que es mucho mejor que no salir.
+      await page
+        .waitForFunction(
+          () => Array.from(document.images).every((img) => img.complete),
+          { timeout: 5000 },
+        )
+        .catch(() => undefined);
 
-    // 🔥 CLAVE: esperar a que Chart.js pinte el canvas
-    // await page.waitForFunction(() => {
-    //   const canvas = document.querySelector('canvas');
-    //   return canvas && canvas.toDataURL().length > 1000;
-    // });
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+      });
 
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-    });
-
-    await browser.close();
-
-    return Buffer.from(pdf);
+      return Buffer.from(pdf);
+    } finally {
+      await browser.close();
+    }
   }
 }

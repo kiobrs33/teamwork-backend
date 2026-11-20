@@ -309,6 +309,12 @@ model EvaluacionCompetencia {
   // Nivel de la competencia asignado por la unidad
   idCompetenciaNivel      Int                         @map("id_competencia_nivel")
   nivel                   CompetenciaNivel            @relation(fields: [idCompetenciaNivel], references: [idCompetenciaNivel])
+  // Periodo de la campaña al que pertenece la evaluación ("YYYY-MM").
+  // Se copia de `EmpresaEmpleadora.periodoEvaluacion` al iniciarla y NO se
+  // vuelve a tocar: es lo que separa una campaña de la siguiente. Sin este
+  // campo, la evaluación del periodo nuevo reabría la fila del periodo viejo
+  // y sobrescribía sus calificaciones.
+  periodoEvaluacion       String?                     @map("periodo_evaluacion")
   // Estado funcional de la evaluación
   estadoEvaluacion        String                      @default("PROCESO")
   // Valores recomendados:
@@ -328,6 +334,7 @@ model EvaluacionCompetencia {
   itemsEvaluados          EvaluacionCompetenciaItem[]
   evidencias              Evidencia[]
 
+  @@index([idEvaluado, idEvaluador, idCompetencia, periodoEvaluacion], map: "evaluacion_competencia_periodo_idx")
   @@map("evaluacion_competencia")
 }
 

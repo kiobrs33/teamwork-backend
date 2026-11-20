@@ -9,6 +9,7 @@ import { PurgeResponseInterceptor } from './common/interceptors/purge-response.i
 import { Logger } from 'nestjs-pino';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded } from 'express';
+import { configurarCloudinary } from './config/cloudinary';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -27,6 +28,11 @@ async function bootstrap() {
 
   // Configuración de variables de entorno
   const configService = app.get(ConfigService);
+
+  // Tiene que ir acá y no en el cuerpo de `config/cloudinary.ts`: ese módulo se
+  // importa antes de que ConfigModule lea los `.env`, así que allá las
+  // credenciales todavía no existen. Ver el comentario de esa función.
+  configurarCloudinary(configService);
   // console.log('NODE_ENV:', configService.get('NODE_ENV'));
   // console.log('JWT_SECRET_KEY:', configService.get('JWT_SECRET_KEY'));
   // console.log('DB_URL:', configService.get('DATABASE_URL'));

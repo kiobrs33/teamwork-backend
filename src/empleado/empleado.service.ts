@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -11,11 +12,35 @@ import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 import { hash } from 'bcryptjs';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-import { EmployeeQueryDto } from './dto/employee-query.dto';
+import {
+  EmployeeQueryDto,
+  EmpleadoSortField,
+} from './dto/employee-query.dto';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 import * as ExcelJS from 'exceljs';
+import {
+  filtroEvaluacionesVigentes,
+  normalizarPeriodo,
+  origenDeEvaluacion,
+} from 'src/common/resultados/resultados-evaluacion';
+
+/** Lo que `conAgregados` añade a cada fila del listado. */
+type Avance = { total: number; hechas: number };
+
+type AvanceCompetencias = {
+  /** Ítems que le asigna su unidad ocupacional. */
+  total: number;
+  hechasJefe: number;
+  hechasAuto: number;
+};
+
+type ConAgregados<T> = T & {
+  jefe: { codigoEmpleado: string; nombres: string; apellidos: string } | null;
+  avanceCompetencias: AvanceCompetencias;
+  avanceObjetivos: Avance;
+};
 
 @Injectable()
 export class EmpleadoService {
@@ -164,7 +189,16 @@ export class EmpleadoService {
             idUsuario: usuario.idUsuario,
             creadoPorId: user.idUsuario,
           },
-          include: { usuario: true, empresaEmpleadora: true },
+          include: {
+            usuario: {
+              // NUNCA el include completo: arrastra `contrasena`, y el
+              // PurgeResponseInterceptor no la borra porque busca la clave
+              // `password`. El hash bcrypt de cada trabajador viajaba en la
+              // respuesta de todos estos endpoints.
+              select: { idUsuario: true, codigoUsuario: true, rol: true },
+            },
+            empresaEmpleadora: true,
+          },
         });
 
         return empleado;
@@ -175,104 +209,587 @@ export class EmpleadoService {
     }
   }
 
-  async findAll({
-    page,
-    limit,
+  /**
+   * Datos derivados de cada trabajador de la página.
+   *
+   * - `jefe`: `codigoEmpleadoJefe` es un texto suelto, no una relación de
+   *   Prisma, así que el nombre del jefe hay que resolverlo aparte. Una sola
+   *   consulta para toda la página.
+   * - `avanceCompetencias` / `avanceObjetivos`: se agregan en la base, no en
+   *   Node; traerse todos los ítems de todas las evaluaciones para contar dos
+   *   barras no escala. Mismos criterios que en el listado de empresas, para
+   *   que las cifras coincidan entre pantallas.
+   *
+   * Son tres consultas por página, no por trabajador.
+   */
+  private async conAgregados<
+    T extends { idEmpleado: number; codigoEmpleadoJefe: string | null },
+  >(empleados: T[]): Promise<ConAgregados<T>[]> {
+    // El atajo se queda, pero devolviendo ya la forma final: sin anotar el
+    // tipo, el retorno era una unión y `jefe` no existía en una de las ramas,
+    // así que quien consumiera el resultado no podía leerlo.
+    if (empleados.length === 0) return [];
+
+    const ids = empleados.map((e) => e.idEmpleado);
+    const codigosJefe = [
+      ...new Set(
+        empleados
+          .map((e) => e.codigoEmpleadoJefe)
+          .filter((c): c is string => !!c),
+      ),
+    ];
+
+    type FilaAvance = { empleado: number; total: number; hechas: number };
+    type FilaCompetencias = {
+      empleado: number;
+      total: number;
+      hechasJefe: number;
+      hechasAuto: number;
+    };
+
+    // Las dos consultas crudas repiten en SQL el mismo criterio que
+    // `filtroEvaluacionesVigentes` (src/common/resultados): solo la campaña de
+    // la empresa y nada anulado. No pueden importarlo porque agregan en la
+    // base; si allí cambia la regla, hay que tocarlas a mano.
+    const [competencias, objetivos, jefes] = await Promise.all([
+      // Se cuentan COMPETENCIAS, no ítems, y una solo cuenta cuando **todos**
+      // sus ítems están calificados: es la cifra que se corresponde con lo que
+      // se configuró en la unidad. "3/9" eran ítems y se leía como
+      // competencias, que es otra cosa —Liderazgo tiene 1 ítem y las demás 2—.
+      //
+      // El denominador son las competencias que la UNIDAD le asigna, no las
+      // que tienen evaluación abierta: contando evaluaciones, añadir una
+      // competencia a la unidad no movía la barra y el trabajador seguía
+      // marcando "completo". Y el numerador va partido en jefe y
+      // autoevaluación porque juntos, quien se autoevaluaba inflaba su propio
+      // avance.
+      //
+      // El `LEFT JOIN` de los ítems es a propósito: una competencia cuyo nivel
+      // se quedó sin ítems activos sigue asignada y sigue contando en el
+      // total, pero nunca puede completarse.
+      this.prisma.$queryRaw<FilaCompetencias[]>`
+        WITH asignados AS (
+          SELECT e.id_empleado, ucn.id_competencia,
+                 i.id_competencia_nivel_item AS item
+          FROM empleado e
+          JOIN unidad_ocupacional_competencia_nivel ucn
+            ON ucn.id_unidad_ocupacional_empleadora
+               = e.id_unidad_ocupacional_empleadora
+          JOIN competencia c
+            ON c.id_competencia = ucn.id_competencia AND c.estado
+          JOIN competencia_nivel n
+            ON n.id_competencia_nivel = ucn.id_competencia_nivel AND n.estado
+          LEFT JOIN competencia_nivel_item i
+            ON i.id_competencia_nivel = ucn.id_competencia_nivel AND i.estado
+          WHERE e.id_empleado = ANY(${ids})
+        ),
+        calificados AS (
+          SELECT ec.id_evaluado AS empleado,
+                 it.id_competencia_nivel_item AS item,
+                 (ec.id_evaluador = ec.id_evaluado) AS es_auto,
+                 (ev.codigo_empleado IS NOT NULL
+                  AND ev.codigo_empleado = e.codigo_empleado_jefe) AS es_jefe
+          FROM evaluacion_competencia_item it
+          JOIN evaluacion_competencia ec
+            ON ec."idEvaluacionCompetencia" = it.id_evaluacion_competencia
+          JOIN empleado e ON e.id_empleado = ec.id_evaluado
+          JOIN empresa_empleadora emp
+            ON emp.id_empresa_empleadora = e.id_empresa_empleadora
+          LEFT JOIN empleado ev ON ev.id_empleado = ec.id_evaluador
+          WHERE it.estado AND ec.estado AND it.calificacion IS NOT NULL
+            AND ec."estadoEvaluacion" <> 'ANULADA'
+            AND ec.periodo_evaluacion
+                IS NOT DISTINCT FROM substring(emp.periodo_evaluacion FROM 1 FOR 7)
+            AND ec.id_evaluado = ANY(${ids})
+        ),
+        por_competencia AS (
+          SELECT a.id_empleado, a.id_competencia,
+                 bool_and(EXISTS (
+                   SELECT 1 FROM calificados c
+                   WHERE c.empleado = a.id_empleado AND c.item = a.item
+                     AND c.es_jefe
+                 )) AS completa_jefe,
+                 bool_and(EXISTS (
+                   SELECT 1 FROM calificados c
+                   WHERE c.empleado = a.id_empleado AND c.item = a.item
+                     AND c.es_auto
+                 )) AS completa_auto
+          FROM asignados a
+          GROUP BY 1, 2
+        )
+        SELECT id_empleado::int AS empleado,
+               count(*)::int AS total,
+               count(*) FILTER (WHERE completa_jefe)::int AS "hechasJefe",
+               count(*) FILTER (WHERE completa_auto)::int AS "hechasAuto"
+        FROM por_competencia
+        GROUP BY 1`,
+      this.prisma.$queryRaw<FilaAvance[]>`
+        SELECT o."idEmpleado"::int AS empleado,
+               count(*)::int AS total,
+               count(*) FILTER (
+                 WHERE d.meta_alcanzada IS NOT NULL
+                    OR d.porcentaje_logrado IS NOT NULL
+               )::int AS hechas
+        FROM objetivo_detalle d
+        JOIN objetivo o ON o.id_objetivo = d.id_objetivo
+        WHERE d.estado AND o.estado
+          AND o."idEmpleado" = ANY(${ids})
+        GROUP BY 1`,
+      codigosJefe.length
+        ? this.prisma.empleado.findMany({
+            where: { codigoEmpleado: { in: codigosJefe } },
+            select: {
+              codigoEmpleado: true,
+              nombres: true,
+              apellidos: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const porEmpleado = (filas: FilaAvance[]) =>
+      new Map(
+        filas.map((f) => [f.empleado, { total: f.total, hechas: f.hechas }]),
+      );
+
+    const mapaCompetencias = new Map(
+      competencias.map((f) => [
+        f.empleado,
+        { total: f.total, hechasJefe: f.hechasJefe, hechasAuto: f.hechasAuto },
+      ]),
+    );
+    const mapaObjetivos = porEmpleado(objetivos);
+    const mapaJefes = new Map(jefes.map((j) => [j.codigoEmpleado, j] as const));
+    const vacio = { total: 0, hechas: 0 };
+    const vacioCompetencias = { total: 0, hechasJefe: 0, hechasAuto: 0 };
+
+    return empleados.map((empleado) => ({
+      ...empleado,
+      jefe: empleado.codigoEmpleadoJefe
+        ? (mapaJefes.get(empleado.codigoEmpleadoJefe) ?? null)
+        : null,
+      avanceCompetencias:
+        mapaCompetencias.get(empleado.idEmpleado) ?? vacioCompetencias,
+      avanceObjetivos: mapaObjetivos.get(empleado.idEmpleado) ?? vacio,
+    }));
+  }
+
+  // ============================================================
+  // ESTADO DE EVALUACIÓN (DETALLE POR TRABAJADOR)
+  // ============================================================
+  /**
+   * El desglose de por qué un trabajador va por donde va.
+   *
+   * La columna del listado resume en "Jefe: 2/5", que dice cuánto falta pero
+   * no QUÉ falta. Acá se devuelve competencia por competencia, con los ítems
+   * concretos que nadie ha calificado, y aparte las anuladas —las que se
+   * cayeron al cambiar el nivel de la unidad o al retirar la competencia—,
+   * que son justo las que explican un salto raro en el avance.
+   *
+   * Mismo criterio de "qué cuenta" que el resto: solo la campaña de la empresa
+   * y nada anulado (`filtroEvaluacionesVigentes`), y una competencia está
+   * completa cuando TODOS sus ítems tienen nota.
+   */
+  async estadoEvaluacion(idEmpleado: number) {
+    const empleado = await this.prisma.empleado.findUnique({
+      where: { idEmpleado },
+      select: {
+        idEmpleado: true,
+        nombres: true,
+        apellidos: true,
+        codigoEmpleado: true,
+        codigoEmpleadoJefe: true,
+        documento: true,
+        sede: true,
+        idUnidadOcupacionalEmpleadora: true,
+        usuario: { select: { codigoUsuario: true, rol: true } },
+        unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+        areaEmpleadora: { select: { descripcion: true } },
+        gerenciaEmpleadora: { select: { descripcion: true } },
+        puestoEmpleadora: { select: { descripcion: true } },
+        empresaEmpleadora: {
+          select: {
+            nombreEmpresa: true,
+            periodoEvaluacion: true,
+            modeloEmpresa: true,
+          },
+        },
+      },
+    });
+
+    if (!empleado) throw new NotFoundException('Empleado no encontrado');
+
+    const periodo = empleado.empresaEmpleadora?.periodoEvaluacion;
+
+    const [asignadas, evaluaciones, anuladas, objetivos] = await Promise.all([
+      this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+        where: {
+          idUnidadOcupacionalEmpleadora:
+            empleado.idUnidadOcupacionalEmpleadora,
+          competencia: { estado: true },
+          competenciaNivel: { estado: true },
+        },
+        include: {
+          competencia: { select: { titulo: true } },
+          competenciaNivel: {
+            select: {
+              nivel: true,
+              items: {
+                where: { estado: true },
+                select: { idCompetenciaNivelItem: true, enunciado: true },
+                orderBy: { secuencial: 'asc' },
+              },
+            },
+          },
+        },
+        orderBy: { idCompetencia: 'asc' },
+      }),
+
+      this.prisma.evaluacionCompetencia.findMany({
+        where: {
+          ...filtroEvaluacionesVigentes(periodo),
+          idEvaluado: idEmpleado,
+        },
+        select: {
+          idCompetencia: true,
+          idEvaluado: true,
+          idEvaluador: true,
+          evaluador: {
+            select: { codigoEmpleado: true, codigoEmpleadoJefe: true },
+          },
+          itemsEvaluados: {
+            where: { estado: true },
+            select: { idCompetenciaNivelItem: true, calificacion: true },
+          },
+        },
+      }),
+
+      // Las anuladas van aparte: no cuentan para nada, pero son la explicación
+      // de por qué una competencia volvió a cero.
+      this.prisma.evaluacionCompetencia.findMany({
+        where: {
+          estado: true,
+          estadoEvaluacion: 'ANULADA',
+          idEvaluado: idEmpleado,
+          periodoEvaluacion: normalizarPeriodo(periodo),
+        },
+        select: {
+          idEvaluacionCompetencia: true,
+          idCompetencia: true,
+          idEvaluado: true,
+          idEvaluador: true,
+          evaluador: {
+            select: { codigoEmpleado: true, codigoEmpleadoJefe: true },
+          },
+          competencia: { select: { titulo: true } },
+          nivel: { select: { nivel: true } },
+          fechaModificacion: true,
+          // `textoItemEvaluado` es la copia del enunciado que se guardó al
+          // evaluar: el nivel pudo cambiar después, así que es el texto que
+          // de verdad vio quien calificó.
+          itemsEvaluados: {
+            where: { estado: true },
+            select: {
+              idEvaluacionCompetenciaItem: true,
+              textoItemEvaluado: true,
+              calificacion: true,
+            },
+          },
+        },
+      }),
+
+      this.prisma.objetivo.findMany({
+        where: { estado: true, idEmpleado },
+        select: {
+          idObjetivo: true,
+          objetivoDetalles: {
+            where: { estado: true },
+            select: {
+              idObjetivoDetalle: true,
+              descripcion: true,
+              metaObjetivo: true,
+              metaAlcanzada: true,
+              porcentajeLogrado: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // La nota de cada ítem, separada por quién la puso. Un `Map` y no un
+    // `Set`: el modal no solo enseña qué falta, también con cuánto se calificó
+    // lo que ya está.
+    const califJefe = new Map<number, number>();
+    const califAuto = new Map<number, number>();
+
+    for (const ev of evaluaciones) {
+      const origen = origenDeEvaluacion({
+        idEvaluado: ev.idEvaluado,
+        idEvaluador: ev.idEvaluador,
+        codigoEvaluado: empleado.codigoEmpleado,
+        codigoEvaluador: ev.evaluador?.codigoEmpleado,
+        codigoEmpleadoJefe: empleado.codigoEmpleadoJefe,
+        codigoJefeDelEvaluador: ev.evaluador?.codigoEmpleadoJefe,
+      });
+
+      if (origen !== 'jefe' && origen !== 'auto') continue;
+
+      const destino = origen === 'jefe' ? califJefe : califAuto;
+
+      for (const item of ev.itemsEvaluados) {
+        if (item.calificacion !== null) {
+          destino.set(item.idCompetenciaNivelItem, item.calificacion);
+        }
+      }
+    }
+
+    const competencias = asignadas.map((a) => {
+      const items = a.competenciaNivel.items.map((i) => ({
+        idCompetenciaNivelItem: i.idCompetenciaNivelItem,
+        enunciado: i.enunciado,
+        // `null` = ese evaluador todavía no le puso nota.
+        notaJefe: califJefe.get(i.idCompetenciaNivelItem) ?? null,
+        notaAuto: califAuto.get(i.idCompetenciaNivelItem) ?? null,
+      }));
+
+      const calificadosJefe = items.filter((i) => i.notaJefe !== null).length;
+      const calificadosAuto = items.filter((i) => i.notaAuto !== null).length;
+
+      return {
+        idCompetencia: a.idCompetencia,
+        titulo: a.competencia.titulo,
+        nivel: a.competenciaNivel.nivel,
+        totalItems: items.length,
+        calificadosJefe,
+        calificadosAuto,
+        completaJefe: items.length > 0 && calificadosJefe === items.length,
+        completaAuto: items.length > 0 && calificadosAuto === items.length,
+        items,
+      };
+    });
+
+    const detallesObjetivo = objetivos.flatMap((o) => o.objetivoDetalles);
+
+    return {
+      empleado: {
+        idEmpleado: empleado.idEmpleado,
+        nombres: empleado.nombres,
+        apellidos: empleado.apellidos,
+        codigoEmpleado: empleado.codigoEmpleado,
+        documento: empleado.documento ?? null,
+        usuario: empleado.usuario?.codigoUsuario ?? null,
+        rol: empleado.usuario?.rol ?? null,
+        sede: empleado.sede ?? null,
+        empresa: empleado.empresaEmpleadora?.nombreEmpresa ?? null,
+        gerencia: empleado.gerenciaEmpleadora?.descripcion ?? null,
+        area: empleado.areaEmpleadora?.descripcion ?? null,
+        unidad: empleado.unidadOcupacionalEmpleadora?.descripcion ?? null,
+        puesto: empleado.puestoEmpleadora?.descripcion ?? null,
+        codigoEmpleadoJefe: empleado.codigoEmpleadoJefe ?? null,
+      },
+      periodo: normalizarPeriodo(periodo),
+      modelo: empleado.empresaEmpleadora?.modeloEmpresa ?? null,
+
+      competencias: {
+        asignadas: competencias.length,
+        completasJefe: competencias.filter((c) => c.completaJefe).length,
+        completasAuto: competencias.filter((c) => c.completaAuto).length,
+        itemsTotales: competencias.reduce((t, c) => t + c.totalItems, 0),
+        itemsPendientesJefe: competencias.reduce(
+          (t, c) => t + (c.totalItems - c.calificadosJefe),
+          0,
+        ),
+        detalle: competencias,
+      },
+
+      anuladas: anuladas.map((a) => ({
+        idEvaluacion: a.idEvaluacionCompetencia,
+        idCompetencia: a.idCompetencia,
+        titulo: a.competencia?.titulo ?? '—',
+        nivel: a.nivel?.nivel ?? null,
+        // De quién era la evaluación que se anuló: sin esto no se sabe si lo
+        // que se perdió eran notas del jefe (las que puntúan) o una
+        // autoevaluación.
+        origen: origenDeEvaluacion({
+          idEvaluado: a.idEvaluado,
+          idEvaluador: a.idEvaluador,
+          codigoEvaluado: empleado.codigoEmpleado,
+          codigoEvaluador: a.evaluador?.codigoEmpleado,
+          codigoEmpleadoJefe: empleado.codigoEmpleadoJefe,
+          codigoJefeDelEvaluador: a.evaluador?.codigoEmpleadoJefe,
+        }),
+        notasPerdidas: a.itemsEvaluados.filter((i) => i.calificacion !== null)
+          .length,
+        fecha: a.fechaModificacion,
+        items: a.itemsEvaluados.map((i) => ({
+          idEvaluacionCompetenciaItem: i.idEvaluacionCompetenciaItem,
+          enunciado: i.textoItemEvaluado ?? '—',
+          calificacion: i.calificacion,
+        })),
+      })),
+
+      objetivos: {
+        total: detallesObjetivo.length,
+        evaluados: detallesObjetivo.filter((d) => d.porcentajeLogrado !== null)
+          .length,
+        detalle: detallesObjetivo.map((d) => ({
+          idObjetivoDetalle: d.idObjetivoDetalle,
+          descripcion: d.descripcion,
+          metaObjetivo: d.metaObjetivo,
+          metaAlcanzada: d.metaAlcanzada,
+          porcentajeLogrado: d.porcentajeLogrado,
+        })),
+      },
+    };
+  }
+
+  /**
+   * El `where` del listado, que la exportación reutiliza tal cual.
+   *
+   * Estaban escritos dos veces, y el de la exportación además spreadeaba
+   * `...(query && {...})`: se colaba siempre con `contains: undefined` y solo
+   * funcionaba porque Prisma ignora los `undefined`. Con una sola fuente, el
+   * Excel no puede volver a traer un recorte distinto del que se ve en
+   * pantalla.
+   */
+  private async construirWhereListado({
     search,
     idEmpleado,
-    nombres,
-    apellidos,
+    nombreCompleto,
     documento,
     codigoEmpleado,
-    codigoEmpleadoJefe,
-    codigoUsuario,
+    jefe,
     nombreEmpresaEmpleadora,
-  }: EmployeeQueryDto) {
-    try {
-      const where: Prisma.EmpleadoWhereInput = {
-        estado: true,
+    codigoUsuario,
+  }: EmployeeQueryDto): Promise<Prisma.EmpleadoWhereInput> {
+    // Cada condición compuesta va dentro de `AND` en vez de en la raíz: hay
+    // tres que necesitan su propio `OR` y, puestas como claves sueltas del
+    // objeto, la última pisaba a las anteriores.
+    const condiciones: Prisma.EmpleadoWhereInput[] = [];
 
-        ...(idEmpleado && {
-          idEmpleado: Number(idEmpleado),
-        }),
+    const palabras = (texto: string) => texto.trim().split(/\s+/).filter(Boolean);
 
-        ...(nombres && {
-          nombres: {
-            contains: nombres,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(apellidos && {
-          apellidos: {
-            contains: apellidos,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(documento && {
-          documento: {
-            contains: documento,
-          },
-        }),
-
-        ...(codigoEmpleado && {
-          codigoEmpleado: {
-            contains: codigoEmpleado,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(codigoEmpleadoJefe && {
-          codigoEmpleadoJefe: {
-            contains: codigoEmpleadoJefe,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(codigoUsuario && {
-          usuario: {
-            codigoUsuario: {
-              contains: codigoUsuario,
-              mode: 'insensitive',
-            },
-          },
-        }),
-
-        ...(nombreEmpresaEmpleadora && {
-          empresaEmpleadora: {
-            nombreEmpresa: {
-              contains: nombreEmpresaEmpleadora,
-              mode: 'insensitive',
-            },
-          },
-        }),
-
-        ...(search && {
+    if (nombreCompleto?.trim()) {
+      // Cada palabra tiene que estar en el nombre o en el apellido, así que
+      // "Perez Juan" encuentra lo mismo que "Juan Perez".
+      condiciones.push(
+        ...palabras(nombreCompleto).map((palabra) => ({
           OR: [
-            { nombres: { contains: search, mode: 'insensitive' } },
-            { apellidos: { contains: search, mode: 'insensitive' } },
-            { documento: { contains: search } },
-            { codigoEmpleado: { contains: search, mode: 'insensitive' } },
-            {
-              usuario: {
-                codigoUsuario: { contains: search, mode: 'insensitive' },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
-              },
-            },
+            { nombres: { contains: palabra, mode: 'insensitive' as const } },
+            { apellidos: { contains: palabra, mode: 'insensitive' as const } },
           ],
-        }),
-      };
+        })),
+      );
+    }
+
+    if (jefe?.trim()) {
+      // Hay que traducir el nombre a códigos antes de filtrar: el vínculo con
+      // el jefe es el texto `codigoEmpleadoJefe`, no una relación que Prisma
+      // pueda recorrer.
+      const jefes = await this.prisma.empleado.findMany({
+        where: {
+          AND: palabras(jefe).map((palabra) => ({
+            OR: [
+              { nombres: { contains: palabra, mode: 'insensitive' as const } },
+              { apellidos: { contains: palabra, mode: 'insensitive' as const } },
+            ],
+          })),
+        },
+        select: { codigoEmpleado: true },
+      });
+
+      condiciones.push({
+        OR: [
+          // La caja acepta también el código escrito directo.
+          { codigoEmpleadoJefe: { contains: jefe.trim(), mode: 'insensitive' } },
+          { codigoEmpleadoJefe: { in: jefes.map((j) => j.codigoEmpleado) } },
+        ],
+      });
+    }
+
+    if (search?.trim()) {
+      condiciones.push({
+        OR: [
+          { nombres: { contains: search, mode: 'insensitive' } },
+          { apellidos: { contains: search, mode: 'insensitive' } },
+          { documento: { contains: search } },
+          { codigoEmpleado: { contains: search, mode: 'insensitive' } },
+          {
+            usuario: {
+              codigoUsuario: { contains: search, mode: 'insensitive' },
+            },
+          },
+          {
+            empresaEmpleadora: {
+              nombreEmpresa: { contains: search, mode: 'insensitive' },
+            },
+          },
+        ],
+      });
+    }
+
+    return {
+      estado: true,
+
+      ...(idEmpleado && { idEmpleado: Number(idEmpleado) }),
+
+      ...(documento && { documento: { contains: documento } }),
+
+      ...(codigoEmpleado && {
+        codigoEmpleado: { contains: codigoEmpleado, mode: 'insensitive' },
+      }),
+
+      ...(nombreEmpresaEmpleadora && {
+        empresaEmpleadora: {
+          nombreEmpresa: {
+            contains: nombreEmpresaEmpleadora,
+            mode: 'insensitive',
+          },
+        },
+      }),
+
+      ...(codigoUsuario && {
+        usuario: {
+          codigoUsuario: { contains: codigoUsuario, mode: 'insensitive' },
+        },
+      }),
+
+      ...(condiciones.length > 0 && { AND: condiciones }),
+    };
+  }
+
+  /**
+   * El orden del listado, que la exportación también reutiliza.
+   *
+   * `sortBy` ya viene validado contra EMPLEADO_SORT_FIELDS por el DTO, así que
+   * no hay forma de colar un campo arbitrario; los dos casos especiales
+   * ordenan por una relación.
+   */
+  private construirOrdenListado(
+    sortBy?: EmpleadoSortField,
+    sortOrder?: 'asc' | 'desc',
+  ): Prisma.EmpleadoOrderByWithRelationInput {
+    const direccion = sortOrder === 'asc' ? 'asc' : 'desc';
+
+    if (sortBy === 'codigoUsuario') return { usuario: { codigoUsuario: direccion } };
+    if (sortBy === 'nombreEmpresaEmpleadora')
+      return { empresaEmpleadora: { nombreEmpresa: direccion } };
+
+    return sortBy ? { [sortBy]: direccion } : { fechaCreacion: 'desc' };
+  }
+
+  async findAll(query: EmployeeQueryDto) {
+    const { page, limit, sortBy, sortOrder } = query;
+
+    try {
+      const where = await this.construirWhereListado(query);
+
+      const orderBy = this.construirOrdenListado(sortBy, sortOrder);
 
       const include: Prisma.EmpleadoInclude = {
-        usuario: true,
+        usuario: {
+          select: { idUsuario: true, codigoUsuario: true, rol: true },
+        },
         empresaEmpleadora: true,
       };
 
@@ -280,7 +797,7 @@ export class EmpleadoService {
         const data = await this.prisma.empleado.findMany({
           where,
           include,
-          orderBy: { fechaCreacion: 'desc' },
+          orderBy,
         });
 
         return {
@@ -305,12 +822,12 @@ export class EmpleadoService {
           skip,
           take: safeLimit,
           include,
-          orderBy: { fechaCreacion: 'desc' },
+          orderBy,
         }),
       ]);
 
       return {
-        data,
+        data: await this.conAgregados(data),
         meta: {
           total,
           page: safePage,
@@ -331,7 +848,12 @@ export class EmpleadoService {
     try {
       const empleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id, estado: true },
-        include: { usuario: true, empresaEmpleadora: true },
+        include: {
+          usuario: {
+            select: { idUsuario: true, codigoUsuario: true, rol: true },
+          },
+          empresaEmpleadora: true,
+        },
       });
 
       if (!empleado) throw new NotFoundException('Empleado no encontrado');
@@ -350,7 +872,12 @@ export class EmpleadoService {
     try {
       const empleado = await this.prisma.empleado.findFirst({
         where: { idUsuario: id, estado: true },
-        include: { usuario: true, empresaEmpleadora: true },
+        include: {
+          usuario: {
+            select: { idUsuario: true, codigoUsuario: true, rol: true },
+          },
+          empresaEmpleadora: true,
+        },
       });
 
       if (!empleado) throw new NotFoundException('Empleado no encontrado');
@@ -439,7 +966,12 @@ export class EmpleadoService {
       return await this.prisma.empleado.update({
         where: { idEmpleado: id },
         data: empleadoUpdateData,
-        include: { usuario: true, empresaEmpleadora: true },
+        include: {
+          usuario: {
+            select: { idUsuario: true, codigoUsuario: true, rol: true },
+          },
+          empresaEmpleadora: true,
+        },
       });
     } catch (error) {
       this.logger.error('Error al actualizar al empleado:', error);
@@ -452,23 +984,155 @@ export class EmpleadoService {
   // ============================================================
   async remove(user: AuthUser, id: number) {
     try {
-      const existEmpleado = await this.prisma.empleado.findUnique({
+      const empleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id },
-        select: { idEmpleado: true },
+        select: {
+          idEmpleado: true,
+          estado: true,
+          idUsuario: true,
+          codigoEmpleado: true,
+        },
       });
 
-      if (!existEmpleado) throw new NotFoundException('Empleado no encontrado');
+      if (!empleado || !empleado.estado)
+        throw new NotFoundException('Empleado no encontrado');
 
-      return await this.prisma.empleado.update({
-        where: { idEmpleado: id },
-        data: {
-          estado: false,
-          fechaModificacion: new Date(),
-          actualizadoPorId: user.idUsuario,
-        },
+      // Quien tiene gente a cargo no se puede dar de baja sin más: sus
+      // subordinados quedarían apuntando a un jefe inexistente y nadie podría
+      // evaluarlos, porque la lista de subordinados se arma por
+      // `codigoEmpleadoJefe`. Mismo criterio que al eliminar una empresa.
+      const subordinados = await this.prisma.empleado.count({
+        where: { codigoEmpleadoJefe: empleado.codigoEmpleado, estado: true },
+      });
+
+      if (subordinados > 0) {
+        throw new ConflictException(
+          `No se puede eliminar: todavía es jefe de ${subordinados} trabajador(es). Reasígnalos a otro jefe primero.`,
+        );
+      }
+
+      // El usuario se desactiva junto con el empleado. El login solo mira
+      // `usuario.estado`, así que dando de baja únicamente al empleado la
+      // persona seguía entrando al sistema como si nada.
+      return await this.prisma.$transaction(async (tx) => {
+        const fechaModificacion = new Date();
+
+        await tx.usuario.update({
+          where: { idUsuario: empleado.idUsuario },
+          data: {
+            estado: false,
+            fechaModificacion,
+            actualizadoPorId: user.idUsuario,
+          },
+        });
+
+        return await tx.empleado.update({
+          where: { idEmpleado: id },
+          data: {
+            estado: false,
+            fechaModificacion,
+            actualizadoPorId: user.idUsuario,
+          },
+        });
       });
     } catch (error) {
       this.logger.error('Error al eliminar (inactivar) al empleado:', error);
+      handlePrismaError(error, 'empleado');
+    }
+  }
+
+  /**
+   * Baja de varios empleados a la vez, todo o nada.
+   *
+   * La regla de `remove` (no se da de baja a quien todavía es jefe de alguien)
+   * se evalúa **contra el conjunto seleccionado**: si un jefe y todos sus
+   * subordinados entran en la misma tanda, la baja es válida, porque al
+   * terminar no queda nadie apuntando a un jefe inexistente. Borrando de uno
+   * en uno eso solo funcionaba si se acertaba el orden.
+   */
+  async removeMany(user: AuthUser, ids: number[]) {
+    try {
+      const unicos = [...new Set(ids)];
+
+      const empleados = await this.prisma.empleado.findMany({
+        where: { idEmpleado: { in: unicos }, estado: true },
+        select: {
+          idEmpleado: true,
+          idUsuario: true,
+          codigoEmpleado: true,
+          nombres: true,
+          apellidos: true,
+        },
+      });
+
+      if (empleados.length !== unicos.length) {
+        const encontrados = new Set(empleados.map((e) => e.idEmpleado));
+        const faltantes = unicos.filter((id) => !encontrados.has(id));
+
+        throw new NotFoundException(
+          `No se encontraron los empleados con ID ${faltantes.join(', ')}.`,
+        );
+      }
+
+      // Subordinados que se quedarían huérfanos: los que siguen activos, tienen
+      // como jefe a alguien de la tanda y no están ellos mismos en la tanda.
+      const huerfanos = await this.prisma.empleado.findMany({
+        where: {
+          estado: true,
+          idEmpleado: { notIn: unicos },
+          codigoEmpleadoJefe: { in: empleados.map((e) => e.codigoEmpleado) },
+        },
+        select: { codigoEmpleadoJefe: true },
+      });
+
+      if (huerfanos.length > 0) {
+        const cuantos = new Map<string, number>();
+        for (const h of huerfanos) {
+          const codigo = h.codigoEmpleadoJefe ?? '';
+          cuantos.set(codigo, (cuantos.get(codigo) ?? 0) + 1);
+        }
+
+        const detalle = empleados
+          .filter((e) => cuantos.has(e.codigoEmpleado))
+          .map(
+            (e) =>
+              `${e.nombres} ${e.apellidos} (${cuantos.get(e.codigoEmpleado)})`,
+          )
+          .join(', ');
+
+        // Con una sola fila seleccionada, hablar de "la selección" no dice
+        // nada: es el mismo caso que `remove` y se explica igual.
+        throw new ConflictException(
+          unicos.length === 1
+            ? `No se puede eliminar: ${detalle} todavía tiene gente a cargo. Reasígnala a otro jefe primero.`
+            : `No se eliminó a nadie: ${detalle} todavía tiene gente a cargo fuera de la selección. Reasígnala a otro jefe o inclúyela en la selección.`,
+        );
+      }
+
+      const fechaModificacion = new Date();
+
+      await this.prisma.$transaction([
+        this.prisma.usuario.updateMany({
+          where: { idUsuario: { in: empleados.map((e) => e.idUsuario) } },
+          data: {
+            estado: false,
+            fechaModificacion,
+            actualizadoPorId: user.idUsuario,
+          },
+        }),
+        this.prisma.empleado.updateMany({
+          where: { idEmpleado: { in: unicos } },
+          data: {
+            estado: false,
+            fechaModificacion,
+            actualizadoPorId: user.idUsuario,
+          },
+        }),
+      ]);
+
+      return { eliminados: unicos };
+    } catch (error) {
+      this.logger.error('Error al eliminar (inactivar) empleados:', error);
       handlePrismaError(error, 'empleado');
     }
   }
@@ -582,7 +1246,11 @@ export class EmpleadoService {
                 idUsuario: usuario.idUsuario,
                 creadoPorId: user.idUsuario,
               },
-              include: { usuario: true },
+              include: {
+                usuario: {
+                  select: { idUsuario: true, codigoUsuario: true, rol: true },
+                },
+              },
             });
 
             createdEmployees.push(empleado);
@@ -629,7 +1297,9 @@ export class EmpleadoService {
           estado: true,
         },
         include: {
-          usuario: true,
+          usuario: {
+            select: { idUsuario: true, codigoUsuario: true, rol: true },
+          },
         },
         orderBy: {
           fechaCreacion: 'desc',
@@ -688,9 +1358,15 @@ export class EmpleadoService {
         await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
           where: {
             idUnidadOcupacionalEmpleadora: jefe.idUnidadOcupacionalEmpleadora,
+            // El filtro va acá y no dentro del `include`: en una relación
+            // a-uno Prisma no acepta `where`, que es por lo que estaba
+            // comentado. Sin él, una competencia eliminada seguía pidiéndose
+            // como pendiente de evaluar a todo el que ocupe la unidad.
+            competencia: { estado: true },
+            competenciaNivel: { estado: true },
           },
           include: {
-            competencia: {},
+            competencia: true,
             competenciaNivel: {
               include: {
                 items: {
@@ -751,7 +1427,9 @@ export class EmpleadoService {
           idEmpresaEmpleadora,
         },
         include: {
-          usuario: true,
+          usuario: {
+            select: { idUsuario: true, codigoUsuario: true, rol: true },
+          },
         },
         orderBy: {
           fechaCreacion: 'desc',
@@ -809,39 +1487,19 @@ export class EmpleadoService {
 
       for (const sub of subordinados) {
         const competencias =
-          // await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
-          //   where: {
-          //     idUnidadOcupacionalEmpleadora: sub.idUnidadOcupacionalEmpleadora,
-          //   },
-          //   include: {
-          //     competencia: true,
-          //     competenciaNivel: {
-          //       include: {
-          //         items: true,
-          //       },
-          //     },
-          //   },
-          // });
           await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
             where: {
               idUnidadOcupacionalEmpleadora: sub.idUnidadOcupacionalEmpleadora,
+              // El filtro va acá y no dentro del `include`: en una relación
+              // a-uno Prisma no acepta `where`, que es por lo que estaba
+              // comentado. Sin él, una competencia eliminada seguía pidiéndose
+              // como pendiente de evaluar a todo el que ocupe la unidad.
+              competencia: { estado: true },
+              competenciaNivel: { estado: true },
             },
             include: {
-              competencia: {
-                // where: {
-                //   estado: true,
-                // },
-                // orderBy: {
-                //   fechaCreacion: 'desc',
-                // },
-              },
+              competencia: true,
               competenciaNivel: {
-                // where: {
-                //   estado: true,
-                // },
-                // orderBy: {
-                //   nivel: 'asc',
-                // },
                 include: {
                   items: {
                     where: {
@@ -896,12 +1554,22 @@ export class EmpleadoService {
       competenciaNivel: { items: { idCompetenciaNivelItem: number }[] };
     },
   >(idEvaluado: number, idEvaluador: number, competencias: T[]) {
+    // La campaña del evaluado. Sin esto el progreso contaba también los ítems
+    // calificados en periodos anteriores, así que la barra de las pantallas de
+    // evaluación no coincidía con la columna del listado, que sí acota por
+    // periodo. Las dos cifras describen lo mismo y tienen que salir iguales.
+    const datos = await this.prisma.empleado.findUnique({
+      where: { idEmpleado: idEvaluado },
+      select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+    });
+
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
+        ...filtroEvaluacionesVigentes(
+          datos?.empresaEmpleadora?.periodoEvaluacion,
+        ),
         idEvaluado,
         idEvaluador,
-        estado: true,
-        estadoEvaluacion: { not: 'ANULADA' },
         idCompetencia: { in: competencias.map((c) => c.idCompetencia) },
       },
       select: {
@@ -993,12 +1661,19 @@ export class EmpleadoService {
           where: {
             idUnidadOcupacionalEmpleadora:
               empleado.idUnidadOcupacionalEmpleadora,
+            competencia: { estado: true },
+            competenciaNivel: { estado: true },
           },
           include: {
             competencia: true,
             competenciaNivel: {
               include: {
-                items: true,
+                // Sin este filtro los ítems dados de baja seguían contando en
+                // el denominador y la autoevaluación no llegaba nunca al 100 %.
+                items: {
+                  where: { estado: true },
+                  orderBy: { secuencial: 'asc' },
+                },
               },
             },
           },
@@ -1027,158 +1702,91 @@ export class EmpleadoService {
 
   async exportExcel(query: EmployeeQueryDto) {
     try {
-      const where: Prisma.EmpleadoWhereInput = {
-        estado: true,
-
-        ...(query.idEmpleado && {
-          idEmpleado: Number(query.idEmpleado),
-        }),
-
-        ...(query && {
-          nombres: {
-            contains: query.nombres,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(query && {
-          apellidos: {
-            contains: query.apellidos,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(query && {
-          documento: {
-            contains: query.documento,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(query && {
-          codigoEmpleado: {
-            contains: query.codigoEmpleado,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(query && {
-          codigoEmpleadoJefe: {
-            contains: query.codigoEmpleadoJefe,
-            mode: 'insensitive',
-          },
-        }),
-
-        ...(query.nombreEmpresaEmpleadora && {
-          empresaEmpleadora: {
-            nombreEmpresa: {
-              contains: query.nombreEmpresaEmpleadora,
-              mode: 'insensitive',
-            },
-          },
-        }),
-
-        ...(query.search && {
-          OR: [
-            { nombres: { contains: query.search, mode: 'insensitive' } },
-            { apellidos: { contains: query.search, mode: 'insensitive' } },
-            { documento: { contains: query.search } },
-            { codigoEmpleado: { contains: query.search, mode: 'insensitive' } },
-            {
-              usuario: {
-                codigoUsuario: { contains: query.search, mode: 'insensitive' },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: query.search,
-                  mode: 'insensitive',
-                },
-              },
-            },
-          ],
-        }),
-      };
+      // El mismo recorte y el mismo orden que el listado: lo que se exporta es
+      // lo que se ve. El orden llegaba en la query y se descartaba, así que
+      // ordenar la tabla y exportar daba un archivo en otro orden.
+      const where = await this.construirWhereListado(query);
+      const orderBy = this.construirOrdenListado(query.sortBy, query.sortOrder);
 
       const empleados = await this.prisma.empleado.findMany({
         where,
+        orderBy,
         include: {
           empresaEmpleadora: true,
-          usuario: true,
-        },
-        orderBy: {
-          fechaCreacion: 'desc',
+          usuario: {
+            select: { idUsuario: true, codigoUsuario: true, rol: true },
+          },
         },
       });
 
+      // Mismos agregados que el listado: el nombre del jefe (la columna traía
+      // solo el código, y "YLRZUE" no le dice nada a quien abre el archivo) y
+      // el avance de evaluaciones, que es la columna con más peso en pantalla
+      // y no estaba.
+      const filas = await this.conAgregados(empleados);
+
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Empleados');
+      const worksheet = workbook.addWorksheet('Trabajadores');
 
       worksheet.columns = [
+        { header: 'ID', key: 'idEmpleado', width: 10 },
+        { header: 'Nombres', key: 'nombres', width: 24 },
+        { header: 'Apellidos', key: 'apellidos', width: 24 },
+        { header: 'Documento', key: 'documento', width: 16 },
+        { header: 'Código de empleado', key: 'codigoEmpleado', width: 20 },
+        { header: 'Empresa', key: 'empresa', width: 32 },
+        { header: 'Jefe', key: 'jefe', width: 28 },
+        { header: 'Código del jefe', key: 'codigoEmpleadoJefe', width: 18 },
+        { header: 'Usuario', key: 'codigoUsuario', width: 18 },
+        // Cuatro números en vez de un "1/2" de texto: así se pueden sumar y
+        // cruzar en una tabla dinámica, que es para lo que se exporta.
         {
-          header: 'ID Empleado',
-          key: 'idEmpleado',
+          header: 'Competencias evaluadas por el jefe',
+          key: 'competenciasJefe',
+          width: 30,
+        },
+        {
+          header: 'Competencias autoevaluadas',
+          key: 'competenciasAuto',
+          width: 26,
+        },
+        {
+          header: 'Competencias totales',
+          key: 'competenciasTotal',
           width: 20,
         },
-        {
-          header: 'Nombres',
-          key: 'nombres',
-          width: 40,
-        },
-        {
-          header: 'Apellidos',
-          key: 'apellidos',
-          width: 40,
-        },
-        {
-          header: 'Documento',
-          key: 'documento',
-          width: 40,
-        },
-        {
-          header: 'Codigo Empleado',
-          key: 'codigoEmpleado',
-          width: 40,
-        },
-        {
-          header: 'Codigo Jefe',
-          key: 'codigoEmpleadoJefe',
-          width: 40,
-        },
-        {
-          header: 'Username',
-          key: 'codigoUsuario',
-          width: 20,
-        },
-        {
-          header: 'Empresa',
-          key: 'empresa',
-          width: 50,
-        },
+        { header: 'Objetivos evaluados', key: 'objetivosHechas', width: 20 },
+        { header: 'Objetivos totales', key: 'objetivosTotal', width: 18 },
       ];
 
-      empleados.forEach((item) => {
+      filas.forEach((item) => {
         worksheet.addRow({
           idEmpleado: item.idEmpleado,
           nombres: item.nombres,
           apellidos: item.apellidos,
           documento: item.documento,
           codigoEmpleado: item.codigoEmpleado,
+          empresa: item.empresaEmpleadora.nombreEmpresa,
+          jefe: item.jefe ? `${item.jefe.nombres} ${item.jefe.apellidos}` : '',
           codigoEmpleadoJefe: item.codigoEmpleadoJefe,
           codigoUsuario: item.usuario.codigoUsuario,
-          empresa: item.empresaEmpleadora.nombreEmpresa,
+          competenciasJefe: item.avanceCompetencias.hechasJefe,
+          competenciasAuto: item.avanceCompetencias.hechasAuto,
+          competenciasTotal: item.avanceCompetencias.total,
+          objetivosHechas: item.avanceObjetivos.hechas,
+          objetivosTotal: item.avanceObjetivos.total,
         });
       });
 
-      worksheet.getRow(1).font = {
-        bold: true,
-      };
+      worksheet.getRow(1).font = { bold: true };
 
-      worksheet.autoFilter = {
-        from: 'A1',
-        to: 'H1',
-      };
+      // Calculados, no escritos a mano: el autofiltro estaba fijo en 'H1' y se
+      // quedaba corto en cuanto se tocaba una columna.
+      const ultima = worksheet.getColumn(worksheet.columnCount).letter;
+      worksheet.autoFilter = { from: 'A1', to: `${ultima}1` };
+
+      // La cabecera se queda a la vista al bajar por el archivo.
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
 
       const buffer = await workbook.xlsx.writeBuffer();
 

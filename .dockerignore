@@ -1,0 +1,31 @@
+# El Dockerfile hace `COPY . .`, así que sin esta lista se copia TODO al
+# contexto de build: `.env` con el secreto del JWT y las claves de Cloudinary,
+# y `.git` con un historial que —según §5.1 del CLAUDE.md— todavía guarda la
+# cadena de conexión del VPS y esos mismos secretos en commits viejos.
+#
+# Aunque en tiempo de ejecución no se usen (las de `env_file` ganan sobre
+# cualquier archivo), quedarían legibles dentro de las capas de la imagen para
+# cualquiera que la descargue.
+
+# Secretos
+.env
+.env.*
+!.env.example
+!.env.deploy.example
+
+# Historial de git (ver arriba)
+.git
+.gitignore
+
+# Se instalan y se compilan dentro de la imagen
+node_modules
+dist
+*.tsbuildinfo
+
+# Ruido que no aporta a la imagen
+coverage
+test
+*.log
+.vscode
+.idea
+README.md

@@ -21,6 +21,66 @@ export class ObjetivoService {
   constructor(private prisma: PrismaService) {}
 
   // ======================================================
+  // REGLAS DE CÁLCULO DE OBJETIVOS
+  // ======================================================
+  /**
+   * Los pesos específicos de un objetivo reparten el 100 % de su nota: la
+   * calificación final es `Σ (porcentajeLogrado × pesoEspecifico / 100)`. Si no
+   * suman 100 el resultado no significa nada, y nadie lo estaba comprobando.
+   */
+  private validarPesos(
+    detalles: { pesoEspecifico: number; descripcion?: string }[],
+  ) {
+    if (detalles.length === 0) return;
+
+    const suma = detalles.reduce((acc, d) => acc + (d.pesoEspecifico ?? 0), 0);
+
+    // Tolerancia por el redondeo de los decimales que llegan del formulario.
+    if (Math.abs(suma - 100) > 0.01) {
+      throw new BadRequestException(
+        `Los pesos específicos deben sumar 100 %. Suman ${Math.round(suma * 100) / 100} %.`,
+      );
+    }
+  }
+
+  /**
+   * Porcentaje logrado de un detalle.
+   *
+   * Es la misma fórmula que el formulario de evaluación muestra en pantalla,
+   * pero calculada acá: antes el backend guardaba tal cual el número que
+   * mandaba el cliente, así que editar la meta de un detalle ya calificado
+   * dejaba un porcentaje que ya no correspondía a esa meta —y nada lo volvía a
+   * calcular—. `null` en `metaAlcanzada` significa SIN EVALUAR y se respeta.
+   *
+   * En MANUAL no hay fórmula: el evaluador pone el porcentaje a mano.
+   */
+  private calcularPorcentajeLogrado(
+    detalle: { tipoCalculo: string; metaObjetivo: number },
+    metaAlcanzada: number | null | undefined,
+    porcentajeManual?: number | null,
+  ): number | null {
+    if (metaAlcanzada === null || metaAlcanzada === undefined) return null;
+
+    const redondear = (valor: number) => Math.round(valor * 100) / 100;
+
+    if (detalle.tipoCalculo === 'ASCENDENTE') {
+      if (detalle.metaObjetivo <= 0) return porcentajeManual ?? null;
+
+      return redondear((metaAlcanzada / detalle.metaObjetivo) * 100);
+    }
+
+    if (detalle.tipoCalculo === 'DESCENDENTE') {
+      // Meta alcanzada 0 en un objetivo descendente (ej. "cero accidentes")
+      // es el mejor resultado posible, no una división por cero.
+      if (metaAlcanzada <= 0) return 100;
+
+      return redondear((detalle.metaObjetivo / metaAlcanzada) * 100);
+    }
+
+    return porcentajeManual ?? null;
+  }
+
+  // ======================================================
   // GET ALL
   // ======================================================
   async findAll() {
@@ -30,7 +90,7 @@ export class ObjetivoService {
         orderBy: { fechaCreacion: 'desc' },
         include: {
           empleado: true,
-          objetivoDetalles: true,
+          objetivoDetalles: { where: { estado: true } },
         },
       });
     } catch (error) {
@@ -48,7 +108,7 @@ export class ObjetivoService {
         where: { idObjetivo: id, estado: true },
         include: {
           empleado: true,
-          objetivoDetalles: true,
+          objetivoDetalles: { where: { estado: true } },
         },
       });
 
@@ -87,23 +147,37 @@ export class ObjetivoService {
       //
       // NO se borran y recrean todos, porque eso destruiría `metaAlcanzada` y
       // `porcentajeLogrado` (que solo escribe el módulo de evaluaciones), y
-      // además perdería los IDs y la auditoría en cada edición. Este método
-      // nunca toca esas dos columnas.
+      // además perdería los IDs y la auditoría en cada edición.
+      //
+      // `metaAlcanzada` no se toca nunca acá. `porcentajeLogrado` sí se
+      // recalcula, porque depende de la meta y del tipo de cálculo que este
+      // método sí puede cambiar.
       // --------------------------------------------------
       // Si el PATCH no trae detalles, no se tocan: omitir el campo no puede
       // significar "borrarlos todos".
       if (!dto.objetivoDetalles) {
         return await tx.objetivo.findUnique({
           where: { idObjetivo: id },
-          include: { objetivoDetalles: true, empleado: true },
+          include: {
+            objetivoDetalles: { where: { estado: true } },
+            empleado: true,
+          },
         });
       }
 
       const detallesEnviados = dto.objetivoDetalles;
 
+      this.validarPesos(detallesEnviados);
+
       const detallesActuales = await tx.objetivoDetalle.findMany({
-        where: { idObjetivo: id },
-        select: { idObjetivoDetalle: true },
+        // Solo los vigentes: un detalle dado de baja no se "conserva" ni se
+        // vuelve a actualizar porque el formulario reenvíe su id.
+        where: { idObjetivo: id, estado: true },
+        select: {
+          idObjetivoDetalle: true,
+          metaAlcanzada: true,
+          porcentajeLogrado: true,
+        },
       });
 
       const idsActuales = new Set(
@@ -128,10 +202,24 @@ export class ObjetivoService {
         if (d.idObjetivoDetalle && idsActuales.has(d.idObjetivoDetalle)) {
           idsConservados.add(d.idObjetivoDetalle);
 
+          const previo = detallesActuales.find(
+            (actual) => actual.idObjetivoDetalle === d.idObjetivoDetalle,
+          );
+
           await tx.objetivoDetalle.update({
             where: { idObjetivoDetalle: d.idObjetivoDetalle },
             data: {
               ...campos,
+              // Cambiar la meta o el tipo de cálculo de un detalle YA
+              // calificado dejaba el porcentaje logrado anterior, calculado
+              // contra una meta que ya no existe. Se recalcula con la meta
+              // alcanzada que ya estaba registrada; si no hay ninguna, sigue
+              // sin evaluar.
+              porcentajeLogrado: this.calcularPorcentajeLogrado(
+                campos,
+                previo?.metaAlcanzada,
+                previo?.porcentajeLogrado,
+              ),
               actualizadoPorId: user.idUsuario,
               fechaModificacion: new Date(),
             },
@@ -154,20 +242,32 @@ export class ObjetivoService {
         });
       }
 
-      // Los que el usuario quitó del formulario sí se eliminan.
+      // Los que el usuario quitó del formulario se dan de baja.
+      //
+      // Antes era un `deleteMany`: quitar un detalle borraba físicamente la
+      // calificación que el jefe ya le había puesto, sin rastro y contra la
+      // convención de soft delete del resto del esquema.
       const idsEliminados = [...idsActuales].filter(
         (idDetalle) => !idsConservados.has(idDetalle),
       );
 
       if (idsEliminados.length > 0) {
-        await tx.objetivoDetalle.deleteMany({
+        await tx.objetivoDetalle.updateMany({
           where: { idObjetivoDetalle: { in: idsEliminados } },
+          data: {
+            estado: false,
+            actualizadoPorId: user.idUsuario,
+            fechaModificacion: new Date(),
+          },
         });
       }
 
       return await tx.objetivo.findUnique({
         where: { idObjetivo: id },
-        include: { objetivoDetalles: true, empleado: true },
+        include: {
+          objetivoDetalles: { where: { estado: true } },
+          empleado: true,
+        },
       });
     });
   }
@@ -211,6 +311,8 @@ export class ObjetivoService {
     if (dto.objetivoDetalles.length < 1)
       throw new BadRequestException('Debe enviar al menos un detalle.');
 
+    this.validarPesos(dto.objetivoDetalles);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const objetivo = await tx.objetivo.create({
@@ -240,7 +342,10 @@ export class ObjetivoService {
 
         return await tx.objetivo.findUnique({
           where: { idObjetivo: objetivo.idObjetivo },
-          include: { objetivoDetalles: true, empleado: true },
+          include: {
+            objetivoDetalles: { where: { estado: true } },
+            empleado: true,
+          },
         });
       });
     } catch (error) {
@@ -264,6 +369,8 @@ export class ObjetivoService {
           throw new BadRequestException(
             `Debe enviar al menos un detalle para el código ${item.codigoEmpleado}`,
           );
+
+        this.validarPesos(item.objetivoDetalles);
 
         const empleado = await tx.empleado.findFirst({
           where: { codigoEmpleado: item.codigoEmpleado },
@@ -302,7 +409,10 @@ export class ObjetivoService {
         results.push(
           await tx.objetivo.findUnique({
             where: { idObjetivo: objetivo.idObjetivo },
-            include: { empleado: true, objetivoDetalles: true },
+            include: {
+              empleado: true,
+              objetivoDetalles: { where: { estado: true } },
+            },
           }),
         );
       }
@@ -364,7 +474,7 @@ export class ObjetivoService {
         orderBy: { fechaCreacion: 'desc' },
         include: {
           empleado: true,
-          objetivoDetalles: true,
+          objetivoDetalles: { where: { estado: true } },
         },
       });
     } catch (error) {
@@ -439,17 +549,26 @@ export class ObjetivoService {
           );
         }
 
-        // if (detalle.porcentajeLogrado < 0 || detalle.porcentajeLogrado > 100) {
-        //   throw new BadRequestException(
-        //     'El porcentaje logrado debe estar entre 0 y 100',
-        //   );
-        // }
+        const base = objetivo.objetivoDetalles.find(
+          (d) => d.idObjetivoDetalle === detalle.idObjetivoDetalle,
+        )!;
+
+        // El porcentaje se calcula acá, no se acepta el que manda el cliente.
+        // Guardarlo tal cual dejaba la nota a merced de lo que enviara el
+        // navegador y, si después alguien editaba la meta del detalle, el
+        // número persistido ya no correspondía a ninguna fórmula.
+        // En MANUAL no hay fórmula posible, así que ahí sí manda el evaluador.
+        const porcentajeLogrado = this.calcularPorcentajeLogrado(
+          base,
+          detalle.metaAlcanzada,
+          detalle.porcentajeLogrado,
+        );
 
         await tx.objetivoDetalle.update({
           where: { idObjetivoDetalle: detalle.idObjetivoDetalle },
           data: {
             metaAlcanzada: detalle.metaAlcanzada,
-            porcentajeLogrado: detalle.porcentajeLogrado,
+            porcentajeLogrado,
             actualizadoPorId: user.idUsuario,
             fechaModificacion: new Date(),
           },
@@ -463,7 +582,7 @@ export class ObjetivoService {
         where: { idObjetivo },
         include: {
           empleado: true,
-          objetivoDetalles: true,
+          objetivoDetalles: { where: { estado: true } },
         },
       });
     });

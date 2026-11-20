@@ -1,5 +1,6 @@
 // empresa-empleadora.controller.ts
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -19,6 +20,8 @@ import { UpdateEmpresaEmpleadoraDto } from './dto/update-empresa-empleadora.dto'
 
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -29,7 +32,14 @@ import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { EmpresaQueryDto } from './dto/empresa-query.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { empresasStorage } from '../common/interceptors/cloudinary.empresas.interceptor';
+import { empresaLogoUploadOptions } from '../common/interceptors/cloudinary.empresas.interceptor';
+
+// Lo que CloudinaryStorage deja en `file`: `path` es la URL pública y
+// `filename` el public_id que hace falta para borrar el logo anterior.
+interface ArchivoLogoSubido {
+  path?: string;
+  filename?: string;
+}
 
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
@@ -56,13 +66,34 @@ export class EmpresaEmpleadoraController {
   }
 
   @Post(':id/logo')
-  @UseInterceptors(FileInterceptor('file', { storage: empresasStorage }))
+  @ApiOperation({
+    summary: 'Subir el logo de una empresa empleadora',
+    description:
+      'Segundo paso de la creación: Cloudinary necesita el id de la empresa ya creada.',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Logo subido correctamente.' })
+  @UseInterceptors(FileInterceptor('file', empresaLogoUploadOptions))
   async uploadLogo(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: any,
+    @UploadedFile() file: ArchivoLogoSubido | undefined,
   ) {
+    // Sin archivo, `file` llega undefined y leer `file.path` reventaba en un 500.
+    if (!file?.path) {
+      throw new BadRequestException(
+        'Debes adjuntar una imagen en el campo file.',
+      );
+    }
+
     const url = file.path;
-    const publicId = file.filename;
+    const publicId = file.filename ?? '';
 
     const empresa = await this.service.updateLogo(id, url, publicId);
 
@@ -76,11 +107,10 @@ export class EmpresaEmpleadoraController {
   @ApiOperation({ summary: 'Listar todas las empresas empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de empresas empleadoras.' })
   async findAll(@Query() query: EmpresaQueryDto) {
-    const resp = await this.service.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 0,
-      search: query.search,
-    });
+    // Pasar la query completa: destructurarla dejaba fuera los filtros por
+    // columna y el ordenamiento que el servicio sí sabe aplicar.
+    const resp = await this.service.findAll(query);
+
     return {
       message: 'Lista de empresas empleadoras.',
       data: { empresas: resp.data, meta: resp.meta },

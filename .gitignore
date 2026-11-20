@@ -52,3 +52,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .env
 .env.deploy
 .env.*
+# La plantilla sí se versiona: es la única forma de saber qué variables
+# hacen falta sin tener que pedirle el .env a alguien.
+!.env.example
+!.env.deploy.example

@@ -243,6 +243,26 @@ export class UnidadOcupacionalEmpleadoraController {
     };
   }
 
+  // Va antes de guardar, no en lugar de guardar: la pantalla pregunta primero
+  // qué se perdería, avisa si hay notas en juego y solo entonces llama a
+  // `asignar`. No escribe nada.
+  @Post('asignar/impacto')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiBody({ type: AsignarCompetenciasDto })
+  @ApiOperation({
+    summary:
+      'Qué evaluaciones abiertas se anularían al guardar esta asignación',
+  })
+  @ApiResponse({ status: 201, description: 'Impacto calculado.' })
+  async impactoAsignacion(@Body() dto: AsignarCompetenciasDto) {
+    const impacto =
+      await this.unidadOcupacionalEmpleadoraService.calcularImpactoAsignacion(
+        dto.unidades,
+      );
+
+    return { message: 'Impacto calculado.', data: impacto };
+  }
+
   @Post('asignar')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: AsignarCompetenciasDto })

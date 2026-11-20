@@ -345,10 +345,121 @@ export class UnidadOcupacionalEmpleadoraService {
   }
 
   /**
-   * Método interno para asignar competencias a una unidad ocupacional.
-   * BORRA todas las asignaciones previas y CREA las nuevas.
+   * Asigna competencias (y su nivel) a una unidad ocupacional.
+   *
+   * Antes borraba TODAS las asignaciones previas y las volvía a crear. Como la
+   * lista de competencias a evaluar se arma en vivo desde esta tabla, cambiar
+   * un nivel en plena campaña dejaba a los trabajadores de la unidad con una
+   * evaluación abierta del nivel viejo —con calificaciones dentro— y otra del
+   * nivel nuevo. El indicador de avance ignoraba la vieja, pero el Excel de
+   * resultados la promediaba igual.
+   *
+   * Ahora se compara contra lo que ya había: solo se tocan las filas que de
+   * verdad cambian, y las evaluaciones abiertas del nivel que se abandona se
+   * anulan para que no contaminen el resultado. Las CERRADAS no se tocan.
    */
-  // TODO: Agregar validacion, para cuando empiece la evaluacion ya no se permita CAMBIAR LAS ASIGNACIONES
+  /**
+   * Qué se perdería al guardar una asignación, ANTES de guardarla.
+   *
+   * Cambiar el nivel de una competencia o quitarla de la unidad anula las
+   * evaluaciones abiertas de sus ocupantes, y eso se llevaba por delante notas
+   * ya puestas sin que nadie dijera nada. Este método no escribe: solo mira
+   * qué evaluaciones en PROCESO caerían y cuántas calificaciones se irían con
+   * ellas, para que la pantalla pueda pedir confirmación.
+   */
+  async calcularImpactoAsignacion(data: UnidadCompetenciaAsignacionDto[]) {
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new BadRequestException('Debe enviar al menos una unidad.');
+    }
+
+    const afectadas: {
+      unidad: string;
+      competencia: string;
+      motivo: 'retirada' | 'cambio-de-nivel';
+      trabajadores: number;
+      notasPuestas: number;
+    }[] = [];
+
+    for (const { idUnidadOcupacionalEmpleadora, competencias } of data) {
+      const unidad = await this.prisma.unidadOcupacionalEmpleadora.findFirst({
+        where: { idUnidadOcupacionalEmpleadora, estado: true },
+        select: { descripcion: true },
+      });
+
+      if (!unidad) continue;
+
+      const actuales =
+        await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+          where: { idUnidadOcupacionalEmpleadora },
+          include: { competencia: { select: { titulo: true } } },
+        });
+
+      const nivelPorCompetencia = new Map(
+        competencias.map((c) => [c.idCompetencia, c.idCompetenciaNivel]),
+      );
+
+      // El mismo criterio que usa `asignarCompetenciasInterno` para anular.
+      const abandonados = actuales.filter(
+        (a) => nivelPorCompetencia.get(a.idCompetencia) !== a.idCompetenciaNivel,
+      );
+
+      if (abandonados.length === 0) continue;
+
+      const empleados = await this.prisma.empleado.findMany({
+        where: { idUnidadOcupacionalEmpleadora, estado: true },
+        select: { idEmpleado: true },
+      });
+
+      if (empleados.length === 0) continue;
+
+      const idsEmpleados = empleados.map((e) => e.idEmpleado);
+
+      for (const a of abandonados) {
+        const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+          where: {
+            idEvaluado: { in: idsEmpleados },
+            estado: true,
+            estadoEvaluacion: 'PROCESO',
+            idCompetencia: a.idCompetencia,
+            idCompetenciaNivel: a.idCompetenciaNivel,
+          },
+          select: {
+            idEvaluado: true,
+            itemsEvaluados: {
+              where: { estado: true, calificacion: { not: null } },
+              select: { idEvaluacionCompetenciaItem: true },
+            },
+          },
+        });
+
+        if (evaluaciones.length === 0) continue;
+
+        afectadas.push({
+          unidad: unidad.descripcion,
+          competencia: a.competencia.titulo,
+          motivo: nivelPorCompetencia.has(a.idCompetencia)
+            ? 'cambio-de-nivel'
+            : 'retirada',
+          trabajadores: new Set(evaluaciones.map((e) => e.idEvaluado)).size,
+          notasPuestas: evaluaciones.reduce(
+            (total, e) => total + e.itemsEvaluados.length,
+            0,
+          ),
+        });
+      }
+    }
+
+    const notasPuestas = afectadas.reduce((t, a) => t + a.notasPuestas, 0);
+
+    return {
+      afectadas,
+      // Lo que de verdad decide si hay que preguntar: anular una evaluación
+      // vacía no cuesta nada, perder notas ya puestas sí.
+      notasPuestas,
+      requiereConfirmacion: notasPuestas > 0,
+    };
+  }
+
   private async asignarCompetenciasInterno(
     user: AuthUser,
     data: UnidadCompetenciaAsignacionDto[],
@@ -358,6 +469,8 @@ export class UnidadOcupacionalEmpleadoraService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const fechaModificacion = new Date();
+
       for (const unidadBlock of data) {
         const { idUnidadOcupacionalEmpleadora, competencias } = unidadBlock;
 
@@ -375,22 +488,80 @@ export class UnidadOcupacionalEmpleadoraService {
           );
         }
 
-        // 2. BORRAR todas las asignaciones previas de la unidad
-        await tx.unidadOcupacionalCompetenciaNivel.deleteMany({
+        // 2. Comparar con lo que ya estaba asignado
+        const actuales = await tx.unidadOcupacionalCompetenciaNivel.findMany({
           where: { idUnidadOcupacionalEmpleadora },
         });
 
-        // 3. Preparar nuevas asignaciones
-        const nuevasAsignaciones = competencias.map((comp) => ({
-          idUnidadOcupacionalEmpleadora,
-          idCompetencia: comp.idCompetencia,
-          idCompetenciaNivel: comp.idCompetenciaNivel,
-        }));
+        const nivelPorCompetencia = new Map(
+          competencias.map((c) => [c.idCompetencia, c.idCompetenciaNivel]),
+        );
+        const yaAsignadas = new Set(actuales.map((a) => a.idCompetencia));
 
-        // 4. Crear en lote TODAS las nuevas asignaciones
-        if (nuevasAsignaciones.length > 0) {
-          await tx.unidadOcupacionalCompetenciaNivel.createMany({
-            data: nuevasAsignaciones,
+        // Se abandona un nivel cuando la competencia sale de la unidad o
+        // cuando pasa a evaluarse en otro nivel.
+        const nivelesAbandonados = actuales.filter(
+          (a) =>
+            nivelPorCompetencia.get(a.idCompetencia) !== a.idCompetenciaNivel,
+        );
+
+        // 3. Anular las evaluaciones abiertas de los niveles abandonados
+        if (nivelesAbandonados.length > 0) {
+          const empleados = await tx.empleado.findMany({
+            where: { idUnidadOcupacionalEmpleadora, estado: true },
+            select: { idEmpleado: true },
+          });
+
+          if (empleados.length > 0) {
+            await tx.evaluacionCompetencia.updateMany({
+              where: {
+                idEvaluado: { in: empleados.map((e) => e.idEmpleado) },
+                estado: true,
+                estadoEvaluacion: 'PROCESO',
+                OR: nivelesAbandonados.map((a) => ({
+                  idCompetencia: a.idCompetencia,
+                  idCompetenciaNivel: a.idCompetenciaNivel,
+                })),
+              },
+              data: {
+                estadoEvaluacion: 'ANULADA',
+                actualizadoPorId: user.idUsuario,
+                fechaModificacion,
+              },
+            });
+          }
+        }
+
+        // 4. Quitar las competencias que ya no se evalúan en esta unidad
+        const retiradas = actuales
+          .filter((a) => !nivelPorCompetencia.has(a.idCompetencia))
+          .map((a) => a.idUnidadOcupacionalCompetenciaNivel);
+
+        if (retiradas.length > 0) {
+          await tx.unidadOcupacionalCompetenciaNivel.deleteMany({
+            where: {
+              idUnidadOcupacionalCompetenciaNivel: { in: retiradas },
+            },
+          });
+        }
+
+        // 5. Mover de nivel las que cambiaron y crear las nuevas
+        for (const [idCompetencia, idCompetenciaNivel] of nivelPorCompetencia) {
+          if (yaAsignadas.has(idCompetencia)) {
+            await tx.unidadOcupacionalCompetenciaNivel.updateMany({
+              where: { idUnidadOcupacionalEmpleadora, idCompetencia },
+              data: { idCompetenciaNivel },
+            });
+
+            continue;
+          }
+
+          await tx.unidadOcupacionalCompetenciaNivel.create({
+            data: {
+              idUnidadOcupacionalEmpleadora,
+              idCompetencia,
+              idCompetenciaNivel,
+            },
           });
         }
       }

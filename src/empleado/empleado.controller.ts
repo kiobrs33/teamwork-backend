@@ -13,6 +13,7 @@ import {
 import { EmpleadoService } from './empleado.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
+import { EliminarEmpleadosDto } from './dto/eliminar-empleados.dto';
 
 import {
   ApiBearerAuth,
@@ -172,6 +173,44 @@ export class EmpleadoController {
     return {
       message: `Empleado con ID ${id} actualizado correctamente.`,
       data: { empleado },
+    };
+  }
+
+  // ESTADO DETALLADO DE LA EVALUACIÓN
+  @Get(':id/estado-evaluacion')
+  @ApiOperation({
+    summary: 'Detalle del avance de evaluación de un trabajador',
+    description:
+      'Competencias asignadas con sus ítems pendientes, competencias anuladas y estado de los objetivos.',
+  })
+  @ApiParam({ name: 'id', description: 'ID del empleado' })
+  @ApiResponse({ status: 200, description: 'Estado de evaluación.' })
+  async estadoEvaluacion(@Param('id', ParseIntPipe) id: number) {
+    const estado = await this.empleadoService.estadoEvaluacion(id);
+    return { message: 'Estado de evaluación.', data: estado };
+  }
+
+  // ELIMINAR VARIOS EMPLEADOS (SOFT DELETE)
+  //
+  // Va ANTES de `@Delete(':id')` a propósito: declarado después, 'masivo'
+  // entraría por la ruta con parámetro y el ParseIntPipe respondería un 400.
+  @Delete('masivo')
+  @ApiOperation({ summary: 'Eliminar varios empleados (soft delete)' })
+  @ApiBody({ type: EliminarEmpleadosDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Empleados eliminados correctamente.',
+  })
+  async removeMany(@User() user: AuthUser, @Body() body: EliminarEmpleadosDto) {
+    const resp = await this.empleadoService.removeMany(user, body.ids);
+    const cuantos = resp?.eliminados.length ?? 0;
+
+    return {
+      message:
+        cuantos === 1
+          ? 'Trabajador eliminado correctamente.'
+          : `${cuantos} trabajadores eliminados correctamente.`,
+      data: resp,
     };
   }
 

@@ -1,6 +1,21 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsInt, Min, IsString, IsIn } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+
+// Campos por los que se permite ordenar. La lista es cerrada a propósito:
+// llega desde la query, así que no puede ser cualquier columna.
+export const EMPRESA_SORT_FIELDS = [
+  'idEmpresaEmpleadora',
+  'nombreEmpresa',
+  'ruc',
+  'modeloEmpresa',
+  'direccionEmpresa',
+  'fechaVigenciaInicio',
+  'fechaVigenciaFin',
+  'fechaCreacion',
+] as const;
+
+export type EmpresaSortField = (typeof EMPRESA_SORT_FIELDS)[number];
 
 export class EmpresaQueryDto {
   @ApiPropertyOptional({ example: 1 })
@@ -14,6 +29,9 @@ export class EmpresaQueryDto {
     example: 0,
     description: 'Número de registros por página (0 para sin paginación)',
   })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   @IsOptional()
   limit?: number = 0;
 
@@ -24,8 +42,14 @@ export class EmpresaQueryDto {
 
   // ================= FILTROS POR COLUMNA =================
 
+  // El filtro de ID es una caja de texto libre en el front: si lo que escriben
+  // no son solo dígitos se ignora, en vez de responder un 400.
   @ApiPropertyOptional()
-  @Type(() => Number)
+  @Transform(({ value }) =>
+    /^\d+$/.test(String(value ?? '').trim())
+      ? Number(String(value).trim())
+      : undefined,
+  )
   @IsInt()
   @IsOptional()
   idEmpresaEmpleadora?: number;
@@ -49,4 +73,33 @@ export class EmpresaQueryDto {
   @IsOptional()
   @IsString()
   direccionEmpresa?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-09',
+    description:
+      'Campaña. Coincidencia parcial, así que "2026" trae todas las del año.',
+  })
+  @IsOptional()
+  @IsString()
+  periodoEvaluacion?: string;
+
+  // ================= ORDENAMIENTO =================
+
+  @ApiPropertyOptional({
+    example: 'nombreEmpresa',
+    enum: EMPRESA_SORT_FIELDS,
+    description: 'Campo por el que ordenar. Por defecto fechaCreacion.',
+  })
+  @IsOptional()
+  @IsIn(EMPRESA_SORT_FIELDS as unknown as string[], {
+    message: `El campo de ordenamiento debe ser uno de: ${EMPRESA_SORT_FIELDS.join(', ')}.`,
+  })
+  sortBy?: EmpresaSortField;
+
+  @ApiPropertyOptional({ example: 'desc', enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsIn(['asc', 'desc'], {
+    message: 'El sentido de ordenamiento debe ser asc o desc.',
+  })
+  sortOrder?: 'asc' | 'desc';
 }

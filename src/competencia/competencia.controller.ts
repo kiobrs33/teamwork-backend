@@ -34,6 +34,7 @@ import { Res } from '@nestjs/common';
 import { Response } from 'express';
 import { createReadStream } from 'fs';
 import { CompetenciaQueryDto } from './dto/competencia-query.dto';
+import { ExportEmpresaQueryDto } from './dto/export-empresa-query.dto';
 
 @ApiTags('Competencia')
 @ApiBearerAuth()
@@ -362,22 +363,14 @@ export class CompetenciaController {
   })
   async exportarResultadosEmpresaExcel(
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Query() filtros: ExportEmpresaQueryDto,
     @Res() res: Response,
   ) {
     const workbook =
       await this.competenciaService.exportarResultadosEmpresaExcel(
         idEmpresaEmpleadora,
+        filtros,
       );
-
-    // res.set({
-    //   'Content-Type':
-    //     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    //   'Content-Disposition':
-    //     'attachment; filename="reporte_resultados_evaluaciones.xlsx"',
-    // });
-
-    // await workbook.xlsx.write(res);
-    // res.end();
 
     const buffer = await workbook.xlsx.writeBuffer();
 
@@ -393,24 +386,17 @@ export class CompetenciaController {
   }
 
   @Get('reportes/empresa/:idEmpresaEmpleadora/competencias/export-excel')
+  @ApiOperation({ summary: 'Exportar competencias evaluadas en Excel' })
   async exportarCompetenciasPorEmpresa(
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Query() filtros: ExportEmpresaQueryDto,
     @Res() res: Response,
   ) {
     const workbook =
       await this.competenciaService.exportarCompetenciasPorEmpresaExcel(
         idEmpresaEmpleadora,
+        filtros,
       );
-
-    // res.set({
-    //   'Content-Type':
-    //     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    //   'Content-Disposition':
-    //     'attachment; filename="reporte_competencias_empresa.xlsx"',
-    // });
-
-    // await workbook.xlsx.write(res);
-    // res.end();
 
     const buffer = await workbook.xlsx.writeBuffer();
 
@@ -426,24 +412,17 @@ export class CompetenciaController {
   }
 
   @Get('reportes/empresa/:idEmpresaEmpleadora/objetivos/export-excel')
+  @ApiOperation({ summary: 'Exportar objetivos en Excel' })
   async exportarObjetivosPorEmpresa(
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Query() filtros: ExportEmpresaQueryDto,
     @Res() res: Response,
   ) {
     const workbook =
       await this.competenciaService.exportarObjetivosPorEmpresaExcel(
         idEmpresaEmpleadora,
+        filtros,
       );
-
-    // res.set({
-    //   'Content-Type':
-    //     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    //   'Content-Disposition':
-    //     'attachment; filename="reporte_objetivos_empresa.xlsx"',
-    // });
-
-    // await workbook.xlsx.write(res);
-    // res.end();
 
     const buffer = await workbook.xlsx.writeBuffer();
 

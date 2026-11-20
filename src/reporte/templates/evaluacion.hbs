@@ -86,13 +86,13 @@
                 {{empresa.pesoCompetencias}}%
               </td>
               <td class="table__cell table__cell--center table__cell--bold">
-                {{resultados.competencias}}
+                {{resultadosTexto.competencias}}
               </td>
               <td
                 rowspan="2"
                 class="table__cell table__cell--center table__cell--bold"
               >
-                {{resultados.evaluacionFinal}}
+                {{resultadosTexto.evaluacionFinal}}
               </td>
             </tr>
             <tr>
@@ -103,13 +103,14 @@
                 {{empresa.pesoObjetivos}}%
               </td>
               <td class="table__cell table__cell--center table__cell--bold">
-                {{resultados.objetivos}}
+                {{resultadosTexto.objetivos}}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
+      {{#unless sinEvaluar}}
       <div class="graphics">
         {{!-- <div class="graphics__item">
           <h4 class="graphics__title">Resultado Obtenido ED General</h4>
@@ -124,6 +125,31 @@
            <canvas id="radarChart" class="canvas--fig2"></canvas>
         </div>
       </div>
+      {{/unless}}
+
+      {{#if sinEvaluar}}
+      {{!-- Mismo bloque de tabla que el resto del informe, para que la página
+            no quede coja donde iban los gráficos. --}}
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header">SIN EVALUAR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="table__cell table__cell--center">
+                No hay ninguna evaluación registrada para
+                {{evaluado.nombres}} {{evaluado.apellidos}} en el periodo
+                {{empresa.periodoEvaluacion}}, así que este informe no tiene
+                resultados que mostrar.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {{/if}}
 
 
       {{#each competenciasDetalle}}
@@ -142,9 +168,19 @@
               <tr>
                 <td class="table__cell">
                   <strong>{{orden}}</strong><br> {{competencia}}
+                  {{!-- El 0 de una competencia que nadie evaluó no significa
+                        lo mismo que un 0 puesto por el jefe: se dice. --}}
+                  {{#if noEvaluada}}
+                    <br><span style="color:#d97706; font-size:9px; font-weight:bold;">Sin evaluar · cuenta como 0</span>
+                  {{/if}}
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
                   {{autoevaluacion}}%
+                  {{!-- La autoevaluación no puntúa; está para detectar esto:
+                        el trabajador se pone 100 y el jefe le pone 20. --}}
+                  {{#if brecha}}
+                    <br><span style="color:#b91c1c; font-size:9px;">Revisar · {{diferencia}} pts de diferencia</span>
+                  {{/if}}
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
                   {{resultadoFinal}}%
@@ -232,7 +268,7 @@
               <td
                 class="table__cell table__cell--bgcolor table__cell--center table__cell--bold"
               >
-                {{resultados.competencias}}
+                {{resultadosTexto.competencias}}
               </td>
               <td class="table__cell table__cell--center">
                 <span>{{clasificacionCompetencias.mensaje}}</span>
@@ -270,7 +306,7 @@
                     {{metaAlcanzada}}
                   </td>
                   <td class="table__cell table__cell--center table__cell--bold">
-                    {{porcentajeLogrado}}%
+                    {{porcentajeLogrado}}
                   </td>
                 </tr>
               {{/each}}
@@ -282,7 +318,7 @@
                     colspan="2" 
                     class="table__cell table__cell--center"
                   >
-                    {{resultados.objetivos}}
+                    {{resultadosTexto.objetivos}}
                   </td>
               </tr>
             </tbody>
@@ -319,6 +355,36 @@
         <h2 class="report__title">
           RESULTADOS CUALITATIVOS
         </h2>
+
+        {{!-- Las competencias donde el trabajador y su jefe se separan mucho.
+              No se corrigen solas: la empresa habla con el jefe antes de
+              cerrar la evaluación, y para eso tienen que verse. --}}
+        {{#if hayBrechas}}
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header table__header--bgcolor">
+                  A REVISAR CON EL EVALUADOR
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="table__cell">
+                  <br>
+                  {{#each brechas}}
+                    • <strong>{{competencia}}</strong> — autoevaluación
+                    {{autoevaluacion}}% frente a {{evaluacionJefe}}% del jefe
+                    ({{diferencia}} puntos de diferencia)<br>
+                  {{/each}}
+                  <br>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        {{/if}}
 
         <div class="table">
           <table>
@@ -514,6 +580,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    {{#unless sinEvaluar}}
     <script>
       const chartData = {{{json chartData}}};
 
@@ -555,8 +622,29 @@
         }
       }); */
 
+      // Tope de los ejes: se calcula desde los datos y nunca baja del 100.
+      // Estaba fijo (120 en objetivos, 100 en competencias), así que un
+      // objetivo superado al 166% y otro al 200% salían como la MISMA barra
+      // llena hasta el borde y sin su etiqueta, contradiciendo a la tabla de
+      // encima. Se redondea al múltiplo de 25 de arriba para que las marcas
+      // del eje sigan siendo números redondos.
+      // `holgura` deja siempre un escalón libre por encima del valor más alto:
+      // la barra de objetivos lleva su porcentaje escrito en la punta y, al
+      // llegar justo al tope, la etiqueta se salía del lienzo y se cortaba.
+      const topeEje = (valores, minimo, holgura) => {
+        const mayor = Math.max(minimo, ...valores.filter(Number.isFinite));
+        return holgura
+          ? Math.floor(mayor / 25) * 25 + 25
+          : Math.ceil(mayor / 25) * 25;
+      };
+
       // OBJETIVOS BAR HORIZONTAL
       const objetivosChart = {{{json objetivosChart}}};
+      const topeObjetivos = topeEje(
+        objetivosChart.datasets.flatMap((d) => d.data),
+        120,
+        true,
+      );
       new Chart(document.getElementById('objetivosComparacionChart'), {
         type: 'bar',
 
@@ -575,7 +663,7 @@
           scales: {
             x: {
               beginAtZero: true,
-              max: 120,
+              max: topeObjetivos,
 
               grid: {
                 color: '#e8e8e8'
@@ -659,6 +747,15 @@
 
       // COMPETENCIAS RADAR
       const radarData = {{{json competenciasRadarChart}}};
+
+      // El tope sí se calcula desde los datos: estaba fijo en 100 y una
+      // competencia por encima del resultado esperado quedaba recortada justo
+      // en el borde, indistinguible de una que diera exactamente 100.
+      const topeCompetencias = topeEje(
+        radarData.datasets.flatMap((d) => d.data),
+        100,
+      );
+
       new Chart(document.getElementById('radarChart'), {
         type: 'radar',
         data: radarData,
@@ -691,7 +788,8 @@
           scales: {
             r: {
               beginAtZero: true,
-              max: 100,
+              max: topeCompetencias,
+
               ticks: {
                 stepSize: 25,
                 backdropColor: 'transparent',
@@ -714,7 +812,6 @@
                   weight: 'bold',
                 },
                 color: '#333',
-                // display: false
               }
             }
           }
@@ -723,7 +820,10 @@
 
       // EVALUACION FINAL DOUGHNUT
       const porcentajeFinal = {{{resultados.evaluacionFinal}}};
-const restanteFinal = 100 - porcentajeFinal;
+// El resultado puede pasar de 100 (un objetivo superado da más del 100%), y
+// entonces el "pendiente" salía negativo y Chart.js dibujaba el anillo roto.
+// Se acota solo la geometría: la cifra del centro sigue siendo la real.
+const restanteFinal = Math.max(0, 100 - porcentajeFinal);
 
 const centerTextFinal = {
   id: 'centerTextFinal',
@@ -790,5 +890,6 @@ new Chart(document.getElementById('evaluacionFinalChart'), {
   plugins: [centerTextFinal]
 });
     </script>
+    {{/unless}}
   </body>
 </html>
