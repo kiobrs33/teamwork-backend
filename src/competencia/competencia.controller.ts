@@ -329,14 +329,14 @@ export class CompetenciaController {
     };
   }
 
-  @Get('evaluaciones/empresa/:idEmpresaEmpleadora/periodos')
-  @ApiOperation({ summary: 'Campañas con evaluaciones de la empresa (y la vigente)' })
-  async periodosDeEmpresa(
+  @Get('evaluaciones/empresa/:idEmpresaEmpleadora/campanas')
+  @ApiOperation({ summary: 'Campañas de la empresa (en curso y cerradas)' })
+  async campanasDeEmpresa(
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
   ) {
     return {
-      message: 'Periodos de evaluación de la empresa.',
-      data: await this.competenciaService.periodosDeEmpresa(idEmpresaEmpleadora),
+      message: 'Campañas de la empresa.',
+      data: await this.competenciaService.campanasDeEmpresa(idEmpresaEmpleadora),
     };
   }
 

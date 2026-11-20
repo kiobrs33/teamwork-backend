@@ -11,7 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Rol } from 'src/empleado/types/empleadoTypes';
-import { normalizarPeriodo } from 'src/common/resultados/resultados-evaluacion';
+import { campanaEnCurso } from 'src/common/resultados/campana';
 
 import { CreateEvidenciaDto } from './dto/create-evidencia.dto';
 import { EvidenciaQueryDto, TIPOS_EVIDENCIA } from './dto/evidencia-query.dto';
@@ -56,11 +56,11 @@ const includeListado = {
   evaluacion: {
     select: {
       idEvaluacionCompetencia: true,
-      periodoEvaluacion: true,
       competencia: { select: { idCompetencia: true, titulo: true } },
     },
   },
   objetivo: { select: { idObjetivo: true } },
+  campana: { select: { idCampanaEvaluacion: true, nombre: true } },
 } satisfies Prisma.EvidenciaInclude;
 
 type EvidenciaListado = Prisma.EvidenciaGetPayload<{
@@ -176,39 +176,40 @@ export class EvidenciaService {
 
       // El objetivo o la evaluación tienen que ser del mismo trabajador. De
       // ellos sale también la campaña de la evidencia.
-      let periodoEvaluacion: string | null = null;
+      let idCampanaEvaluacion: number | null = null;
       if (idObjetivo) {
         const objetivo = await this.prisma.objetivo.findFirst({
           where: { idObjetivo, idEmpleado, estado: true },
-          select: { idObjetivo: true, periodoEvaluacion: true },
+          select: { idObjetivo: true, idCampanaEvaluacion: true },
         });
         if (!objetivo) {
           throw new BadRequestException(
             'El objetivo no pertenece al trabajador indicado',
           );
         }
-        periodoEvaluacion = objetivo.periodoEvaluacion;
+        idCampanaEvaluacion = objetivo.idCampanaEvaluacion;
       }
       if (idEvaluacionCompetencia) {
         const evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
           where: { idEvaluacionCompetencia, idEvaluado: idEmpleado },
-          select: { idEvaluacionCompetencia: true, periodoEvaluacion: true },
+          select: { idEvaluacionCompetencia: true, idCampanaEvaluacion: true },
         });
         if (!evaluacion) {
           throw new BadRequestException(
             'La evaluación no pertenece al trabajador indicado',
           );
         }
-        periodoEvaluacion = evaluacion.periodoEvaluacion;
+        idCampanaEvaluacion = evaluacion.idCampanaEvaluacion;
       }
-      if (!periodoEvaluacion) {
+      if (!idCampanaEvaluacion) {
         const empleado = await this.prisma.empleado.findUnique({
           where: { idEmpleado },
-          select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+          select: { idEmpresaEmpleadora: true },
         });
-        periodoEvaluacion = normalizarPeriodo(
-          empleado?.empresaEmpleadora?.periodoEvaluacion,
-        );
+        const campana = empleado
+          ? await campanaEnCurso(this.prisma, empleado.idEmpresaEmpleadora)
+          : null;
+        idCampanaEvaluacion = campana?.idCampanaEvaluacion ?? null;
       }
 
       return await this.prisma.evidencia.create({
@@ -221,7 +222,7 @@ export class EvidenciaService {
           urlArchivo: url,
           publicId: publicId,
           tipoArchivo: file.mimetype,
-          periodoEvaluacion,
+          idCampanaEvaluacion,
 
           creadoPorId: user.idUsuario,
         },
@@ -286,8 +287,9 @@ export class EvidenciaService {
       }
     }
 
-    const periodo = normalizarPeriodo(query.periodoEvaluacion);
-    if (periodo) and.push({ periodoEvaluacion: periodo });
+    if (query.idCampanaEvaluacion) {
+      and.push({ idCampanaEvaluacion: Number(query.idCampanaEvaluacion) });
+    }
 
     if (tipo === 'OBJETIVO') and.push({ idObjetivo: { not: null } });
     if (tipo === 'COMPETENCIA') {
@@ -377,7 +379,7 @@ export class EvidenciaService {
             { header: 'Empresa', key: 'empresa', width: 26 },
             { header: 'Sustenta', key: 'sustenta', width: 14 },
             { header: 'Competencia', key: 'competencia', width: 26 },
-            { header: 'Periodo', key: 'periodo' },
+            { header: 'Campaña', key: 'campana', width: 26 },
             { header: 'Subido por', key: 'subidoPor', width: 26 },
             { header: 'Rol de quien subió', key: 'rol' },
             { header: 'Fecha de subida', key: 'fechaSubida', tipo: 'fecha' },
@@ -398,7 +400,7 @@ export class EvidenciaService {
                   ? 'Competencia'
                   : 'Sin asociar',
             competencia: e.evaluacion?.competencia.titulo,
-            periodo: e.evaluacion?.periodoEvaluacion,
+            campana: e.campana?.nombre,
             subidoPor: e.subidoPor?.nombre,
             rol: e.subidoPor?.rol,
             fechaSubida: e.fechaSubida,

@@ -506,11 +506,29 @@ model CampanaEvaluacion {
   fechaReapertura                            DateTime?         @map("fecha_reapertura")
   reabiertoPorId                             Int?              @map("reabierto_por_id")
 
-  evaluaciones EvaluacionCompetencia[]
-  objetivos    Objetivo[]
-  evidencias   Evidencia[]
+  evaluaciones      EvaluacionCompetencia[]
+  objetivos         Objetivo[]
+  evidencias        Evidencia[]
+  CampanaAsignacion CampanaAsignacion[]
 
   @@unique([idEmpresaEmpleadora, periodoEvaluacion])
   @@index([idEmpresaEmpleadora, estado])
   @@map("campana_evaluacion")
+}
+
+// Foto de lo que le tocaba evaluar a cada trabajador al CERRAR la campaña
+// (competencias y nivel de su unidad ocupacional en ese momento). Las campañas
+// cerradas calculan "asignadas" con esto: la unidad de hoy puede ser otra, y
+// sin la foto una competencia asignada que nadie evaluó dejaba de contar como
+// 0 al cerrar, cambiando el resultado. Reabrir la campaña borra la foto.
+model CampanaAsignacion {
+  idCampanaAsignacion Int               @id @default(autoincrement()) @map("id_campana_asignacion")
+  idCampanaEvaluacion Int               @map("id_campana_evaluacion")
+  campana             CampanaEvaluacion @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
+  idEmpleado          Int               @map("id_empleado")
+  idCompetencia       Int               @map("id_competencia")
+  idCompetenciaNivel  Int               @map("id_competencia_nivel")
+
+  @@unique([idCampanaEvaluacion, idEmpleado, idCompetencia])
+  @@map("campana_asignacion")
 }

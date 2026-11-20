@@ -1,41 +1,56 @@
-import type { EmpresaEmpleadora, PrismaClient } from '@prisma/client';
-import type { ConfiguracionEmpresa } from './resultados-evaluacion';
-import { normalizarPeriodo } from './resultados-evaluacion';
+import type { CampanaEvaluacion, PrismaClient } from '@prisma/client';
+import { NotFoundException } from '@nestjs/common';
 
 type Prisma = Pick<PrismaClient, 'campanaEvaluacion'>;
 
+export type Campana = CampanaEvaluacion;
+
+export const CAMPANA_EN_CURSO = 'EN_CURSO';
+export const CAMPANA_CERRADA = 'CERRADA';
+
 /**
- * Con qué configuración se calcula una campaña.
+ * Qué evaluaciones cuentan para un resultado: las de la campaña y que no estén
+ * anuladas. Reemplaza al filtro por `periodoEvaluacion` ("YYYY-MM"): la
+ * campaña es ahora una entidad con id.
  *
- * La vigente usa la de la empresa. Una cerrada usa la que se guardó en
- * `CampanaEvaluacion` al cerrarla: los pesos, el modelo y la escala de la
- * empresa se sobrescriben de una campaña a otra, y recalcular un resultado
- * viejo con la configuración nueva daba otra cifra que la que se entregó.
- * Si la campaña es anterior a esta tabla (no hay fila), cae a la de la
- * empresa, que es lo único que existe.
+ * Sin campaña (`null`) no cuenta ninguna: `-1` no coincide con ningún id, y
+ * así un trabajador de una empresa sin campaña abierta sale "sin evaluar" en
+ * vez de sumar evaluaciones de cualquier ciclo.
  */
-export async function configuracionDeCampana(
-  prisma: Prisma,
-  empresa: Pick<
-    EmpresaEmpleadora,
-    keyof ConfiguracionEmpresa | 'idEmpresaEmpleadora' | 'periodoEvaluacion'
-  >,
-  periodo?: string | null,
-): Promise<ConfiguracionEmpresa & { periodo: string | null; cerrada: boolean }> {
-  const vigente = normalizarPeriodo(empresa.periodoEvaluacion);
-  const pedido = normalizarPeriodo(periodo) ?? vigente;
+export const filtroEvaluacionesDeCampana = (idCampana?: number | null) => ({
+  estado: true,
+  estadoEvaluacion: { not: 'ANULADA' },
+  idCampanaEvaluacion: idCampana ?? -1,
+});
 
-  if (pedido && pedido !== vigente) {
-    const campana = await prisma.campanaEvaluacion.findUnique({
-      where: {
-        idEmpresaEmpleadora_periodoEvaluacion: {
-          idEmpresaEmpleadora: empresa.idEmpresaEmpleadora,
-          periodoEvaluacion: pedido,
-        },
-      },
-    });
-    if (campana) return { ...campana, periodo: pedido, cerrada: true };
-  }
-
-  return { ...empresa, periodo: pedido, cerrada: pedido !== vigente };
+/** La campaña en curso de una empresa (hay como mucho una). */
+export function campanaEnCurso(prisma: Prisma, idEmpresaEmpleadora: number) {
+  return prisma.campanaEvaluacion.findFirst({
+    where: { idEmpresaEmpleadora, estado: CAMPANA_EN_CURSO },
+  });
 }
+
+/**
+ * La campaña pedida, comprobando que sea de la empresa; sin id, la en curso.
+ * La configuración (modelo, pesos, escala) vive en la propia campaña, así que
+ * una cerrada se calcula con la que tenía y no con la actual.
+ */
+export async function resolverCampana(
+  prisma: Prisma,
+  idEmpresaEmpleadora: number,
+  idCampana?: number | string | null,
+): Promise<Campana | null> {
+  const id = idCampana ? Number(idCampana) : undefined;
+  if (!id) return campanaEnCurso(prisma, idEmpresaEmpleadora);
+
+  const campana = await prisma.campanaEvaluacion.findFirst({
+    where: { idCampanaEvaluacion: id, idEmpresaEmpleadora },
+  });
+  if (!campana) {
+    throw new NotFoundException('La campaña no existe o no es de esta empresa.');
+  }
+  return campana;
+}
+
+/** "Evaluación anual 2026 (01/01/2026 – 31/12/2026)" para títulos y PDF. */
+export const etiquetaDeCampana = (c: Pick<Campana, 'nombre'>) => c.nombre;

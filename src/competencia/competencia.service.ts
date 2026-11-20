@@ -1,5 +1,11 @@
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
-import { configuracionDeCampana } from 'src/common/resultados/campana';
+import {
+  CAMPANA_CERRADA,
+  CAMPANA_EN_CURSO,
+  campanaEnCurso,
+  filtroEvaluacionesDeCampana,
+  resolverCampana,
+} from 'src/common/resultados/campana';
 import {
   BadRequestException,
   HttpException,
@@ -29,8 +35,6 @@ import {
   calificacionValida,
   CALIFICACION_MAXIMA_MANUAL,
   OPCIONES_LIKERT,
-  filtroEvaluacionesVigentes,
-  normalizarPeriodo as normalizarPeriodoCompartido,
   notaDeEvaluacion,
   notasVacias,
   origenDeEvaluacion,
@@ -858,75 +862,58 @@ export class CompetenciaService {
   }
 
   /**
-   * Recorta un periodo a "YYYY-MM".
-   *
-   * `EmpresaEmpleadora.periodoEvaluacion` se guarda como "YYYY-MM" y el DTO lo
-   * valida así, pero quedan filas antiguas con el ISO completo
-   * ("2026-09-04T05:00:00.000Z"). Las dos formas no coinciden comparadas como
-   * texto, así que el periodo se normaliza SIEMPRE antes de guardarlo en una
-   * evaluación o de filtrar por él: si no, editar y guardar una empresa vieja
-   * cambiaría su periodo a la forma corta y sus evaluaciones abiertas —
-   * estampadas con la forma larga — dejarían de encontrarse, se crearían
-   * nuevas y las notas quedarían huérfanas.
+   * Campañas de la empresa para los selectores (exportación, avance,
+   * historial): la en curso primero, después las cerradas de la más reciente
+   * a la más vieja.
    */
-  /**
-   * Campañas con evaluaciones de la empresa, de la más reciente a la más
-   * vieja, más la vigente aunque todavía no tenga ninguna. Alimenta el
-   * selector del modal de exportación: el backend ya aceptaba un periodo
-   * pasado, pero desde la pantalla no había forma de pedirlo.
-   */
-  async periodosDeEmpresa(idEmpresaEmpleadora: number) {
+  async campanasDeEmpresa(idEmpresaEmpleadora: number) {
     const empresa = await this.prisma.empresaEmpleadora.findUnique({
       where: { idEmpresaEmpleadora },
-      select: { periodoEvaluacion: true },
+      select: { idEmpresaEmpleadora: true },
     });
     if (!empresa) throw new NotFoundException('Empresa no encontrada');
 
-    const filas = await this.prisma.evaluacionCompetencia.findMany({
-      where: {
+    const campanas = await this.prisma.campanaEvaluacion.findMany({
+      where: { idEmpresaEmpleadora },
+      orderBy: [{ periodoDesde: 'desc' }],
+      select: {
+        idCampanaEvaluacion: true,
+        nombre: true,
         estado: true,
-        periodoEvaluacion: { not: null },
-        evaluado: { idEmpresaEmpleadora },
+        periodoDesde: true,
+        periodoHasta: true,
+        fechaCierre: true,
       },
-      distinct: ['periodoEvaluacion'],
-      select: { periodoEvaluacion: true },
     });
 
-    const vigente = this.normalizarPeriodo(empresa.periodoEvaluacion);
-    const periodos = new Set(
-      filas
-        .map((f) => this.normalizarPeriodo(f.periodoEvaluacion))
-        .filter((p): p is string => !!p),
-    );
-    if (vigente) periodos.add(vigente);
+    // `estado` lo borra el PurgeResponseInterceptor: viaja como estadoCampana.
+    const conEstado = campanas.map((c) => ({ ...c, estadoCampana: c.estado }));
 
     return {
-      vigente,
-      periodos: [...periodos].sort().reverse(),
+      enCurso:
+        campanas.find((c) => c.estado === CAMPANA_EN_CURSO)
+          ?.idCampanaEvaluacion ?? null,
+      campanas: [
+        ...conEstado.filter((c) => c.estado === CAMPANA_EN_CURSO),
+        ...conEstado.filter((c) => c.estado !== CAMPANA_EN_CURSO),
+      ],
     };
   }
 
-  private normalizarPeriodo(periodo?: string | null): string | null {
-    return normalizarPeriodoCompartido(periodo);
-  }
-
-
   /**
-   * Periodo de campaña ("YYYY-MM") que le corresponde a un evaluado, tomado de
-   * la empresa a la que pertenece. Es lo que separa una campaña de la
-   * siguiente en `EvaluacionCompetencia`.
+   * La campaña en curso de la empresa del evaluado: es la que separa una
+   * ronda de evaluación de la siguiente en `EvaluacionCompetencia`.
    */
-  private async periodoDeEvaluado(idEvaluado?: number | null) {
+  private async campanaDeEvaluado(idEvaluado?: number | null) {
     if (!idEvaluado) return null;
 
     const empleado = await this.prisma.empleado.findFirst({
       where: { idEmpleado: idEvaluado },
-      select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+      select: { idEmpresaEmpleadora: true },
     });
-
-    return this.normalizarPeriodo(
-      empleado?.empresaEmpleadora?.periodoEvaluacion,
-    );
+    return empleado
+      ? campanaEnCurso(this.prisma, empleado.idEmpresaEmpleadora)
+      : null;
   }
 
   /** Foto de la estructura que se guarda con cada evaluación nueva. */
@@ -982,19 +969,24 @@ export class CompetenciaService {
     const { idEvaluado, idEvaluador, idCompetencia, idCompetenciaNivel } = dto;
 
     try {
-      const periodoEvaluacion = await this.periodoDeEvaluado(idEvaluado);
+      const campana = await this.campanaDeEvaluado(idEvaluado);
+      if (!campana) {
+        throw new BadRequestException(
+          'La empresa no tiene una campaña de evaluación en curso.',
+        );
+      }
 
       // 1) Buscar una evaluación en PROCESO **de esta campaña**.
       //
-      // Antes se buscaba sin periodo: al abrir la campaña siguiente aparecía
-      // la evaluación del periodo anterior y el evaluador terminaba
-      // sobrescribiendo sus calificaciones.
+      // Antes se buscaba sin campaña: al abrir la siguiente aparecía la
+      // evaluación anterior y el evaluador terminaba sobrescribiendo sus
+      // calificaciones.
       let evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
         where: {
           idEvaluado,
           idEvaluador,
           idCompetencia,
-          periodoEvaluacion,
+          idCampanaEvaluacion: campana.idCampanaEvaluacion,
           estadoEvaluacion: 'PROCESO',
           estado: true,
         },
@@ -1062,7 +1054,9 @@ export class CompetenciaService {
           idEvaluador,
           idCompetencia,
           idCompetenciaNivel,
-          periodoEvaluacion,
+          idCampanaEvaluacion: campana.idCampanaEvaluacion,
+          // Heredado: solo las campañas migradas tienen "YYYY-MM".
+          periodoEvaluacion: campana.periodoEvaluacion,
           ...foto,
           estadoEvaluacion: 'PROCESO',
           creadoPorId: user.idUsuario,
@@ -1312,6 +1306,9 @@ export class CompetenciaService {
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
         estado: true,
+        // Solo la campaña en curso: antes mezclaba todas. Las anuladas sí
+        // entran, porque el panel las cuenta aparte.
+        campana: { estado: CAMPANA_EN_CURSO },
         idEvaluado: { not: null },
         evaluado: {
           idEmpresaEmpleadora,
@@ -1537,18 +1534,15 @@ export class CompetenciaService {
       throw new NotFoundException('Empresa no encontrada');
     }
 
-    // Una campaña cerrada se calcula con la configuración que tenía, no con
-    // la actual de la empresa.
-    const campana = await configuracionDeCampana(
+    // La campaña pedida o la en curso. Se calcula con SU configuración: una
+    // cerrada conserva la que tenía, aunque la de la empresa haya cambiado.
+    const campana = await resolverCampana(
       this.prisma,
-      empresaBase,
-      filtros.periodoEvaluacion,
+      idEmpresaEmpleadora,
+      filtros.idCampanaEvaluacion,
     );
-    const empresa = {
-      ...empresaBase,
-      ...campana,
-      periodoEvaluacion: campana.periodo,
-    };
+    const empresa = { ...empresaBase, ...(campana ?? {}) };
+    const campanaCerrada = campana?.estado === CAMPANA_CERRADA;
 
     // ===============================
     // 1️⃣ OBTENER DATA
@@ -1560,9 +1554,7 @@ export class CompetenciaService {
 
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
-        ...filtroEvaluacionesVigentes(
-          filtros.periodoEvaluacion ?? empresa.periodoEvaluacion,
-        ),
+        ...filtroEvaluacionesDeCampana(campana?.idCampanaEvaluacion),
         evaluado: whereEmpleado,
       },
       include: {
@@ -1590,16 +1582,11 @@ export class CompetenciaService {
       },
     });
 
-    // Mismo periodo que las evaluaciones: los objetivos de otra campaña no
-    // entran (antes se mezclaban todas).
-    const periodoReporte = this.normalizarPeriodo(
-      filtros.periodoEvaluacion ?? empresa.periodoEvaluacion,
-    );
-
+    // Misma campaña que las evaluaciones: los objetivos de otra no entran.
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
         estado: true,
-        periodoEvaluacion: periodoReporte,
+        idCampanaEvaluacion: campana?.idCampanaEvaluacion ?? -1,
         empleado: whereEmpleado,
       },
       include: {
@@ -1791,10 +1778,20 @@ export class CompetenciaService {
       competenciasPorUnidad.set(a.idUnidadOcupacionalEmpleadora, lista);
     }
 
-    // En una campaña cerrada, lo que le tocaba a cada quien es lo que se le
-    // evaluó en ella: su unidad pudo cambiar después.
+    // En una campaña cerrada, lo que le tocaba a cada quien es la foto
+    // guardada al cerrarla (CampanaAsignacion): su unidad pudo cambiar
+    // después. Sin foto (cerradas antes de existir), lo que se le evaluó.
     const evaluadasPorEmpleado = new Map<number, Set<number>>();
-    for (const ev of evaluaciones) {
+    const foto = campanaCerrada && campana
+      ? await this.prisma.campanaAsignacion.findMany({
+          where: { idCampanaEvaluacion: campana.idCampanaEvaluacion },
+          select: { idEmpleado: true, idCompetencia: true },
+        })
+      : [];
+    const origenCerrada = foto.length
+      ? foto.map((f) => ({ idEvaluado: f.idEmpleado, idCompetencia: f.idCompetencia }))
+      : evaluaciones;
+    for (const ev of origenCerrada) {
       if (!ev.idEvaluado) continue;
       const set = evaluadasPorEmpleado.get(ev.idEvaluado) ?? new Set<number>();
       set.add(ev.idCompetencia);
@@ -1808,7 +1805,7 @@ export class CompetenciaService {
       // contando 0 las que nadie evaluó.
       const deAsignadas = resultadoDeCompetenciasAsignadas(
         empresa,
-        campana.cerrada
+        campanaCerrada
           ? [...(evaluadasPorEmpleado.get(emp.empleado.idEmpleado) ?? [])]
           : (competenciasPorUnidad.get(
               emp.empleado.idUnidadOcupacionalEmpleadora,
@@ -1881,22 +1878,24 @@ export class CompetenciaService {
   ) {
     const empresa = await this.prisma.empresaEmpleadora.findFirst({
       where: { idEmpresaEmpleadora, estado: true },
-      select: { periodoEvaluacion: true },
+      select: { idEmpresaEmpleadora: true },
     });
 
     if (!empresa) {
       throw new NotFoundException('Empresa no encontrada');
     }
 
+    const campana = await resolverCampana(
+      this.prisma,
+      idEmpresaEmpleadora,
+      filtros.idCampanaEvaluacion,
+    );
+
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
-        estado: true, // evaluación activa
-        // Ambos criterios, igual que en el export de resultados: las anuladas
-        // no cuentan y solo se exporta la campaña pedida.
-        estadoEvaluacion: { not: 'ANULADA' },
-        periodoEvaluacion: this.normalizarPeriodo(
-          filtros.periodoEvaluacion ?? empresa.periodoEvaluacion,
-        ),
+        // Igual que en el export de resultados: las anuladas no cuentan y
+        // solo se exporta la campaña pedida.
+        ...filtroEvaluacionesDeCampana(campana?.idCampanaEvaluacion),
         evaluado: {
           is: this.filtroEmpleadoExport(idEmpresaEmpleadora, filtros),
         },
@@ -2021,17 +2020,16 @@ export class CompetenciaService {
     idEmpresaEmpleadora: number,
     filtros: ExportEmpresaQueryDto = {},
   ) {
-    const empresaObj = await this.prisma.empresaEmpleadora.findUnique({
-      where: { idEmpresaEmpleadora },
-      select: { periodoEvaluacion: true },
-    });
+    const campana = await resolverCampana(
+      this.prisma,
+      idEmpresaEmpleadora,
+      filtros.idCampanaEvaluacion,
+    );
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
         estado: true,
-        // La campaña pedida o la vigente: sin esto salían todas mezcladas.
-        periodoEvaluacion: this.normalizarPeriodo(
-          filtros.periodoEvaluacion ?? empresaObj?.periodoEvaluacion,
-        ),
+        // La campaña pedida o la en curso: sin esto salían todas mezcladas.
+        idCampanaEvaluacion: campana?.idCampanaEvaluacion ?? -1,
         empleado: this.filtroEmpleadoExport(idEmpresaEmpleadora, filtros),
       },
       include: {

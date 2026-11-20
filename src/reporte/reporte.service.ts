@@ -7,18 +7,21 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Rol } from 'src/empleado/types/empleadoTypes';
 import { PdfRendererService } from './pdf/pdf-renderer.service';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { configuracionDeCampana } from 'src/common/resultados/campana';
+import {
+  CAMPANA_CERRADA,
+  CAMPANA_EN_CURSO,
+  campanaEnCurso,
+  filtroEvaluacionesDeCampana,
+} from 'src/common/resultados/campana';
 import {
   calcularResultados,
   clasificarDesempeno,
   DESEMPENO_SIN_EVALUAR,
-  filtroEvaluacionesVigentes,
   notaDeEvaluacion,
   notasVacias,
   origenDeEvaluacion,
   pesosDeEmpresa,
   hayBrecha,
-  normalizarPeriodo,
   redondear,
   resultadoDeCompetenciasAsignadas,
   resultadoDeObjetivo,
@@ -52,7 +55,7 @@ export class ReporteService {
   async verificarAcceso(
     user: AuthUser,
     idEmpleado: number,
-    periodo?: string | null,
+    idCampana?: number | null,
   ) {
     if (user.rol === Rol.ADMIN) return;
 
@@ -63,10 +66,7 @@ export class ReporteService {
       }),
       this.prisma.empleado.findUnique({
         where: { idEmpleado },
-        select: {
-          codigoEmpleadoJefe: true,
-          empresaEmpleadora: { select: { periodoEvaluacion: true } },
-        },
+        select: { codigoEmpleadoJefe: true, idEmpresaEmpleadora: true },
       }),
     ]);
     if (!yo || !objetivo) {
@@ -74,11 +74,14 @@ export class ReporteService {
     }
 
     if (yo.idEmpleado === idEmpleado) {
-      const vigente = normalizarPeriodo(
-        objetivo.empresaEmpleadora?.periodoEvaluacion,
-      );
-      const pedido = normalizarPeriodo(periodo) ?? vigente;
-      if (pedido === vigente) {
+      const campana = idCampana
+        ? await this.prisma.campanaEvaluacion.findUnique({
+            where: { idCampanaEvaluacion: Number(idCampana) },
+            select: { estado: true },
+          })
+        : null;
+      // Sin campaña pedida = la en curso; y una en curso no se muestra.
+      if (!campana || campana.estado !== CAMPANA_CERRADA) {
         throw new ForbiddenException(
           'Los resultados de la campaña en curso estarán disponibles cuando se cierre.',
         );
@@ -117,55 +120,57 @@ export class ReporteService {
   async campanasDeEmpleado(idEmpleado: number, soloCerradas = false) {
     const empleado = await this.prisma.empleado.findUnique({
       where: { idEmpleado },
-      select: {
-        idEmpresaEmpleadora: true,
-        empresaEmpleadora: { select: { periodoEvaluacion: true } },
-      },
+      select: { idEmpresaEmpleadora: true },
     });
     if (!empleado) throw new NotFoundException('Empleado no encontrado');
 
-    const vigente = normalizarPeriodo(empleado.empresaEmpleadora?.periodoEvaluacion);
-
-    const [cerradas, deEvaluaciones, deObjetivos] = await Promise.all([
-      this.prisma.campanaEvaluacion.findMany({
-        where: { idEmpresaEmpleadora: empleado.idEmpresaEmpleadora },
-        select: { periodoEvaluacion: true, fechaCierre: true },
-      }),
+    const [deEvaluaciones, deObjetivos, enCurso] = await Promise.all([
       this.prisma.evaluacionCompetencia.findMany({
-        where: { idEvaluado: idEmpleado, estado: true, periodoEvaluacion: { not: null } },
-        distinct: ['periodoEvaluacion'],
-        select: { periodoEvaluacion: true },
+        where: { idEvaluado: idEmpleado, estado: true, idCampanaEvaluacion: { not: null } },
+        distinct: ['idCampanaEvaluacion'],
+        select: { idCampanaEvaluacion: true },
       }),
       this.prisma.objetivo.findMany({
-        where: { idEmpleado, estado: true, periodoEvaluacion: { not: null } },
-        distinct: ['periodoEvaluacion'],
-        select: { periodoEvaluacion: true },
+        where: { idEmpleado, estado: true, idCampanaEvaluacion: { not: null } },
+        distinct: ['idCampanaEvaluacion'],
+        select: { idCampanaEvaluacion: true },
       }),
+      campanaEnCurso(this.prisma, empleado.idEmpresaEmpleadora),
     ]);
 
-    const fechaCierre = new Map(
-      cerradas.map((c) => [c.periodoEvaluacion, c.fechaCierre]),
-    );
-    // Solo las campañas en las que participó; la vigente siempre.
-    const periodos = new Set<string>(
+    // Las campañas en las que participó (aunque sean de otra empresa, si se
+    // cambió) y la en curso de su empresa actual.
+    const ids = new Set<number>(
       [...deEvaluaciones, ...deObjetivos]
-        .map((p) => normalizarPeriodo(p.periodoEvaluacion))
-        .filter((p): p is string => !!p),
+        .map((x) => x.idCampanaEvaluacion)
+        .filter((id): id is number => !!id),
     );
-    if (vigente) periodos.add(vigente);
+    if (enCurso) ids.add(enCurso.idCampanaEvaluacion);
 
-    const lista = [...periodos]
-      .filter((p) => !soloCerradas || p !== vigente)
-      .sort()
-      .reverse();
+    const campanas = await this.prisma.campanaEvaluacion.findMany({
+      where: {
+        idCampanaEvaluacion: { in: [...ids] },
+        ...(soloCerradas && { estado: CAMPANA_CERRADA }),
+      },
+      orderBy: { periodoDesde: 'desc' },
+    });
+    // La en curso primero.
+    campanas.sort(
+      (a, b) =>
+        Number(b.estado === CAMPANA_EN_CURSO) -
+        Number(a.estado === CAMPANA_EN_CURSO),
+    );
 
     return Promise.all(
-      lista.map(async (periodo) => {
-        const d = await this.datosReporte(idEmpleado, periodo);
+      campanas.map(async (c) => {
+        const d = await this.datosReporte(idEmpleado, c.idCampanaEvaluacion);
         return {
-          periodo,
-          vigente: periodo === vigente,
-          fechaCierre: fechaCierre.get(periodo) ?? null,
+          idCampanaEvaluacion: c.idCampanaEvaluacion,
+          nombre: c.nombre,
+          periodoDesde: c.periodoDesde,
+          periodoHasta: c.periodoHasta,
+          vigente: c.estado === CAMPANA_EN_CURSO,
+          fechaCierre: c.fechaCierre,
           sinEvaluar: d.sinEvaluar,
           resultadoFinal: d.resultadosTexto.evaluacionFinal,
           resultadoCompetencias: d.resultadosTexto.competencias,
@@ -178,9 +183,9 @@ export class ReporteService {
     );
   }
 
-  /** PDF individual de una campaña (la vigente si no se indica). */
-  async obtenerDataReporteEvaluacion(idEmpleado: number, periodo?: string) {
-    const data = await this.datosReporte(idEmpleado, periodo);
+  /** PDF individual de una campaña (la en curso si no se indica). */
+  async obtenerDataReporteEvaluacion(idEmpleado: number, idCampana?: number) {
+    const data = await this.datosReporte(idEmpleado, idCampana);
     return this.pdfRenderer.render('evaluacion', data);
   }
 
@@ -194,7 +199,7 @@ export class ReporteService {
    * competencias que se le evaluaron (su unidad pudo cambiar) y la foto de
    * puesto/área/unidad que lleva cada evaluación.
    */
-  async datosReporte(idEmpleado: number, periodoPedido?: string) {
+  async datosReporte(idEmpleado: number, idCampana?: number | null) {
     const empleado = await this.prisma.empleado.findUnique({
       where: { idEmpleado },
       include: {
@@ -210,16 +215,30 @@ export class ReporteService {
       throw new NotFoundException('Empleado no encontrado');
     }
 
-    const campana = await configuracionDeCampana(
-      this.prisma,
-      empleado.empresaEmpleadora,
-      periodoPedido,
-    );
+    // La campaña pedida o la en curso de su empresa. Puede ser de otra
+    // empresa si el trabajador se cambió: se busca por id, sin exigir que
+    // sea de la actual.
+    const campana = idCampana
+      ? await this.prisma.campanaEvaluacion.findUnique({
+          where: { idCampanaEvaluacion: Number(idCampana) },
+        })
+      : await campanaEnCurso(this.prisma, empleado.idEmpresaEmpleadora);
+    const cerrada = campana?.estado === CAMPANA_CERRADA;
+
     // Datos de la empresa (nombre, logo) + configuración de ESA campaña.
     const empresa = {
       ...empleado.empresaEmpleadora,
-      ...campana,
-      periodoEvaluacion: campana.periodo,
+      ...(campana && {
+        modeloEmpresa: campana.modeloEmpresa,
+        porcentajeCompetecias: campana.porcentajeCompetecias,
+        porcentajeObjetivos: campana.porcentajeObjetivos,
+        porcentajeEvaluacionJefeCompetencia:
+          campana.porcentajeEvaluacionJefeCompetencia,
+        porcentajeEvaluacionSubordinadoCompetencia:
+          campana.porcentajeEvaluacionSubordinadoCompetencia,
+        tipoCalificacionCompetencia: campana.tipoCalificacionCompetencia,
+        competenciaResultadoEsperado: campana.competenciaResultadoEsperado,
+      }),
     };
     const peso = pesosDeEmpresa(empresa);
 
@@ -233,7 +252,7 @@ export class ReporteService {
     // documentos daban cifras distintas del mismo trabajador.
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
-        ...filtroEvaluacionesVigentes(empresa.periodoEvaluacion),
+        ...filtroEvaluacionesDeCampana(campana?.idCampanaEvaluacion),
         idEvaluado: idEmpleado,
       },
       include: {
@@ -269,7 +288,31 @@ export class ReporteService {
     //
     // En una campaña cerrada, en cambio, le tocaba lo que se le evaluó en
     // ella: la unidad de hoy puede ser otra.
-    const asignadas = campana.cerrada
+    // En una cerrada, lo que le tocaba es la foto guardada al cerrarla
+    // (CampanaAsignacion); sin foto (cerradas antes de existir), lo que se le
+    // evaluó en ella.
+    const foto = cerrada && campana
+      ? await this.prisma.campanaAsignacion.findMany({
+          where: {
+            idCampanaEvaluacion: campana.idCampanaEvaluacion,
+            idEmpleado,
+          },
+          orderBy: { idCompetencia: 'asc' },
+        })
+      : [];
+    const asignadas = cerrada && foto.length
+      ? await Promise.all(
+          foto.map(async (f) => ({
+            idCompetencia: f.idCompetencia,
+            competencia: await this.prisma.competencia.findUniqueOrThrow({
+              where: { idCompetencia: f.idCompetencia },
+            }),
+            competenciaNivel: await this.prisma.competenciaNivel.findUniqueOrThrow({
+              where: { idCompetenciaNivel: f.idCompetenciaNivel },
+            }),
+          })),
+        )
+      : cerrada
       ? [
           ...new Map(
             [...evaluaciones]
@@ -343,7 +386,7 @@ export class ReporteService {
         estado: true,
         idEmpleado,
         // Solo los de esta campaña: antes se mezclaban todos los ciclos.
-        periodoEvaluacion: campana.periodo,
+        idCampanaEvaluacion: campana?.idCampanaEvaluacion ?? -1,
       },
       include: {
         objetivoDetalles: {
@@ -601,21 +644,21 @@ export class ReporteService {
     // Las que hay que conversar con el jefe antes de cerrar la evaluación.
     const brechas = competenciasDetalle.filter((c) => c.brecha);
 
-    // Fecha periodo evaluación. `periodoEvaluacion` se guarda como "YYYY-MM":
-    // pasarlo por `new Date()` lo interpreta en UTC y, con el offset negativo
-    // de Lima, devolvía el mes anterior. Se parte el texto a mano y se formatea
-    // en UTC. El regex también toma el prefijo de los valores viejos, que
-    // quedaron guardados como ISO completo.
-    const periodo = /^(\d{4})-(\d{2})/.exec(empresa.periodoEvaluacion ?? '');
-    const hoy = new Date();
-    const anio = periodo ? Number(periodo[1]) : hoy.getFullYear();
-    const mesIndice = periodo ? Number(periodo[2]) - 1 : hoy.getMonth();
-
-    const mes = new Date(Date.UTC(anio, mesIndice, 1)).toLocaleDateString(
-      'es-ES',
-      { month: 'long', timeZone: 'UTC' },
-    );
-    const newPeriodoEvaluacion = `${mes.charAt(0).toUpperCase() + mes.slice(1)} de ${anio}`;
+    // "Evaluación anual 2026 · 01/01/2026 – 31/12/2026": el nombre de la
+    // campaña y el periodo que se evalúa. Antes era el mes de un campo de la
+    // empresa ("Septiembre de 2026"), que no coincidía con las fechas reales.
+    // Se formatea en UTC: las fechas se guardan a medianoche UTC y en hora de
+    // Lima saldrían un día antes.
+    const fecha = (d: Date) =>
+      d.toLocaleDateString('es-PE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+    const newPeriodoEvaluacion = campana
+      ? `${campana.nombre} · ${fecha(campana.periodoDesde)} – ${fecha(campana.periodoHasta)}`
+      : 'Sin campaña en curso';
 
     // ==============================
     // DATA PARA EL REPORTE
@@ -636,30 +679,30 @@ export class ReporteService {
       area: empleado.areaEmpleadora.descripcion,
       grupo: empleado.unidadOcupacionalEmpleadora.descripcion,
     };
-    const foto = campana.cerrada
+    const fotoCabecera = cerrada
       ? ([...evaluaciones].sort(primeroDelJefe)
           .find((ev) => ev.idUnidadEvaluado) ?? null)
       : null;
-    if (foto) {
+    if (fotoCabecera) {
       const [puesto, gerencia, area, unidad] = await Promise.all([
-        foto.idPuestoEvaluado
+        fotoCabecera.idPuestoEvaluado
           ? this.prisma.puestoEmpleadora.findUnique({
-              where: { idPuestoEmpleadora: foto.idPuestoEvaluado },
+              where: { idPuestoEmpleadora: fotoCabecera.idPuestoEvaluado },
             })
           : null,
-        foto.idGerenciaEvaluado
+        fotoCabecera.idGerenciaEvaluado
           ? this.prisma.gerenciaEmpleadora.findUnique({
-              where: { idGerenciaEmpleadora: foto.idGerenciaEvaluado },
+              where: { idGerenciaEmpleadora: fotoCabecera.idGerenciaEvaluado },
             })
           : null,
-        foto.idAreaEvaluado
+        fotoCabecera.idAreaEvaluado
           ? this.prisma.areaEmpleadora.findUnique({
-              where: { idAreaEmpleadora: foto.idAreaEvaluado },
+              where: { idAreaEmpleadora: fotoCabecera.idAreaEvaluado },
             })
           : null,
-        foto.idUnidadEvaluado
+        fotoCabecera.idUnidadEvaluado
           ? this.prisma.unidadOcupacionalEmpleadora.findUnique({
-              where: { idUnidadOcupacionalEmpleadora: foto.idUnidadEvaluado },
+              where: { idUnidadOcupacionalEmpleadora: fotoCabecera.idUnidadEvaluado },
             })
           : null,
       ]);
@@ -671,8 +714,8 @@ export class ReporteService {
 
     const data = {
       campana: {
-        periodo: campana.periodo,
-        cerrada: campana.cerrada,
+        nombre: campana?.nombre ?? null,
+        cerrada,
       },
       sinEvaluar: resultados.sinEvaluar,
       competenciasSinEvaluar: resultados.competenciasSinEvaluar,

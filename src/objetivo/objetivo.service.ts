@@ -8,7 +8,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { normalizarPeriodo } from 'src/common/resultados/resultados-evaluacion';
+import {
+  CAMPANA_EN_CURSO,
+  campanaEnCurso,
+} from 'src/common/resultados/campana';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import { ObjetivoExportQueryDto } from './dto/objetivo-export-query.dto';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
@@ -88,35 +91,38 @@ export class ObjetivoService {
   // CAMPAÑA
   // ======================================================
   /**
-   * Objetivos de la campaña vigente de cada empresa. Un objetivo pertenece a
-   * la campaña en la que se creó (`periodoEvaluacion`); sin este filtro, al
-   * abrir un ciclo nuevo el jefe veía y calificaba los del anterior mezclados
-   * con los nuevos. Prisma no compara dos columnas, así que va una rama por
-   * empresa (son pocas).
+   * Objetivos de la campaña en curso. Un objetivo pertenece a la campaña en
+   * la que se creó; sin este filtro, al abrir un ciclo nuevo el jefe veía y
+   * calificaba los del anterior mezclados con los nuevos.
    */
   private async whereCampanaVigente(): Promise<Prisma.ObjetivoWhereInput> {
-    const empresas = await this.prisma.empresaEmpleadora.findMany({
-      where: { estado: true },
-      select: { idEmpresaEmpleadora: true, periodoEvaluacion: true },
-    });
-    return {
-      OR: empresas.map((e) => ({
-        periodoEvaluacion: normalizarPeriodo(e.periodoEvaluacion),
-        empleado: { idEmpresaEmpleadora: e.idEmpresaEmpleadora },
-      })),
-    };
+    return { campana: { estado: CAMPANA_EN_CURSO } };
   }
 
-  /** Campaña vigente de la empresa del trabajador, para sellar lo nuevo. */
-  private async periodoDeEmpleado(
-    tx: Pick<PrismaService, 'empleado'>,
+  /**
+   * La campaña en curso de la empresa del trabajador, para sellar lo nuevo.
+   * Sin campaña no se puede crear: el objetivo no aparecería en ninguna
+   * pantalla ni reporte.
+   */
+  private async campanaDeEmpleado(
+    tx: Pick<PrismaService, 'empleado' | 'campanaEvaluacion'>,
     idEmpleado: number,
   ) {
     const e = await tx.empleado.findUnique({
       where: { idEmpleado },
-      select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+      select: { idEmpresaEmpleadora: true, codigoEmpleado: true },
     });
-    return normalizarPeriodo(e?.empresaEmpleadora?.periodoEvaluacion);
+    const campana = e ? await campanaEnCurso(tx, e.idEmpresaEmpleadora) : null;
+    if (!campana) {
+      throw new BadRequestException(
+        `La empresa del trabajador ${e?.codigoEmpleado ?? idEmpleado} no tiene una campaña de evaluación en curso.`,
+      );
+    }
+    return {
+      idCampanaEvaluacion: campana.idCampanaEvaluacion,
+      // Heredado: solo las campañas migradas tienen "YYYY-MM".
+      periodoEvaluacion: campana.periodoEvaluacion,
+    };
   }
 
   // ======================================================
@@ -497,7 +503,7 @@ export class ObjetivoService {
         const objetivo = await tx.objetivo.create({
           data: {
             idEmpleado: dto.idEmpleado,
-            periodoEvaluacion: await this.periodoDeEmpleado(tx, dto.idEmpleado),
+            ...(await this.campanaDeEmpleado(tx, dto.idEmpleado)),
             creadoPorId: user.idUsuario,
             estado: true,
             objetivoDetalles: {
@@ -554,9 +560,6 @@ export class ObjetivoService {
 
         const empleado = await tx.empleado.findFirst({
           where: { codigoEmpleado: item.codigoEmpleado },
-          include: {
-            empresaEmpleadora: { select: { periodoEvaluacion: true } },
-          },
         });
 
         if (!empleado)
@@ -567,9 +570,7 @@ export class ObjetivoService {
         const objetivo = await tx.objetivo.create({
           data: {
             idEmpleado: empleado.idEmpleado,
-            periodoEvaluacion: normalizarPeriodo(
-              empleado.empresaEmpleadora?.periodoEvaluacion,
-            ),
+            ...(await this.campanaDeEmpleado(tx, empleado.idEmpleado)),
             creadoPorId: user.idUsuario,
             estado: true,
             objetivoDetalles: {
@@ -776,11 +777,7 @@ export class ObjetivoService {
   }
 
   async empleadosObjetivosEvaluadosPorEmpresa(idEmpresaEmpleadora: number) {
-    const empresa = await this.prisma.empresaEmpleadora.findUnique({
-      where: { idEmpresaEmpleadora },
-      select: { periodoEvaluacion: true },
-    });
-    const periodo = normalizarPeriodo(empresa?.periodoEvaluacion);
+    const campana = await campanaEnCurso(this.prisma, idEmpresaEmpleadora);
 
     // 1️⃣ Obtener empleados con objetivos
     const empleados = await this.prisma.empleado.findMany({
@@ -797,7 +794,10 @@ export class ObjetivoService {
         codigoEmpleadoJefe: true,
 
         objetivos: {
-          where: { estado: true, periodoEvaluacion: periodo },
+          where: {
+            estado: true,
+            idCampanaEvaluacion: campana?.idCampanaEvaluacion ?? -1,
+          },
           select: {
             idObjetivo: true,
             objetivoDetalles: {

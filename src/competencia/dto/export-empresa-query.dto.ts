@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Matches } from 'class-validator';
+import { IsInt, IsOptional, IsString } from 'class-validator';
 
 /**
  * Filtros de los tres reportes Excel por empresa.
@@ -42,15 +42,14 @@ export class ExportEmpresaQueryDto {
   search?: string;
 
   @ApiPropertyOptional({
-    example: '2026-07',
+    example: 5,
     description:
-      'Campaña a exportar ("YYYY-MM"). Si no se envía se usa el periodo ' +
-      'vigente de la empresa, que es lo que hace la interfaz: sin esto el ' +
-      'reporte mezclaría las notas de todas las campañas anteriores.',
+      'Campaña a exportar (id). Si no se envía se usa la campaña en curso ' +
+      'de la empresa: sin esto el reporte mezclaría las notas de todas las ' +
+      'campañas.',
   })
   @IsOptional()
-  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, {
-    message: 'El periodo debe tener el formato YYYY-MM.',
-  })
-  periodoEvaluacion?: string;
+  @Type(() => Number)
+  @IsInt()
+  idCampanaEvaluacion?: number;
 }

@@ -22,7 +22,8 @@ export const promedio = (valores: number[]): number =>
   valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : 0;
 
 /**
- * Recorta un periodo a "YYYY-MM".
+ * Recorta un periodo a "YYYY-MM". Solo para datos heredados: las campañas
+ * se identifican por id.
  *
  * `EmpresaEmpleadora.periodoEvaluacion` se guarda así, pero hay valores viejos
  * en ISO completo; el prefijo sirve para los dos.
@@ -32,19 +33,9 @@ export const normalizarPeriodo = (periodo?: string | null): string | null => {
   return prefijo ? prefijo[1] : null;
 };
 
-/**
- * Qué evaluaciones cuentan para un resultado: las de la campaña que se pide y
- * que no estén anuladas.
- *
- * Una evaluación se anula cuando cambia el nivel de competencia de la unidad o
- * se retira la competencia; seguía sumando al promedio en el PDF y por eso
- * aparecían competencias que al trabajador ya no le tocaban.
- */
-export const filtroEvaluacionesVigentes = (periodo?: string | null) => ({
-  estado: true,
-  estadoEvaluacion: { not: 'ANULADA' },
-  periodoEvaluacion: normalizarPeriodo(periodo),
-});
+// El filtro de evaluaciones por campaña vive en `./campana.ts`
+// (`filtroEvaluacionesDeCampana`): la campaña es una entidad con id, ya no un
+// "YYYY-MM".
 
 /**
  * Nota de una evaluación: el promedio de sus ítems calificados.

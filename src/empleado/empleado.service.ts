@@ -1,5 +1,10 @@
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
+  CAMPANA_EN_CURSO,
+  campanaEnCurso,
+  filtroEvaluacionesDeCampana,
+} from 'src/common/resultados/campana';
+import {
   AvanceQueryDto,
   ESTADOS_AVANCE,
   EstadoAvance,
@@ -26,8 +31,6 @@ import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 import {
-  filtroEvaluacionesVigentes,
-  normalizarPeriodo,
   origenDeEvaluacion,
 } from 'src/common/resultados/resultados-evaluacion';
 
@@ -253,7 +256,7 @@ export class EmpleadoService {
     };
 
     // Las dos consultas crudas repiten en SQL el mismo criterio que
-    // `filtroEvaluacionesVigentes` (src/common/resultados): solo la campaña de
+    // `filtroEvaluacionesDeCampana` (src/common/resultados): solo la campaña de
     // la empresa y nada anulado. No pueden importarlo porque agregan en la
     // base; si allí cambia la regla, hay que tocarlas a mano.
     const [competencias, objetivos, jefes] = await Promise.all([
@@ -302,13 +305,13 @@ export class EmpleadoService {
           JOIN evaluacion_competencia ec
             ON ec."idEvaluacionCompetencia" = it.id_evaluacion_competencia
           JOIN empleado e ON e.id_empleado = ec.id_evaluado
-          JOIN empresa_empleadora emp
-            ON emp.id_empresa_empleadora = e.id_empresa_empleadora
+          -- Solo la campaña en curso (ver filtroEvaluacionesDeCampana).
+          JOIN campana_evaluacion c
+            ON c.id_campana_evaluacion = ec.id_campana_evaluacion
+           AND c.estado = 'EN_CURSO'
           LEFT JOIN empleado ev ON ev.id_empleado = ec.id_evaluador
           WHERE it.estado AND ec.estado AND it.calificacion IS NOT NULL
             AND ec."estadoEvaluacion" <> 'ANULADA'
-            AND ec.periodo_evaluacion
-                IS NOT DISTINCT FROM substring(emp.periodo_evaluacion FROM 1 FOR 7)
             AND ec.id_evaluado = ANY(${ids})
         ),
         por_competencia AS (
@@ -341,13 +344,11 @@ export class EmpleadoService {
                )::int AS hechas
         FROM objetivo_detalle d
         JOIN objetivo o ON o.id_objetivo = d.id_objetivo
-        JOIN empleado e ON e.id_empleado = o."idEmpleado"
-        JOIN empresa_empleadora emp
-          ON emp.id_empresa_empleadora = e.id_empresa_empleadora
+        -- Solo los de la campaña en curso, como las competencias.
+        JOIN campana_evaluacion c
+          ON c.id_campana_evaluacion = o.id_campana_evaluacion
+         AND c.estado = 'EN_CURSO'
         WHERE d.estado AND o.estado
-          -- Solo los de la campaña vigente, como las competencias.
-          AND o.periodo_evaluacion
-              IS NOT DISTINCT FROM substring(emp.periodo_evaluacion FROM 1 FOR 7)
           AND o."idEmpleado" = ANY(${ids})
         GROUP BY 1`,
       codigosJefe.length
@@ -417,6 +418,7 @@ export class EmpleadoService {
         documento: true,
         sede: true,
         idUnidadOcupacionalEmpleadora: true,
+        idEmpresaEmpleadora: true,
         usuario: { select: { codigoUsuario: true, rol: true } },
         unidadOcupacionalEmpleadora: { select: { descripcion: true } },
         areaEmpleadora: { select: { descripcion: true } },
@@ -425,7 +427,6 @@ export class EmpleadoService {
         empresaEmpleadora: {
           select: {
             nombreEmpresa: true,
-            periodoEvaluacion: true,
             modeloEmpresa: true,
           },
         },
@@ -434,7 +435,11 @@ export class EmpleadoService {
 
     if (!empleado) throw new NotFoundException('Empleado no encontrado');
 
-    const periodo = empleado.empresaEmpleadora?.periodoEvaluacion;
+    const campana = await campanaEnCurso(
+      this.prisma,
+      empleado.idEmpresaEmpleadora,
+    );
+    const idCampana = campana?.idCampanaEvaluacion ?? -1;
 
     const [asignadas, evaluaciones, anuladas, objetivos] = await Promise.all([
       this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
@@ -462,7 +467,7 @@ export class EmpleadoService {
 
       this.prisma.evaluacionCompetencia.findMany({
         where: {
-          ...filtroEvaluacionesVigentes(periodo),
+          ...filtroEvaluacionesDeCampana(campana?.idCampanaEvaluacion),
           idEvaluado: idEmpleado,
         },
         select: {
@@ -487,7 +492,7 @@ export class EmpleadoService {
           estado: true,
           estadoEvaluacion: 'ANULADA',
           idEvaluado: idEmpleado,
-          periodoEvaluacion: normalizarPeriodo(periodo),
+          idCampanaEvaluacion: idCampana,
         },
         select: {
           idEvaluacionCompetencia: true,
@@ -519,7 +524,7 @@ export class EmpleadoService {
         where: {
           estado: true,
           idEmpleado,
-          periodoEvaluacion: normalizarPeriodo(periodo),
+          idCampanaEvaluacion: idCampana,
         },
         select: {
           idObjetivo: true,
@@ -609,8 +614,9 @@ export class EmpleadoService {
         puesto: empleado.puestoEmpleadora?.descripcion ?? null,
         codigoEmpleadoJefe: empleado.codigoEmpleadoJefe ?? null,
       },
-      periodo: normalizarPeriodo(periodo),
-      modelo: empleado.empresaEmpleadora?.modeloEmpresa ?? null,
+      // Nombre de la campaña en curso (antes, el "YYYY-MM").
+      periodo: campana?.nombre ?? null,
+      modelo: campana?.modeloEmpresa ?? empleado.empresaEmpleadora?.modeloEmpresa ?? null,
 
       competencias: {
         asignadas: competencias.length,
@@ -848,7 +854,7 @@ export class EmpleadoService {
         include: {
           usuario: { select: { rol: true } },
           empresaEmpleadora: {
-            select: { nombreEmpresa: true, periodoEvaluacion: true },
+            select: { nombreEmpresa: true },
           },
           gerenciaEmpleadora: { select: { descripcion: true } },
           areaEmpleadora: { select: { descripcion: true } },
@@ -856,6 +862,21 @@ export class EmpleadoService {
           puestoEmpleadora: { select: { descripcion: true } },
         },
       });
+
+      // Nombre de la campaña en curso de cada empresa en juego.
+      const campanasEnCurso = new Map(
+        (
+          await this.prisma.campanaEvaluacion.findMany({
+            where: {
+              estado: CAMPANA_EN_CURSO,
+              idEmpresaEmpleadora: {
+                in: [...new Set(empleados.map((e) => e.idEmpresaEmpleadora))],
+              },
+            },
+            select: { idEmpresaEmpleadora: true, nombre: true },
+          })
+        ).map((c) => [c.idEmpresaEmpleadora, c.nombre]),
+      );
 
       const filas = (await this.conAgregados(empleados)).map((e) => {
         const c = e.avanceCompetencias;
@@ -879,7 +900,7 @@ export class EmpleadoService {
           rol: e.usuario.rol,
           idEmpresaEmpleadora: e.idEmpresaEmpleadora,
           empresa: e.empresaEmpleadora.nombreEmpresa,
-          periodo: normalizarPeriodo(e.empresaEmpleadora.periodoEvaluacion),
+          periodo: campanasEnCurso.get(e.idEmpresaEmpleadora) ?? null,
           gerencia: e.gerenciaEmpleadora?.descripcion ?? null,
           area: e.areaEmpleadora?.descripcion ?? null,
           unidad: e.unidadOcupacionalEmpleadora?.descripcion ?? null,
@@ -1782,14 +1803,15 @@ export class EmpleadoService {
     // periodo. Las dos cifras describen lo mismo y tienen que salir iguales.
     const datos = await this.prisma.empleado.findUnique({
       where: { idEmpleado: idEvaluado },
-      select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+      select: { idEmpresaEmpleadora: true },
     });
+    const campana = datos
+      ? await campanaEnCurso(this.prisma, datos.idEmpresaEmpleadora)
+      : null;
 
     const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
       where: {
-        ...filtroEvaluacionesVigentes(
-          datos?.empresaEmpleadora?.periodoEvaluacion,
-        ),
+        ...filtroEvaluacionesDeCampana(campana?.idCampanaEvaluacion),
         idEvaluado,
         idEvaluador,
         idCompetencia: { in: competencias.map((c) => c.idCompetencia) },

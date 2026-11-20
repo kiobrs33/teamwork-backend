@@ -76,21 +76,22 @@ export class ReporteController {
   async generarReporteEvaluacionPDF(
     @User() user: AuthUser,
     @Param('idEmpleado', ParseIntPipe) idEmpleado: number,
-    @Query('periodo') periodo: string | undefined,
+    @Query('campana') campanaParam: string | undefined,
     @Res() res: Response,
   ) {
-    // Sin `periodo`, la campaña vigente. El acceso se comprueba con el token:
+    // Sin `campana` (id), la en curso. El acceso se comprueba con el token:
     // antes cualquier usuario con sesión descargaba el informe de cualquiera.
-    await this.reporteService.verificarAcceso(user, idEmpleado, periodo);
+    const idCampana = campanaParam ? Number(campanaParam) || undefined : undefined;
+    await this.reporteService.verificarAcceso(user, idEmpleado, idCampana);
 
     const pdf = await this.reporteService.obtenerDataReporteEvaluacion(
       idEmpleado,
-      periodo,
+      idCampana,
     );
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=reporte-evaluacion-${idEmpleado}${periodo ? `-${periodo}` : ''}.pdf`,
+      'Content-Disposition': `attachment; filename=reporte-evaluacion-${idEmpleado}${idCampana ? `-campana-${idCampana}` : ''}.pdf`,
     });
 
     res.end(pdf);

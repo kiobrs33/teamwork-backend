@@ -58,10 +58,11 @@ export class EvidenciaQueryDto {
   @IsOptional()
   codigoEmpleadoJefe?: string;
 
-  @ApiPropertyOptional({ example: '2026-09', description: 'Campaña "YYYY-MM"' })
-  @IsString()
+  @ApiPropertyOptional({ example: 5, description: 'Campaña (id)' })
+  @Type(() => Number)
+  @IsInt()
   @IsOptional()
-  periodoEvaluacion?: string;
+  idCampanaEvaluacion?: number;
 
   @ApiPropertyOptional({ example: '2026-01-01' })
   @IsDateString()

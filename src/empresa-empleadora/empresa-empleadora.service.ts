@@ -1,4 +1,4 @@
-import { normalizarPeriodo } from 'src/common/resultados/resultados-evaluacion';
+import { CAMPANA_EN_CURSO } from 'src/common/resultados/campana';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   BadRequestException,
@@ -172,6 +172,37 @@ export class EmpresaEmpleadoraService {
   }
 
   // CREATE
+  /** Lo que una campaña copia de la empresa: configuración y vigencias. */
+  private configuracionDe(empresa: {
+    fechaVigenciaInicio: Date;
+    fechaVigenciaFin: Date;
+    fechaVigenciaInicioObjetivo: Date | null;
+    fechaVigenciaFinObjetivo: Date | null;
+    modeloEmpresa: string;
+    porcentajeCompetecias: number | null;
+    porcentajeObjetivos: number | null;
+    porcentajeEvaluacionJefeCompetencia: number | null;
+    porcentajeEvaluacionSubordinadoCompetencia: number | null;
+    tipoCalificacionCompetencia: string | null;
+    competenciaResultadoEsperado: number | null;
+  }) {
+    return {
+      fechaVigenciaInicio: empresa.fechaVigenciaInicio,
+      fechaVigenciaFin: empresa.fechaVigenciaFin,
+      fechaVigenciaInicioObjetivo: empresa.fechaVigenciaInicioObjetivo,
+      fechaVigenciaFinObjetivo: empresa.fechaVigenciaFinObjetivo,
+      modeloEmpresa: empresa.modeloEmpresa,
+      porcentajeCompetecias: empresa.porcentajeCompetecias,
+      porcentajeObjetivos: empresa.porcentajeObjetivos,
+      porcentajeEvaluacionJefeCompetencia:
+        empresa.porcentajeEvaluacionJefeCompetencia,
+      porcentajeEvaluacionSubordinadoCompetencia:
+        empresa.porcentajeEvaluacionSubordinadoCompetencia,
+      tipoCalificacionCompetencia: empresa.tipoCalificacionCompetencia,
+      competenciaResultadoEsperado: empresa.competenciaResultadoEsperado,
+    };
+  }
+
   async create(user: AuthUser, dto: CreateEmpresaEmpleadoraDto) {
     try {
       if (dto.ruc) {
@@ -180,14 +211,35 @@ export class EmpresaEmpleadoraService {
 
       this.validarReglasNegocio(dto);
 
-      return await this.prisma.empresaEmpleadora.create({
-        data: {
-          ...dto,
-          // El logo se sube en un segundo paso (POST /:id/logo), porque
-          // Cloudinary necesita el id de la empresa ya creada.
-          urlLogo: dto.urlLogo ?? '',
-          creadoPorId: user.idUsuario,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const empresa = await tx.empresaEmpleadora.create({
+          data: {
+            ...dto,
+            // El logo se sube en un segundo paso (POST /:id/logo), porque
+            // Cloudinary necesita el id de la empresa ya creada.
+            urlLogo: dto.urlLogo ?? '',
+            creadoPorId: user.idUsuario,
+          },
+        });
+
+        // Con vigencias, la empresa nace con su primera campaña en curso: es
+        // lo que hacía antes el formulario. Su nombre y su periodo evaluado
+        // se corrigen después desde Campañas.
+        if (empresa.fechaVigenciaInicio && empresa.fechaVigenciaFin) {
+          const inicio = empresa.fechaVigenciaInicio;
+          await tx.campanaEvaluacion.create({
+            data: {
+              idEmpresaEmpleadora: empresa.idEmpresaEmpleadora,
+              nombre: `Evaluación ${inicio.getFullYear()}`,
+              periodoDesde: empresa.fechaVigenciaInicio,
+              periodoHasta: empresa.fechaVigenciaFin,
+              ...this.configuracionDe(empresa),
+              estado: CAMPANA_EN_CURSO,
+              creadoPorId: user.idUsuario,
+            },
+          });
+        }
+        return empresa;
       });
     } catch (error) {
       this.logger.error('Error al crear empresa', error as Error);
@@ -223,7 +275,7 @@ export class EmpresaEmpleadoraService {
 
     type FilaAvance = { empresa: number; total: number; hechas: number };
 
-    const [competencias, objetivos, empleados] = await Promise.all([
+    const [competencias, objetivos, empleados, campanas] = await Promise.all([
       this.prisma.$queryRaw<FilaAvance[]>`
         SELECT e.id_empresa_empleadora::int AS empresa,
                count(*)::int AS total,
@@ -232,12 +284,12 @@ export class EmpresaEmpleadoraService {
         JOIN evaluacion_competencia ec
           ON ec."idEvaluacionCompetencia" = i.id_evaluacion_competencia
         JOIN empleado e ON e.id_empleado = ec.id_evaluado
-        JOIN empresa_empleadora emp
-          ON emp.id_empresa_empleadora = e.id_empresa_empleadora
+        -- Solo la campaña en curso de la empresa.
+        JOIN campana_evaluacion c
+          ON c.id_campana_evaluacion = ec.id_campana_evaluacion
+         AND c.estado = 'EN_CURSO'
         WHERE i.estado AND ec.estado AND e.estado
           AND ec."estadoEvaluacion" <> 'ANULADA'
-          AND ec.periodo_evaluacion
-              IS NOT DISTINCT FROM substring(emp.periodo_evaluacion FROM 1 FOR 7)
           AND e.id_empresa_empleadora = ANY(${ids})
         GROUP BY 1`,
       this.prisma.$queryRaw<FilaAvance[]>`
@@ -250,6 +302,9 @@ export class EmpresaEmpleadoraService {
         FROM objetivo_detalle d
         JOIN objetivo o ON o.id_objetivo = d.id_objetivo
         JOIN empleado e ON e.id_empleado = o."idEmpleado"
+        JOIN campana_evaluacion c
+          ON c.id_campana_evaluacion = o.id_campana_evaluacion
+         AND c.estado = 'EN_CURSO'
         WHERE d.estado AND o.estado AND e.estado
           AND e.id_empresa_empleadora = ANY(${ids})
         GROUP BY 1`,
@@ -258,7 +313,22 @@ export class EmpresaEmpleadoraService {
         where: { estado: true, idEmpresaEmpleadora: { in: ids } },
         _count: { _all: true },
       }),
+      this.prisma.campanaEvaluacion.findMany({
+        where: { idEmpresaEmpleadora: { in: ids }, estado: CAMPANA_EN_CURSO },
+        select: {
+          idCampanaEvaluacion: true,
+          idEmpresaEmpleadora: true,
+          nombre: true,
+          periodoDesde: true,
+          periodoHasta: true,
+          fechaVigenciaInicio: true,
+          fechaVigenciaFin: true,
+        },
+      }),
     ]);
+    const mapaCampanas = new Map(
+      campanas.map((c) => [c.idEmpresaEmpleadora, c]),
+    );
 
     const porEmpresa = (filas: FilaAvance[]) =>
       new Map(
@@ -278,6 +348,8 @@ export class EmpresaEmpleadoraService {
       avanceCompetencias:
         mapaCompetencias.get(empresa.idEmpresaEmpleadora) ?? vacio,
       avanceObjetivos: mapaObjetivos.get(empresa.idEmpresaEmpleadora) ?? vacio,
+      // La campaña en curso (o null): la tabla muestra su nombre y estado.
+      campanaEnCurso: mapaCampanas.get(empresa.idEmpresaEmpleadora) ?? null,
     }));
   }
 
@@ -481,67 +553,8 @@ export class EmpresaEmpleadoraService {
 
       this.validarReglasNegocio(dto, empresa);
 
-      const periodoActual = normalizarPeriodo(empresa.periodoEvaluacion);
-      const periodoNuevo =
-        dto.periodoEvaluacion !== undefined
-          ? normalizarPeriodo(dto.periodoEvaluacion)
-          : periodoActual;
-      const cambiaCampana = !!periodoActual && periodoNuevo !== periodoActual;
-
-      if (cambiaCampana && periodoNuevo) {
-        const yaCerrada = await this.prisma.campanaEvaluacion.findUnique({
-          where: {
-            idEmpresaEmpleadora_periodoEvaluacion: {
-              idEmpresaEmpleadora: id,
-              periodoEvaluacion: periodoNuevo,
-            },
-          },
-        });
-        if (yaCerrada) {
-          throw new ConflictException(
-            `La campaña ${periodoNuevo} ya se cerró y no se puede reabrir: sus resultados quedaron registrados con su configuración.`,
-          );
-        }
-      }
-
       return await this.prisma.$transaction(async (tx) => {
-        // Cambiar el periodo CIERRA la campaña anterior: se guarda la
-        // configuración con la que se calificó (la de la empresa se
-        // sobrescribe ahora mismo) y sus evaluaciones abiertas pasan a
-        // CERRADA, que es lo que las vuelve de solo lectura en el historial.
-        if (cambiaCampana) {
-          await tx.campanaEvaluacion.create({
-            data: {
-              idEmpresaEmpleadora: id,
-              periodoEvaluacion: periodoActual!,
-              modeloEmpresa: empresa.modeloEmpresa,
-              porcentajeCompetecias: empresa.porcentajeCompetecias,
-              porcentajeObjetivos: empresa.porcentajeObjetivos,
-              porcentajeEvaluacionJefeCompetencia:
-                empresa.porcentajeEvaluacionJefeCompetencia,
-              porcentajeEvaluacionSubordinadoCompetencia:
-                empresa.porcentajeEvaluacionSubordinadoCompetencia,
-              tipoCalificacionCompetencia: empresa.tipoCalificacionCompetencia,
-              competenciaResultadoEsperado: empresa.competenciaResultadoEsperado,
-              cerradoPorId: user.idUsuario,
-            },
-          });
-
-          await tx.evaluacionCompetencia.updateMany({
-            where: {
-              periodoEvaluacion: periodoActual,
-              estadoEvaluacion: 'PROCESO',
-              evaluado: { idEmpresaEmpleadora: id },
-            },
-            data: {
-              estadoEvaluacion: 'CERRADA',
-              actualizadoPorId: user.idUsuario,
-              fechaModificacion: new Date(),
-            },
-          });
-        }
-
-        return tx.empresaEmpleadora.update({
+        const actualizada = await tx.empresaEmpleadora.update({
           where: { idEmpresaEmpleadora: id },
           data: {
             ...dto,
@@ -549,6 +562,18 @@ export class EmpresaEmpleadoraService {
             actualizadoPorId: user.idUsuario,
           },
         });
+
+        // La configuración y las vigencias de la empresa son los valores por
+        // defecto de sus campañas. Mientras el formulario de empresa los siga
+        // editando, el cambio se aplica también a la campaña EN CURSO (las
+        // cerradas no se tocan). Cambiar `periodoEvaluacion` ya NO cierra la
+        // campaña: eso es la acción "Cerrar campaña".
+        await tx.campanaEvaluacion.updateMany({
+          where: { idEmpresaEmpleadora: id, estado: CAMPANA_EN_CURSO },
+          data: this.configuracionDe(actualizada),
+        });
+
+        return actualizada;
       });
     } catch (error) {
       this.logger.error('Error al actualizar empresa', error as Error);

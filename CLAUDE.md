@@ -51,7 +51,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   puras (sin DI, para que las importen módulos distintos sin dependencias
   circulares) y cubren las cuatro decisiones que hacían que cada salida diera
   un número distinto:
-  - `filtroEvaluacionesVigentes(periodo)` — qué evaluaciones cuentan: las de la
+  - `filtroEvaluacionesDeCampana(idCampana)` (en `campana.ts`) — qué evaluaciones cuentan: las de la
     campaña de la empresa y **nada `ANULADA`**.
   - `notaDeEvaluacion` / `resultadoDeObjetivo` — devuelven **`null`, no 0**,
     cuando no hay nada calificado, para que lo pendiente no entre al promedio.
@@ -196,7 +196,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   evalúa a su jefe). El front lo pinta con `ProgresoEvaluacionTag`, en la
   columna de las tablas y en la cabecera de cada competencia; si se quita, esas
   vistas pierden el indicador. Cuenta solo ítems del nivel asignado hoy y usa
-  `filtroEvaluacionesVigentes`, así que ignora las `ANULADA` y las de campañas
+  `filtroEvaluacionesDeCampana`, así que ignora las `ANULADA` y las de campañas
   anteriores — este último recorte le faltaba y no cuadraba con la columna del
   listado, que sí acotaba por periodo.
 - **`GET /empleado/:id/estado-evaluacion` explica el avance, no lo resume.**
@@ -205,7 +205,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   concretos sin calificar, separando jefe y autoevaluación, y aparte las
   **anuladas** con cuántas notas se perdieron con cada una: son las que
   explican un avance que retrocede sin que nadie haya tocado una calificación.
-  Usa el mismo criterio que el resto (`filtroEvaluacionesVigentes`, y completa
+  Usa el mismo criterio que el resto (`filtroEvaluacionesDeCampana`, y completa
   = todos los ítems con nota). Lo consume el modal "Ver estado de evaluación"
   del menú de cada fila.
 - **El avance del listado se mide contra los ítems que la UNIDAD asigna, y con
@@ -342,7 +342,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   recibe los strings crudos. Normalizar en el servicio.
 - El cuerpo de las peticiones admite hasta **50 MB** (cargas masivas desde Excel).
 
-### Modelo de datos — `prisma/schema.prisma`, 38 migraciones
+### Modelo de datos — `prisma/schema.prisma`, 39 migraciones
 
 ```
 EmpresaEmpleadora ─┬─ GerenciaEmpleadora
@@ -360,44 +360,45 @@ EmpresaEmpleadora ─┬─ GerenciaEmpleadora
 
 Decisiones de diseño que no se deducen leyendo el esquema:
 
-- **⚠️ En transición: la campaña como entidad** (`20261120232455_campana_entidad`).
-  `CampanaEvaluacion` ya es la campaña completa (nombre, periodo evaluado
-  `periodoDesde/Hasta`, vigencias, configuración, `estado` EN_CURSO/CERRADA)
-  y evaluaciones, objetivos y evidencias llevan `idCampanaEvaluacion`. **El
-  código todavía filtra por `periodoEvaluacion` ("YYYY-MM")**; la fase 2 lo
-  pasa a `idCampanaEvaluacion` y la config/vigencias dejan de leerse de la
-  empresa. Hasta entonces, todo lo que se cree debe seguir sellando el
-  periodo. El backfill creó una campaña por (empresa, mes) con el mes como
-  periodo evaluado: en los datos reales ese mes no coincide con las fechas
-  de vigencia, así que los nombres/periodos se corrigen a mano después.
-- **Campañas e historial** (`20261120215711_historial_campanas`; requerimientos
-  5 y 7 del cliente). Una campaña es el `periodoEvaluacion` ("YYYY-MM") de la
-  empresa; **cambiarlo cierra la anterior** (`EmpresaEmpleadoraService.update`,
-  en una transacción): guarda su configuración en `CampanaEvaluacion` y pasa
-  sus evaluaciones `PROCESO` a `CERRADA`. Una campaña cerrada no se reabre
-  (409). Para calcular, `configuracionDeCampana()` (`common/resultados/
-  campana.ts`) devuelve la guardada si la campaña está cerrada y la de la
-  empresa si es la vigente.
-  - **Cada evaluación lleva una foto de la estructura al iniciarse**
-    (`tipoEvaluador`, `codigoJefeEvaluado`, `id*Evaluado`). `origenDeEvaluacion`
-    usa `tipoEvaluador` si está, y las consultas crudas de `conAgregados`
-    también: **cambiar el jefe, el puesto o la unidad ya no reescribe notas ya
-    puestas** (antes las del jefe anterior pasaban a "otro" y dejaban de
-    contar). Si el jefe cambia a mitad de campaña, las notas de los dos jefes
-    cuentan como "jefe".
-  - `Objetivo` y `Evidencia` llevan `periodoEvaluacion`, sellado al crearlos.
-    Todo lo que lista objetivos (jefe, admin, avance, Excel, PDF) se limita a
-    la campaña vigente o a la pedida: antes se mezclaban los ciclos.
-  - El PDF acepta `?periodo=`. Para una cerrada toma como "asignadas" las
-    competencias que se le evaluaron en ella (su unidad pudo cambiar) y la
-    cabecera de la foto. `GET /reporte/campanas/:id` y
-    `GET /reporte/mis-campanas` devuelven el historial con el mismo cálculo.
-  - **Acceso** (`ReporteService.verificarAcceso`, del token): ADMIN todo;
-    JEFE las de sus subordinados actuales; **uno mismo solo campañas
-    cerradas** (decisión del cliente: la vigente se evalúa, las anteriores se
-    consultan). El backfill atribuyó lo existente a la estructura y campaña
-    actuales: nunca se había guardado otra cosa.
-
+- **La campaña es una entidad** (`CampanaEvaluacion`, módulo `campana`,
+  solo ADMIN): nombre, **periodo evaluado** (`periodoDesde/Hasta`, el tramo
+  que se juzga), **vigencias** (cuándo se califica), configuración (modelo,
+  pesos, escala, resultado esperado) y estado `EN_CURSO`/`CERRADA`.
+  Evaluaciones, objetivos y evidencias pertenecen a una por
+  `idCampanaEvaluacion`; **todo filtra por campaña**
+  (`filtroEvaluacionesDeCampana`, `campanaEnCurso`, `resolverCampana` en
+  `common/resultados/campana.ts`) y nunca por el "YYYY-MM" heredado, que solo
+  conservan las campañas migradas.
+  - Reglas (en `CampanaService`, Prisma no modela índices parciales): **una
+    sola EN_CURSO por empresa**, periodos que **no se superponen**, y la
+    vigencia no empieza antes del periodo. Abrir con `cerrarActual` cierra la
+    en curso en la misma transacción; `copiarObjetivos` copia los de la
+    anterior sin calificación. En una cerrada solo se corrigen nombre y
+    periodo. Reabrir (solo si no hay otra en curso) devuelve sus evaluaciones
+    a PROCESO y deja `fechaReapertura`/`reabiertoPorId`.
+  - **Cerrar guarda una foto de asignaciones** (`CampanaAsignacion`: qué
+    competencias y nivel le tocaban a cada trabajador al cierre). Las
+    cerradas calculan "asignadas" con ella: sin la foto, una competencia
+    asignada que nadie evaluó dejaba de contar como 0 y el resultado cambiaba
+    al cerrar. Reabrir la borra.
+  - **Transición:** el formulario de empresa y las pantallas de evaluación
+    todavía leen vigencias y configuración de la empresa, así que abrir o
+    editar la en curso las refleja en la empresa, y editar la empresa las
+    refleja en la en curso. Cambiar `periodoEvaluacion` de la empresa **ya
+    no cierra nada**.
+  - El estado viaja como `estadoCampana` (y `fechaCreacion` como
+    `fechaApertura`): el `PurgeResponseInterceptor` borra `estado`.
+  - Verificado sobre una copia de producción: cerrar, reabrir y calcular
+    por campaña dan los mismos 382 resultados por trabajador que antes.
+- **Historial** (`20261120215711_historial_campanas`; requerimientos 5 y 7):
+  cada evaluación lleva una **foto de la estructura al iniciarse**
+  (`tipoEvaluador`, `codigoJefeEvaluado`, `id*Evaluado`) y `origenDeEvaluacion`
+  y las consultas de `conAgregados` la usan: cambiar jefe, puesto o unidad no
+  reescribe notas ya puestas. El PDF acepta `?campana=<id>`; para una cerrada
+  usa la foto de asignaciones y la cabecera de la foto de la evaluación.
+  `GET /reporte/campanas/:id` y `/reporte/mis-campanas` devuelven el
+  historial. **Acceso** (`ReporteService.verificarAcceso`): ADMIN todo; JEFE
+  sus subordinados actuales; **uno mismo solo campañas cerradas**.
 - Nombres **camelCase en Prisma**, `snake_case` en la BD vía `@map`.
 - **Todo es multi-empresa**: la jerarquía del empleado se ancla en
   `idEmpresaEmpleadora`. Hoy nada lo hace cumplir a nivel de consulta (§5.3).

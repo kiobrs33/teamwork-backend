@@ -18,6 +18,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { ReporteModule } from './reporte/reporte.module';
 import { RetroalimentacionDetalleModule } from './retroalimentacion-detalle/retroalimentacion-detalle.module';
 import { EvidenciaModule } from './evidencia/evidencia.module';
+import { CampanaModule } from './campana/campana.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { EvidenciaModule } from './evidencia/evidencia.module';
     ReporteModule,
     RetroalimentacionDetalleModule,
     EvidenciaModule,
+    CampanaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
