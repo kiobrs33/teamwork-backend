@@ -60,12 +60,15 @@ export class CreateEmpresaEmpleadoraDto {
   @IsString({ message: 'La URL del logo debe ser un texto.' })
   urlLogo?: string;
 
-  @ApiProperty({
+  // Configuración y vigencias de la empresa: valores por defecto de su
+  // PRIMERA campaña. Las de cada ciclo viven en la campaña (módulo campana).
+  @ApiPropertyOptional({
     example: '90',
   })
+  @IsOptional()
   @IsString({ message: 'El modelo de empresa debe ser un texto.' })
   @IsIn(['90', '180'], { message: 'El modelo de empresa debe ser 90 o 180.' })
-  modeloEmpresa: string;
+  modeloEmpresa?: string;
 
   /*
   =========================
@@ -73,23 +76,25 @@ export class CreateEmpresaEmpleadoraDto {
   =========================
   */
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '2025-07-10T17:30:07.811Z',
   })
+  @IsOptional()
   @IsDateString(
     {},
     { message: 'La fecha de inicio de vigencia debe ser una fecha válida.' },
   )
-  fechaVigenciaInicio: string;
+  fechaVigenciaInicio?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '2025-12-10T17:30:07.811Z',
   })
+  @IsOptional()
   @IsDateString(
     {},
     { message: 'La fecha de fin de vigencia debe ser una fecha válida.' },
   )
-  fechaVigenciaFin: string;
+  fechaVigenciaFin?: string;
 
   @ApiPropertyOptional({
     example: '2025-07-10T17:30:07.811Z',

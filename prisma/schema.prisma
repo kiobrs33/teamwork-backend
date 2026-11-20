@@ -70,9 +70,12 @@ model EmpresaEmpleadora {
   direccionEmpresa                           String?                       @map("direccion_empresa")
   urlLogo                                    String                        @map("url_logo")
   logoPublicId                               String?                       @map("logo_public_id") // Para almacenar el public_id de Cloudinary
-  modeloEmpresa                              String // 90, 180
-  fechaVigenciaInicio                        DateTime                      @map("fecha_vigencia_inicio")
-  fechaVigenciaFin                           DateTime                      @map("fecha_vigencia_fin")
+  // Configuración y vigencias: valores por defecto de la PRIMERA campaña.
+  // Las de cada ciclo viven en CampanaEvaluacion (la API las devuelve
+  // combinadas con las de la campaña en curso).
+  modeloEmpresa                              String                        @default("90") // 90, 180
+  fechaVigenciaInicio                        DateTime?                     @map("fecha_vigencia_inicio")
+  fechaVigenciaFin                           DateTime?                     @map("fecha_vigencia_fin")
   fechaVigenciaInicioObjetivo                DateTime?                     @map("fecha_vigencia_inicio_objetivo")
   fechaVigenciaFinObjetivo                   DateTime?                     @map("fecha_vigencia_fin_objetivo")
   porcentajeCompetecias                      Int?                          @map("porcentaje_competencias")

@@ -46,8 +46,8 @@ export class EmpresaEmpleadoraService {
   private validarReglasNegocio(
     dto: UpdateEmpresaEmpleadoraDto,
     actual?: {
-      fechaVigenciaInicio: Date;
-      fechaVigenciaFin: Date;
+      fechaVigenciaInicio: Date | null;
+      fechaVigenciaFin: Date | null;
       fechaVigenciaInicioObjetivo: Date | null;
       fechaVigenciaFinObjetivo: Date | null;
       porcentajeCompetecias: number | null;
@@ -174,8 +174,8 @@ export class EmpresaEmpleadoraService {
   // CREATE
   /** Lo que una campaña copia de la empresa: configuración y vigencias. */
   private configuracionDe(empresa: {
-    fechaVigenciaInicio: Date;
-    fechaVigenciaFin: Date;
+    fechaVigenciaInicio: Date | null;
+    fechaVigenciaFin: Date | null;
     fechaVigenciaInicioObjetivo: Date | null;
     fechaVigenciaFinObjetivo: Date | null;
     modeloEmpresa: string;
@@ -234,6 +234,8 @@ export class EmpresaEmpleadoraService {
               periodoDesde: empresa.fechaVigenciaInicio,
               periodoHasta: empresa.fechaVigenciaFin,
               ...this.configuracionDe(empresa),
+              fechaVigenciaInicio: empresa.fechaVigenciaInicio,
+              fechaVigenciaFin: empresa.fechaVigenciaFin,
               estado: CAMPANA_EN_CURSO,
               creadoPorId: user.idUsuario,
             },
@@ -275,7 +277,7 @@ export class EmpresaEmpleadoraService {
 
     type FilaAvance = { empresa: number; total: number; hechas: number };
 
-    const [competencias, objetivos, empleados, campanas] = await Promise.all([
+    const [competencias, objetivos, empleados] = await Promise.all([
       this.prisma.$queryRaw<FilaAvance[]>`
         SELECT e.id_empresa_empleadora::int AS empresa,
                count(*)::int AS total,
@@ -313,22 +315,7 @@ export class EmpresaEmpleadoraService {
         where: { estado: true, idEmpresaEmpleadora: { in: ids } },
         _count: { _all: true },
       }),
-      this.prisma.campanaEvaluacion.findMany({
-        where: { idEmpresaEmpleadora: { in: ids }, estado: CAMPANA_EN_CURSO },
-        select: {
-          idCampanaEvaluacion: true,
-          idEmpresaEmpleadora: true,
-          nombre: true,
-          periodoDesde: true,
-          periodoHasta: true,
-          fechaVigenciaInicio: true,
-          fechaVigenciaFin: true,
-        },
-      }),
     ]);
-    const mapaCampanas = new Map(
-      campanas.map((c) => [c.idEmpresaEmpleadora, c]),
-    );
 
     const porEmpresa = (filas: FilaAvance[]) =>
       new Map(
@@ -348,8 +335,6 @@ export class EmpresaEmpleadoraService {
       avanceCompetencias:
         mapaCompetencias.get(empresa.idEmpresaEmpleadora) ?? vacio,
       avanceObjetivos: mapaObjetivos.get(empresa.idEmpresaEmpleadora) ?? vacio,
-      // La campaña en curso (o null): la tabla muestra su nombre y estado.
-      campanaEnCurso: mapaCampanas.get(empresa.idEmpresaEmpleadora) ?? null,
     }));
   }
 
@@ -366,6 +351,9 @@ export class EmpresaEmpleadoraService {
         },
       });
 
+      // Configuración y vigencias de la campaña en curso, como en pantalla.
+      const conCampana = await this.conCampanaEnCurso(empresas);
+
       return await construirLibroExcel([
         {
           nombre: 'Empresas',
@@ -375,21 +363,26 @@ export class EmpresaEmpleadoraService {
             { header: 'RUC', key: 'ruc', tipo: 'texto', width: 16 },
             { header: 'Dirección', key: 'direccionEmpresa', width: 32 },
             { header: 'Modelo', key: 'modeloEmpresa' },
-            { header: 'Periodo de evaluación', key: 'periodoEvaluacion' },
+            { header: 'Campaña en curso', key: 'campana', width: 28 },
             { header: 'Tipo de calificación', key: 'tipoCalificacionCompetencia' },
             { header: '% Competencias', key: 'porcentajeCompetecias' },
             { header: '% Objetivos', key: 'porcentajeObjetivos' },
             { header: '% Jefe', key: 'porcentajeEvaluacionJefeCompetencia' },
             { header: '% Subordinados', key: 'porcentajeEvaluacionSubordinadoCompetencia' },
             { header: 'Resultado esperado', key: 'competenciaResultadoEsperado' },
+            { header: 'Periodo evaluado desde', key: 'periodoDesde', tipo: 'fecha' },
+            { header: 'Periodo evaluado hasta', key: 'periodoHasta', tipo: 'fecha' },
             { header: 'Inicio evaluación', key: 'fechaVigenciaInicio', tipo: 'fecha' },
             { header: 'Fin evaluación', key: 'fechaVigenciaFin', tipo: 'fecha' },
             { header: 'Inicio objetivos', key: 'fechaVigenciaInicioObjetivo', tipo: 'fecha' },
             { header: 'Fin objetivos', key: 'fechaVigenciaFinObjetivo', tipo: 'fecha' },
             { header: 'Trabajadores activos', key: 'trabajadores' },
           ],
-          filas: empresas.map((e) => ({
+          filas: conCampana.map((e) => ({
             ...e,
+            campana: e.campanaEnCurso?.nombre ?? 'Sin campaña en curso',
+            periodoDesde: e.campanaEnCurso?.periodoDesde,
+            periodoHasta: e.campanaEnCurso?.periodoHasta,
             // En 90° el reparto jefe/subordinado no aplica: el jefe pesa 100.
             porcentajeEvaluacionJefeCompetencia:
               e.modeloEmpresa === '90' ? 100 : e.porcentajeEvaluacionJefeCompetencia,
@@ -503,7 +496,7 @@ export class EmpresaEmpleadoraService {
       ]);
 
       return {
-        data: await this.conAvances(data),
+        data: await this.conCampanaEnCurso(await this.conAvances(data)),
         meta: {
           total,
           page: safePage,
@@ -530,7 +523,52 @@ export class EmpresaEmpleadoraService {
       throw new NotFoundException('Empresa no encontrada');
     }
 
-    return empresa;
+    const [combinada] = await this.conCampanaEnCurso([empresa]);
+    return combinada;
+  }
+
+  /**
+   * La empresa con la configuración y las vigencias de su campaña EN CURSO
+   * encima (mismos nombres de campo), más `campanaEnCurso`. Las pantallas de
+   * evaluación leen fechas, modelo y escala "de la empresa": así reciben las
+   * del ciclo vigente sin cambiar. Sin campaña en curso, las vigencias van
+   * vacías: no hay nada que evaluar.
+   */
+  private async conCampanaEnCurso<T extends { idEmpresaEmpleadora: number }>(
+    empresas: T[],
+  ) {
+    const campanas = await this.prisma.campanaEvaluacion.findMany({
+      where: {
+        idEmpresaEmpleadora: { in: empresas.map((e) => e.idEmpresaEmpleadora) },
+        estado: CAMPANA_EN_CURSO,
+      },
+    });
+    const porEmpresa = new Map(campanas.map((c) => [c.idEmpresaEmpleadora, c]));
+
+    return empresas.map((e) => {
+      const c = porEmpresa.get(e.idEmpresaEmpleadora);
+      return {
+        ...e,
+        ...(c
+          ? this.configuracionDe(c)
+          : {
+              fechaVigenciaInicio: null,
+              fechaVigenciaFin: null,
+              fechaVigenciaInicioObjetivo: null,
+              fechaVigenciaFinObjetivo: null,
+            }),
+        campanaEnCurso: c
+          ? {
+              idCampanaEvaluacion: c.idCampanaEvaluacion,
+              nombre: c.nombre,
+              periodoDesde: c.periodoDesde,
+              periodoHasta: c.periodoHasta,
+              fechaVigenciaInicio: c.fechaVigenciaInicio,
+              fechaVigenciaFin: c.fechaVigenciaFin,
+            }
+          : null,
+      };
+    });
   }
 
   // UPDATE
@@ -553,27 +591,16 @@ export class EmpresaEmpleadoraService {
 
       this.validarReglasNegocio(dto, empresa);
 
-      return await this.prisma.$transaction(async (tx) => {
-        const actualizada = await tx.empresaEmpleadora.update({
-          where: { idEmpresaEmpleadora: id },
-          data: {
-            ...dto,
-            fechaModificacion: new Date(),
-            actualizadoPorId: user.idUsuario,
-          },
-        });
-
-        // La configuración y las vigencias de la empresa son los valores por
-        // defecto de sus campañas. Mientras el formulario de empresa los siga
-        // editando, el cambio se aplica también a la campaña EN CURSO (las
-        // cerradas no se tocan). Cambiar `periodoEvaluacion` ya NO cierra la
-        // campaña: eso es la acción "Cerrar campaña".
-        await tx.campanaEvaluacion.updateMany({
-          where: { idEmpresaEmpleadora: id, estado: CAMPANA_EN_CURSO },
-          data: this.configuracionDe(actualizada),
-        });
-
-        return actualizada;
+      // Solo los datos de la empresa. La configuración y las vigencias de un
+      // ciclo se editan en su campaña: lo que se guarde acá son los valores
+      // por defecto de la próxima primera campaña, y no toca la en curso.
+      return await this.prisma.empresaEmpleadora.update({
+        where: { idEmpresaEmpleadora: id },
+        data: {
+          ...dto,
+          fechaModificacion: new Date(),
+          actualizadoPorId: user.idUsuario,
+        },
       });
     } catch (error) {
       this.logger.error('Error al actualizar empresa', error as Error);

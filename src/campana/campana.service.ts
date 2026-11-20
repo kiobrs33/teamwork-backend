@@ -50,10 +50,9 @@ const fechaCorta = (d: Date) => d.toISOString().slice(0, 10);
  * - Cerrar pasa sus evaluaciones a CERRADA (solo lectura). Reabrir lo
  *   revierte y queda registrado quién y cuándo.
  *
- * Mientras el formulario de empresa siga mostrando vigencias y pesos, abrir o
- * editar la campaña en curso los refleja también en la empresa (y al revés,
- * ver EmpresaEmpleadoraService.update): las pantallas de evaluación todavía
- * leen las fechas de la empresa.
+ * Las pantallas de evaluación leen fechas, modelo y escala "de la empresa":
+ * la API de empresas se los devuelve ya combinados con los de la campaña en
+ * curso (EmpresaEmpleadoraService.conCampanaEnCurso).
  */
 @Injectable()
 export class CampanaService {
@@ -184,6 +183,7 @@ export class CampanaService {
         const config = Object.fromEntries(
           CAMPOS_CONFIG.map((c) => [c, dto[c] !== undefined ? dto[c] : base[c]]),
         ) as Pick<Prisma.CampanaEvaluacionUncheckedCreateInput, (typeof CAMPOS_CONFIG)[number]>;
+        this.validarPesos(config);
 
         const nueva = await tx.campanaEvaluacion.create({
           data: {
@@ -201,8 +201,6 @@ export class CampanaService {
             creadoPorId: user.idUsuario,
           },
         });
-
-        await this.reflejarEnEmpresa(tx, user, nueva);
 
         let objetivosCopiados = 0;
         if (dto.copiarObjetivos && anterior) {
@@ -251,6 +249,13 @@ export class CampanaService {
     // historia (las migradas no las cumplen y no se pueden cambiar).
     this.validarFechas(resultante, campana.estado !== CAMPANA_CERRADA);
 
+    this.validarPesos({
+      ...Object.fromEntries(CAMPOS_CONFIG.map((c) => [c, campana[c]])),
+      ...Object.fromEntries(
+        CAMPOS_CONFIG.filter((c) => dto[c] !== undefined).map((c) => [c, dto[c]]),
+      ),
+    });
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.validarSinSuperposicion(
@@ -285,9 +290,6 @@ export class CampanaService {
           },
         });
 
-        if (actualizada.estado === CAMPANA_EN_CURSO) {
-          await this.reflejarEnEmpresa(tx, user, actualizada);
-        }
         return actualizada;
       });
     } catch (error) {
@@ -351,7 +353,6 @@ export class CampanaService {
             reabiertoPorId: user.idUsuario,
           },
         });
-        await this.reflejarEnEmpresa(tx, user, reabierta);
         return reabierta;
       });
     } catch (error) {
@@ -404,6 +405,34 @@ export class CampanaService {
         cerradoPorId: user.idUsuario,
       },
     });
+  }
+
+  /** Cada par de pesos suma 100; el de jefe/subordinado solo en 180°. */
+  private validarPesos(c: {
+    modeloEmpresa?: string | null;
+    porcentajeCompetecias?: number | null;
+    porcentajeObjetivos?: number | null;
+    porcentajeEvaluacionJefeCompetencia?: number | null;
+    porcentajeEvaluacionSubordinadoCompetencia?: number | null;
+  }) {
+    const suma = (a?: number | null, b?: number | null) =>
+      a == null || b == null || a + b === 100;
+    if (!suma(c.porcentajeCompetecias, c.porcentajeObjetivos)) {
+      throw new BadRequestException(
+        'Los porcentajes de competencias y objetivos deben sumar 100.',
+      );
+    }
+    if (
+      c.modeloEmpresa === '180' &&
+      !suma(
+        c.porcentajeEvaluacionJefeCompetencia,
+        c.porcentajeEvaluacionSubordinadoCompetencia,
+      )
+    ) {
+      throw new BadRequestException(
+        'Los porcentajes del jefe y de los subordinados deben sumar 100.',
+      );
+    }
   }
 
   private validarFechas(
@@ -459,30 +488,6 @@ export class CampanaService {
         `El periodo se superpone con el de "${choque.nombre}" (${fechaCorta(choque.periodoDesde)} – ${fechaCorta(choque.periodoHasta)}).`,
       );
     }
-  }
-
-  /**
-   * Transición: las pantallas de evaluación y el formulario de empresa aún
-   * leen vigencias y configuración de la empresa. La campaña en curso manda y
-   * se copia ahí.
-   */
-  private async reflejarEnEmpresa(
-    tx: Tx,
-    user: AuthUser,
-    c: Prisma.CampanaEvaluacionGetPayload<object>,
-  ) {
-    await tx.empresaEmpleadora.update({
-      where: { idEmpresaEmpleadora: c.idEmpresaEmpleadora },
-      data: {
-        fechaVigenciaInicio: c.fechaVigenciaInicio,
-        fechaVigenciaFin: c.fechaVigenciaFin,
-        fechaVigenciaInicioObjetivo: c.fechaVigenciaInicioObjetivo,
-        fechaVigenciaFinObjetivo: c.fechaVigenciaFinObjetivo,
-        ...Object.fromEntries(CAMPOS_CONFIG.map((k) => [k, c[k]])),
-        actualizadoPorId: user.idUsuario,
-        fechaModificacion: new Date(),
-      },
-    });
   }
 
   /**

@@ -1149,19 +1149,16 @@ export class CompetenciaService {
     // La escala la fija la empresa del evaluado, y hasta ahora nadie la
     // comprobaba: por la API entraban un 9999 o un -500 y se guardaban tal
     // cual, arrastrando el promedio de la competencia entera.
-    const empresaDelEvaluado = evaluacion.idEvaluado
-      ? await this.prisma.empleado.findUnique({
-          where: { idEmpleado: evaluacion.idEvaluado },
-          select: {
-            empresaEmpleadora: {
-              select: { tipoCalificacionCompetencia: true },
-            },
-          },
+    // La escala es la de la campaña de la evaluación, no la actual de la
+    // empresa.
+    const campanaDeLaEvaluacion = evaluacion.idCampanaEvaluacion
+      ? await this.prisma.campanaEvaluacion.findUnique({
+          where: { idCampanaEvaluacion: evaluacion.idCampanaEvaluacion },
+          select: { tipoCalificacionCompetencia: true },
         })
       : null;
 
-    const tipoCalificacion =
-      empresaDelEvaluado?.empresaEmpleadora?.tipoCalificacionCompetencia;
+    const tipoCalificacion = campanaDeLaEvaluacion?.tipoCalificacionCompetencia;
 
     const fueraDeEscala = (dto.items ?? []).filter(
       (i) => !calificacionValida(i.calificacion, tipoCalificacion),
