@@ -51,6 +51,42 @@ export class EmployeeQueryDto {
   @IsOptional()
   idEmpleado?: number;
 
+  // Estructura: selects en el front, así que llegan como id exacto.
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idEmpresaEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idGerenciaEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idAreaEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idUnidadOcupacionalEmpleadora?: number;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idPuestoEmpleadora?: number;
+
+  @ApiPropertyOptional({ enum: ['ADMIN', 'JEFE', 'EMPLEADO'] })
+  @IsIn(['ADMIN', 'JEFE', 'EMPLEADO'])
+  @IsOptional()
+  rol?: string;
+
   /**
    * Nombres y apellidos en una sola caja, como se ven en el listado.
    *

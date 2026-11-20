@@ -661,6 +661,12 @@ export class EmpleadoService {
     jefe,
     nombreEmpresaEmpleadora,
     codigoUsuario,
+    idEmpresaEmpleadora,
+    idGerenciaEmpleadora,
+    idAreaEmpleadora,
+    idUnidadOcupacionalEmpleadora,
+    idPuestoEmpleadora,
+    rol,
   }: EmployeeQueryDto): Promise<Prisma.EmpleadoWhereInput> {
     // Cada condición compuesta va dentro de `AND` en vez de en la raíz: hay
     // tres que necesitan su propio `OR` y, puestas como claves sueltas del
@@ -707,6 +713,10 @@ export class EmpleadoService {
       });
     }
 
+    // En `condiciones` y no como clave suelta: `codigoUsuario` también filtra
+    // por la relación `usuario` y los dos se pisarían.
+    if (rol) condiciones.push({ usuario: { rol } });
+
     if (search?.trim()) {
       condiciones.push({
         OR: [
@@ -732,6 +742,21 @@ export class EmpleadoService {
       estado: true,
 
       ...(idEmpleado && { idEmpleado: Number(idEmpleado) }),
+
+      // Estructura organizacional (con `transform` apagado llegan como texto).
+      ...(idEmpresaEmpleadora && {
+        idEmpresaEmpleadora: Number(idEmpresaEmpleadora),
+      }),
+      ...(idGerenciaEmpleadora && {
+        idGerenciaEmpleadora: Number(idGerenciaEmpleadora),
+      }),
+      ...(idAreaEmpleadora && { idAreaEmpleadora: Number(idAreaEmpleadora) }),
+      ...(idUnidadOcupacionalEmpleadora && {
+        idUnidadOcupacionalEmpleadora: Number(idUnidadOcupacionalEmpleadora),
+      }),
+      ...(idPuestoEmpleadora && {
+        idPuestoEmpleadora: Number(idPuestoEmpleadora),
+      }),
 
       ...(documento && { documento: { contains: documento } }),
 
