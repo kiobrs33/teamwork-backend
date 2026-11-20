@@ -1,8 +1,9 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -15,6 +16,15 @@ export class CompetenciaNivelItemDto {
   @ApiProperty({ example: 'Muestra iniciativa en actividades del equipo' })
   @IsString()
   enunciado: string;
+
+  @ApiPropertyOptional({
+    example: 12,
+    description:
+      'Solo al editar: id del ítem existente. Sin él, el ítem se trata como nuevo.',
+  })
+  @IsOptional()
+  @IsInt()
+  idCompetenciaNivelItem?: number;
 }
 
 // ======================================================

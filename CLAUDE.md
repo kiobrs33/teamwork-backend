@@ -261,6 +261,28 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   `findAll({ page, limit, search })` y con eso los filtros del servicio nunca se
   aplicaban: la fila de filtros del front no hacía nada. `area-empleadora` ya
   tenía el arreglo; al tocar otro listado, comprobar lo mismo.
+- **Editar una competencia empareja los ítems por `idCompetenciaNivelItem`,
+  no por posición.** El front lo manda en un `Form.Item` oculto. Emparejando
+  por `secuencial`, borrar o reordenar un ítem intermedio hacía que los
+  siguientes "cambiaran de texto" y sus notas en `PROCESO` pasaran a un
+  enunciado que nadie calificó. Sin id (clientes de la API que no lo mandan)
+  un ítem solo se reconoce si el texto es idéntico; si no, es nuevo y el
+  viejo se retira. Cambiar el texto de un ítem calificado lo retira y crea un
+  reemplazo que hereda las notas en `PROCESO`. **No se puede quitar un nivel
+  que alguna unidad ocupacional tiene asignado** (400 con las unidades).
+- **`PATCH /empleado/:id` no toca el jefe si `codigoEmpleadoJefe` no llega**;
+  `""` o `null` lo quitan. Antes un `?? null` dejaba sin jefe a cualquiera
+  actualizado sin el campo. Valida que el jefe exista y no sea él mismo, y
+  **si cambia el `codigoEmpleado` de un jefe, reescribe el
+  `codigoEmpleadoJefe` de sus subordinados** en la misma transacción: el
+  vínculo es texto suelto y sin eso quedaban huérfanos y sus notas de jefe
+  dejaban de contar. "Sin jefe" es siempre `NULL`
+  (`20261120120000_normalizar_codigo_jefe_vacio` limpió los `''`).
+- **`GET /evidencias` es el listado del administrador**: acepta `search`
+  (trabajador o archivo, por palabras), `idEmpresaEmpleadora`, `tipo`
+  (`OBJETIVO`/`COMPETENCIA`), `codigoEmpleadoJefe` y `fechaDesde/Hasta`, y
+  devuelve `fechaSubida` y `subidoPor` resueltos — `fechaCreacion` y
+  `creadoPorId` los borra el `PurgeResponseInterceptor`.
 - **El listado de empleados arma su `where` en `construirWhereListado()` y su
   `orderBy` en `construirOrdenListado()`, y `findAll` y `exportExcel` comparten
   los dos.** El `where` estaba escrito dos veces (el de la exportación se
@@ -296,7 +318,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   recibe los strings crudos. Normalizar en el servicio.
 - El cuerpo de las peticiones admite hasta **50 MB** (cargas masivas desde Excel).
 
-### Modelo de datos — `prisma/schema.prisma`, 34 migraciones
+### Modelo de datos — `prisma/schema.prisma`, 36 migraciones
 
 ```
 EmpresaEmpleadora ─┬─ GerenciaEmpleadora
@@ -541,10 +563,15 @@ El front espera la API en el **4055** (`VITE_API_URL`).
    `JWT_SECRET_KEY` y el `CLOUDINARY_API_SECRET`. Hay que **rotar las tres**;
    reescribir el historial no basta por sí solo.
 
-2. **No hay autorización, solo autenticación.** `JwtAuthGuard` está en 12 de 14
-   controladores, pero **no existe ningún `RolesGuard`** — el `rol` solo se lee
-   para meterlo en el token. Los roles se aplican únicamente en el frontend, así
-   que cualquier EMPLEADO con su token puede llamar `DELETE /empleado/:id` con
+2. **No hay autorización, solo autenticación — salvo en evidencias.**
+   `JwtAuthGuard` está en 12 de 14 controladores, pero **no existe ningún
+   `RolesGuard`** — el `rol` solo se lee para meterlo en el token. La única
+   excepción es `EvidenciaService`, que deriva el alcance del token
+   (`alcanceDe`): ADMIN todo; JEFE lee lo de sus subordinados directos y lo
+   suyo, y sube/elimina solo lo de sus subordinados; EMPLEADO lee solo lo
+   suyo. Una evidencia ajena responde 404, no 403, para no confirmar ids. Es
+   el patrón a copiar al cerrar el resto. Fuera de ahí los roles se aplican
+   únicamente en el frontend, así que cualquier EMPLEADO con su token puede llamar `DELETE /empleado/:id` con
    curl. Al agregar endpoints, asumir que **no hay red de seguridad**.
 
 3. **Sin aislamiento entre empresas.** `GET /objetivo` devuelve los objetivos de

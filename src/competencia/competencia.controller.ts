@@ -50,10 +50,12 @@ export class CompetenciaController {
   @ApiOperation({ summary: 'Listar todas las competencias' })
   @ApiResponse({ status: 200, description: 'Lista de competencias.' })
   async findAll(@Query() query: CompetenciaQueryDto) {
+    // El query entero: con solo `page/limit/search`, los filtros por columna
+    // de la tabla (id, código, título, empresa, RUC) se descartaban.
     const resp = await this.competenciaService.findAll({
+      ...query,
       page: query.page ?? 1,
       limit: query.limit ?? 0,
-      search: query.search,
     });
     return {
       message: 'Lista de competencias.',

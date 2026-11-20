@@ -185,7 +185,7 @@ export class EmpleadoService {
             idPuestoEmpleadora: body.idPuestoEmpleadora,
             idGerenciaEmpleadora: body.idGerenciaEmpleadora,
             idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
-            codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
+            codigoEmpleadoJefe: body.codigoEmpleadoJefe?.trim() || null,
             idUsuario: usuario.idUsuario,
             creadoPorId: user.idUsuario,
           },
@@ -896,10 +896,34 @@ export class EmpleadoService {
     try {
       const existEmpleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id, estado: true },
-        select: { idEmpleado: true, idUsuario: true },
+        select: { idEmpleado: true, idUsuario: true, codigoEmpleado: true },
       });
 
       if (!existEmpleado) throw new NotFoundException('Empleado no encontrado');
+
+      // Jefe: `undefined` = no se toca (PATCH parcial); "" o null = sin jefe.
+      // Antes `?? null` dejaba sin jefe a cualquiera actualizado sin el campo.
+      const codigoEmpleadoFinal = body.codigoEmpleado ?? existEmpleado.codigoEmpleado;
+      let codigoEmpleadoJefe: string | null | undefined;
+      if (body.codigoEmpleadoJefe !== undefined) {
+        codigoEmpleadoJefe = body.codigoEmpleadoJefe?.trim() || null;
+      }
+      if (codigoEmpleadoJefe) {
+        if (codigoEmpleadoJefe === codigoEmpleadoFinal) {
+          throw new BadRequestException(
+            'Un trabajador no puede ser su propio jefe.',
+          );
+        }
+        const jefe = await this.prisma.empleado.findFirst({
+          where: { codigoEmpleado: codigoEmpleadoJefe, estado: true },
+          select: { idEmpleado: true },
+        });
+        if (!jefe) {
+          throw new BadRequestException(
+            `No existe un trabajador activo con el código de jefe "${codigoEmpleadoJefe}".`,
+          );
+        }
+      }
 
       // Validación de unicidad: códigoUsuario
       if (body.codigoUsuario) {
@@ -939,11 +963,6 @@ export class EmpleadoService {
         usuarioUpdateData.contrasena = await hash(body.contrasena, 10);
       }
 
-      await this.prisma.usuario.update({
-        where: { idUsuario: existEmpleado.idUsuario },
-        data: usuarioUpdateData,
-      });
-
       // --------- Actualizar Empleado ----------
       const empleadoUpdateData = {
         codigoEmpleado: body.codigoEmpleado,
@@ -958,20 +977,43 @@ export class EmpleadoService {
         idPuestoEmpleadora: body.idPuestoEmpleadora,
         idGerenciaEmpleadora: body.idGerenciaEmpleadora,
         idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
-        codigoEmpleadoJefe: body.codigoEmpleadoJefe ?? null,
+        codigoEmpleadoJefe,
         fechaModificacion: new Date(),
         actualizadoPorId: user.idUsuario,
       };
 
-      return await this.prisma.empleado.update({
-        where: { idEmpleado: id },
-        data: empleadoUpdateData,
-        include: {
-          usuario: {
-            select: { idUsuario: true, codigoUsuario: true, rol: true },
+      const cambiaCodigo = codigoEmpleadoFinal !== existEmpleado.codigoEmpleado;
+
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.usuario.update({
+          where: { idUsuario: existEmpleado.idUsuario },
+          data: usuarioUpdateData,
+        });
+
+        // El vínculo jefe→subordinado es el texto `codigoEmpleadoJefe`: si
+        // cambia el código del jefe, sus subordinados se quedarían sin jefe y
+        // sus evaluaciones dejarían de contar como "del jefe".
+        if (cambiaCodigo) {
+          await tx.empleado.updateMany({
+            where: { codigoEmpleadoJefe: existEmpleado.codigoEmpleado },
+            data: {
+              codigoEmpleadoJefe: codigoEmpleadoFinal,
+              fechaModificacion: new Date(),
+              actualizadoPorId: user.idUsuario,
+            },
+          });
+        }
+
+        return tx.empleado.update({
+          where: { idEmpleado: id },
+          data: empleadoUpdateData,
+          include: {
+            usuario: {
+              select: { idUsuario: true, codigoUsuario: true, rol: true },
+            },
+            empresaEmpleadora: true,
           },
-          empresaEmpleadora: true,
-        },
+        });
       });
     } catch (error) {
       this.logger.error('Error al actualizar al empleado:', error);

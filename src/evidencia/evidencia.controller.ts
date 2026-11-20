@@ -70,13 +70,13 @@ export class EvidenciaController {
 
   // 📌 LISTAR
   @Get()
-  @ApiOperation({ summary: 'Listar evidencias' })
-  async findAll(@Query() query: EvidenciaQueryDto) {
-    const resp = await this.service.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 10,
-      idEmpleado: query.idEmpleado,
-    });
+  @ApiOperation({
+    summary: 'Listar evidencias',
+    description:
+      'ADMIN ve todas; JEFE, las de sus subordinados y las suyas; EMPLEADO, solo las suyas.',
+  })
+  async findAll(@User() user: AuthUser, @Query() query: EvidenciaQueryDto) {
+    const resp = await this.service.findAll(user, query);
 
     return {
       message: 'Lista de evidencias',
@@ -89,10 +89,11 @@ export class EvidenciaController {
     summary: 'Obtener evidencias por empleado',
   })
   async findByEmpleado(
+    @User() user: AuthUser,
     @Param('idEmpleado', ParseIntPipe)
     idEmpleado: number,
   ) {
-    const evidencias = await this.service.findByEmpleado(idEmpleado);
+    const evidencias = await this.service.findByEmpleado(user, idEmpleado);
 
     return {
       message: 'Lista de evidencias del empleado',
@@ -104,8 +105,8 @@ export class EvidenciaController {
   @Get(':id')
   @ApiOperation({ summary: 'Obtener evidencia por ID' })
   @ApiParam({ name: 'id', description: 'ID de la evidencia' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    const evidencia = await this.service.findOne(id);
+  async findOne(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    const evidencia = await this.service.findOne(user, id);
 
     return {
       message: 'Evidencia encontrada',

@@ -234,19 +234,47 @@ export class CompetenciaService {
         // controlar qué estructura estará disponible para nuevas evaluaciones.
         const nivelesActuales = await tx.competenciaNivel.findMany({
           where: { idCompetencia: id },
-          include: { items: true },
+          include: { items: { where: { estado: true } } },
         });
 
-        const nivelesEnviados = new Set<number>();
+        const nivelesEnviados = new Set<number>(niveles.map((n) => n.nivel));
+        if (nivelesEnviados.size !== niveles.length) {
+          throw new BadRequestException('Hay niveles repetidos.');
+        }
 
-        for (const nivelDto of niveles) {
-          if (nivelesEnviados.has(nivelDto.nivel)) {
+        // Quitar un nivel que alguna unidad ocupacional tiene asignado dejaba
+        // a sus ocupantes evaluándose contra un nivel inactivo, y el Excel los
+        // descartaba en silencio. Hay que reasignar la unidad primero.
+        const nivelesQueSeRetiran = nivelesActuales.filter(
+          (n) => n.estado && !nivelesEnviados.has(n.nivel),
+        );
+        if (nivelesQueSeRetiran.length) {
+          const asignados = await tx.unidadOcupacionalCompetenciaNivel.findMany({
+            where: {
+              idCompetenciaNivel: {
+                in: nivelesQueSeRetiran.map((n) => n.idCompetenciaNivel),
+              },
+              unidadOcupacionalEmpleadora: { estado: true },
+            },
+            select: {
+              competenciaNivel: { select: { nivel: true } },
+              unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+            },
+          });
+          if (asignados.length) {
+            const detalle = asignados
+              .map(
+                (a) =>
+                  `nivel ${a.competenciaNivel.nivel} en "${a.unidadOcupacionalEmpleadora.descripcion}"`,
+              )
+              .join(', ');
             throw new BadRequestException(
-              `El nivel ${nivelDto.nivel} está repetido.`,
+              `No se puede quitar un nivel asignado a unidades ocupacionales (${detalle}). Reasigna esas unidades a otro nivel primero.`,
             );
           }
-          nivelesEnviados.add(nivelDto.nivel);
+        }
 
+        for (const nivelDto of niveles) {
           const nivelActual = nivelesActuales.find(
             (nivel) => nivel.nivel === nivelDto.nivel,
           );
@@ -270,24 +298,60 @@ export class CompetenciaService {
                 },
               });
 
+          // Solo los ítems VIGENTES: con los retirados mezclados, el
+          // emparejamiento podía reactivar uno viejo o duplicar el reemplazo.
           const itemsActuales = nivelActual?.items ?? [];
-          const itemsEnviados = new Set<number>();
+          const disponibles = new Map(
+            itemsActuales.map((item) => [item.idCompetenciaNivelItem, item]),
+          );
+          const conservados = new Set<number>();
+
+          // El ítem se identifica por su id, NO por su posición. Emparejando
+          // por posición, borrar o reordenar un ítem intermedio hacía que los
+          // siguientes "cambiaran de texto" y sus notas en PROCESO pasaran a un
+          // enunciado que nadie calificó.
+          // Sin id (clientes de la API que no lo mandan) solo se reconoce el
+          // ítem si el texto es idéntico; si no, es un ítem nuevo.
+          const emparejar = (itemDto: { idCompetenciaNivelItem?: number; enunciado: string }) => {
+            const idEnviado = itemDto.idCompetenciaNivelItem
+              ? Number(itemDto.idCompetenciaNivelItem)
+              : undefined;
+            if (idEnviado) {
+              if (conservados.has(idEnviado)) {
+                throw new BadRequestException(
+                  `El ítem ${idEnviado} del nivel ${nivelDto.nivel} está repetido.`,
+                );
+              }
+              return disponibles.get(idEnviado);
+            }
+            return itemsActuales.find(
+              (item) =>
+                !conservados.has(item.idCompetenciaNivelItem) &&
+                item.enunciado === itemDto.enunciado,
+            );
+          };
 
           for (const [index, itemDto] of nivelDto.items.entries()) {
             const secuencial = index + 1;
+            const itemActual = emparejar(itemDto);
 
-            if (itemsEnviados.has(secuencial)) {
-              throw new BadRequestException(
-                `El item ${secuencial} del nivel ${nivelDto.nivel} está repetido.`,
-              );
+            if (!itemActual) {
+              const creado = await tx.competenciaNivelItem.create({
+                data: {
+                  idCompetenciaNivel: nivel.idCompetenciaNivel,
+                  enunciado: itemDto.enunciado,
+                  secuencial,
+                  creadoPorId: user.idUsuario,
+                },
+              });
+              conservados.add(creado.idCompetenciaNivelItem);
+              continue;
             }
-            itemsEnviados.add(secuencial);
 
-            const itemActual = itemsActuales.find(
-              (item) => item.secuencial === secuencial,
-            );
+            conservados.add(itemActual.idCompetenciaNivelItem);
 
-            const itemTieneHistorial = itemActual
+            const cambiaTexto = itemActual.enunciado !== itemDto.enunciado;
+            const itemTieneHistorial = cambiaTexto
               ? await tx.evaluacionCompetenciaItem.count({
                   where: {
                     idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
@@ -295,7 +359,7 @@ export class CompetenciaService {
                 })
               : 0;
 
-            if (itemActual && itemActual.enunciado === itemDto.enunciado) {
+            if (!cambiaTexto || itemTieneHistorial === 0) {
               await tx.competenciaNivelItem.update({
                 where: {
                   idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
@@ -303,87 +367,72 @@ export class CompetenciaService {
                 data: {
                   enunciado: itemDto.enunciado,
                   secuencial,
-                  estado: true,
                   actualizadoPorId: user.idUsuario,
                   fechaModificacion,
                 },
               });
-            } else if (itemActual && itemTieneHistorial > 0) {
-              await tx.competenciaNivelItem.update({
-                where: {
-                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
-                },
-                data: {
-                  estado: false,
-                  actualizadoPorId: user.idUsuario,
-                  fechaModificacion,
-                },
-              });
-
-              const reemplazo = await tx.competenciaNivelItem.create({
-                data: {
-                  idCompetenciaNivel: nivel.idCompetenciaNivel,
-                  enunciado: itemDto.enunciado,
-                  secuencial,
-                  creadoPorId: user.idUsuario,
-                },
-              });
-
-              // Las evaluaciones que siguen en PROCESO tienen que apuntar al
-              // ítem nuevo. Si se quedan con el que acabamos de dar de baja,
-              // su avance ya no cierra nunca: el progreso solo cuenta ítems
-              // vigentes del nivel, así que la evaluación queda congelada en
-              // "0 de N" sin ninguna forma de terminarla desde la interfaz.
-              // Se conserva la calificación y se actualiza el enunciado, que
-              // es el texto que el evaluador está viendo ahora.
-              //
-              // Las CERRADAS y ANULADAS no se tocan a propósito: para eso
-              // existe el snapshot `textoItemEvaluado`.
-              await tx.evaluacionCompetenciaItem.updateMany({
-                where: {
-                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
-                  estado: true,
-                  evaluacion: {
-                    estado: true,
-                    estadoEvaluacion: 'PROCESO',
-                  },
-                },
-                data: {
-                  idCompetenciaNivelItem: reemplazo.idCompetenciaNivelItem,
-                  textoItemEvaluado: itemDto.enunciado,
-                  actualizadoPorId: user.idUsuario,
-                  fechaModificacion,
-                },
-              });
-            } else if (itemActual) {
-              await tx.competenciaNivelItem.update({
-                where: {
-                  idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
-                },
-                data: {
-                  enunciado: itemDto.enunciado,
-                  secuencial,
-                  estado: true,
-                  actualizadoPorId: user.idUsuario,
-                  fechaModificacion,
-                },
-              });
-            } else {
-              await tx.competenciaNivelItem.create({
-                data: {
-                  idCompetenciaNivel: nivel.idCompetenciaNivel,
-                  enunciado: itemDto.enunciado,
-                  secuencial,
-                  creadoPorId: user.idUsuario,
-                },
-              });
+              continue;
             }
+
+            // Cambió el texto de un ítem ya calificado: se retira y nace un
+            // reemplazo, para que las evaluaciones CERRADAS y ANULADAS sigan
+            // apuntando al enunciado que realmente se calificó.
+            await tx.competenciaNivelItem.update({
+              where: {
+                idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
+              },
+              data: {
+                estado: false,
+                actualizadoPorId: user.idUsuario,
+                fechaModificacion,
+              },
+            });
+
+            const reemplazo = await tx.competenciaNivelItem.create({
+              data: {
+                idCompetenciaNivel: nivel.idCompetenciaNivel,
+                enunciado: itemDto.enunciado,
+                secuencial,
+                creadoPorId: user.idUsuario,
+              },
+            });
+            conservados.add(reemplazo.idCompetenciaNivelItem);
+
+            // Las evaluaciones que siguen en PROCESO tienen que apuntar al
+            // ítem nuevo. Si se quedan con el que acabamos de dar de baja,
+            // su avance ya no cierra nunca: el progreso solo cuenta ítems
+            // vigentes del nivel, así que la evaluación queda congelada en
+            // "0 de N" sin ninguna forma de terminarla desde la interfaz.
+            // Se conserva la calificación y se actualiza el enunciado, que
+            // es el texto que el evaluador está viendo ahora (es el MISMO
+            // ítem, emparejado por id, con el texto corregido).
+            //
+            // Las CERRADAS y ANULADAS no se tocan a propósito: para eso
+            // existe el snapshot `textoItemEvaluado`.
+            await tx.evaluacionCompetenciaItem.updateMany({
+              where: {
+                idCompetenciaNivelItem: itemActual.idCompetenciaNivelItem,
+                estado: true,
+                evaluacion: {
+                  estado: true,
+                  estadoEvaluacion: 'PROCESO',
+                },
+              },
+              data: {
+                idCompetenciaNivelItem: reemplazo.idCompetenciaNivelItem,
+                textoItemEvaluado: itemDto.enunciado,
+                actualizadoPorId: user.idUsuario,
+                fechaModificacion,
+              },
+            });
           }
 
+          // Los vigentes que no llegaron en el formulario se retiran.
           await tx.competenciaNivelItem.updateMany({
             where: {
               idCompetenciaNivel: nivel.idCompetenciaNivel,
-              secuencial: { notIn: Array.from(itemsEnviados) },
+              estado: true,
+              idCompetenciaNivelItem: { notIn: Array.from(conservados) },
             },
             data: {
               estado: false,
@@ -413,10 +462,23 @@ export class CompetenciaService {
           },
         });
 
+        // Misma forma que el listado (solo lo vigente, ordenado, con empresa):
+        // el front reemplaza la fila con esto. Devolviendo todo, la tabla
+        // mostraba ítems retirados y al volver a editar se reactivaban.
         return await tx.competencia.findUnique({
           where: { idCompetencia: id },
           include: {
-            niveles: { include: { items: true } },
+            empresaEmpleadora: true,
+            niveles: {
+              where: { estado: true },
+              orderBy: { nivel: 'asc' },
+              include: {
+                items: {
+                  where: { estado: true },
+                  orderBy: { secuencial: 'asc' },
+                },
+              },
+            },
           },
         });
       });

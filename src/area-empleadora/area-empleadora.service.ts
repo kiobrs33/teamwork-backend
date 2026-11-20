@@ -58,21 +58,19 @@ export class AreaEmpleadoraService {
           },
         }),
 
-        ...(nombreEmpresaEmpleadora && {
+        // Empresa y RUC van en un solo filtro de la relación: como dos spreads
+        // de `empresaEmpleadora`, el segundo pisaba al primero.
+        ...((nombreEmpresaEmpleadora || ruc) && {
           empresaEmpleadora: {
-            nombreEmpresa: {
-              contains: nombreEmpresaEmpleadora,
-              mode: 'insensitive',
-            },
-          },
-        }),
-
-        ...(ruc && {
-          empresaEmpleadora: {
-            ruc: {
-              contains: ruc,
-              mode: 'insensitive',
-            },
+            ...(nombreEmpresaEmpleadora && {
+              nombreEmpresa: {
+                contains: nombreEmpresaEmpleadora,
+                mode: 'insensitive' as const,
+              },
+            }),
+            ...(ruc && {
+              ruc: { contains: ruc, mode: 'insensitive' as const },
+            }),
           },
         }),
 
@@ -277,21 +275,17 @@ export class AreaEmpleadoraService {
           },
         }),
 
-        ...(query.nombreEmpresaEmpleadora && {
+        ...((query.nombreEmpresaEmpleadora || query.ruc) && {
           empresaEmpleadora: {
-            nombreEmpresa: {
-              contains: query.nombreEmpresaEmpleadora,
-              mode: 'insensitive',
-            },
-          },
-        }),
-
-        ...(query.ruc && {
-          empresaEmpleadora: {
-            ruc: {
-              contains: query.ruc,
-              mode: 'insensitive',
-            },
+            ...(query.nombreEmpresaEmpleadora && {
+              nombreEmpresa: {
+                contains: query.nombreEmpresaEmpleadora,
+                mode: 'insensitive' as const,
+              },
+            }),
+            ...(query.ruc && {
+              ruc: { contains: query.ruc, mode: 'insensitive' as const },
+            }),
           },
         }),
 
