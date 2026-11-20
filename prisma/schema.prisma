@@ -93,6 +93,7 @@ model EmpresaEmpleadora {
   empleados                                  Empleado[]
   unidadOcupacionalEmpleadoras               UnidadOcupacionalEmpleadora[]
   competencias                               Competencia[]
+  campanas                                   CampanaEvaluacion[]
 
   @@map("empresa_empleadora")
 }
@@ -163,6 +164,9 @@ model Objetivo {
   idObjetivo                Int                        @id @default(autoincrement()) @map("id_objetivo")
   idEmpleado                Int
   empleado                  Empleado                   @relation(fields: [idEmpleado], references: [idEmpleado])
+  // Campaña ("YYYY-MM") a la que pertenece, copiada de la empresa al crearlo.
+  // Sin esto los objetivos de un ciclo se mezclaban con los del siguiente.
+  periodoEvaluacion         String?                    @map("periodo_evaluacion")
   estado                    Boolean                    @default(true)
   creadoPorId               Int                        @map("creado_por_id")
   actualizadoPorId          Int?                       @map("actualizado_por_id")
@@ -172,6 +176,7 @@ model Objetivo {
   retroalimentacionDetalles RetroalimentacionDetalle[]
   evidencias                Evidencia[]
 
+  @@index([idEmpleado, periodoEvaluacion], map: "objetivo_periodo_idx")
   @@map("objetivo")
 }
 
@@ -315,6 +320,17 @@ model EvaluacionCompetencia {
   // campo, la evaluación del periodo nuevo reabría la fila del periodo viejo
   // y sobrescribía sus calificaciones.
   periodoEvaluacion       String?                     @map("periodo_evaluacion")
+  // Foto de la estructura al iniciar la evaluación. El vínculo jefe/
+  // subordinado y la unidad se leían del estado ACTUAL del empleado, así que
+  // un cambio de jefe, puesto o unidad reescribía evaluaciones ya hechas: las
+  // notas del jefe anterior pasaban a "otro" y dejaban de contar.
+  // `tipoEvaluador`: AUTO | JEFE | SUBORDINADO | OTRO (ver origenDeEvaluacion).
+  tipoEvaluador           String?                     @map("tipo_evaluador")
+  codigoJefeEvaluado      String?                     @map("codigo_jefe_evaluado")
+  idUnidadEvaluado        Int?                        @map("id_unidad_evaluado")
+  idPuestoEvaluado        Int?                        @map("id_puesto_evaluado")
+  idAreaEvaluado          Int?                        @map("id_area_evaluado")
+  idGerenciaEvaluado      Int?                        @map("id_gerencia_evaluado")
   // Estado funcional de la evaluación
   estadoEvaluacion        String                      @default("PROCESO")
   // Valores recomendados:
@@ -429,6 +445,8 @@ model Evidencia {
   urlArchivo              String
   publicId                String? // útil si usas Cloudinary o S3
   tipoArchivo             String // pdf, docx, etc.
+  // Campaña ("YYYY-MM") en la que se subió.
+  periodoEvaluacion       String?                @map("periodo_evaluacion")
   estado                  Boolean                @default(true)
   creadoPorId             Int                    @map("creado_por_id")
   actualizadoPorId        Int?                   @map("actualizado_por_id")
@@ -439,3 +457,26 @@ model Evidencia {
 }
 
 // Relacionado al idEmpleado  
+
+// Campañas cerradas. Se crea una fila al cambiar `periodoEvaluacion` de la
+// empresa: guarda la configuración con la que se calificó esa campaña (pesos,
+// modelo, escala), porque la de la empresa se sobrescribe y recalcular un
+// resultado viejo con la configuración nueva da otra cifra.
+model CampanaEvaluacion {
+  idCampanaEvaluacion                        Int               @id @default(autoincrement()) @map("id_campana_evaluacion")
+  idEmpresaEmpleadora                        Int               @map("id_empresa_empleadora")
+  empresaEmpleadora                          EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
+  periodoEvaluacion                          String            @map("periodo_evaluacion")
+  modeloEmpresa                              String            @map("modelo_empresa")
+  porcentajeCompetecias                      Int?              @map("porcentaje_competencias")
+  porcentajeObjetivos                        Int?              @map("porcentaje_objetivos")
+  porcentajeEvaluacionJefeCompetencia        Int?              @map("porcentaje_evaluacion_jefe")
+  porcentajeEvaluacionSubordinadoCompetencia Int?              @map("porcentaje_evaluacion_subordinado")
+  tipoCalificacionCompetencia                String?           @map("tipo_calificacion")
+  competenciaResultadoEsperado               Int?              @map("resultado_esperado")
+  fechaCierre                                DateTime          @default(now()) @map("fecha_cierre")
+  cerradoPorId                               Int?              @map("cerrado_por_id")
+
+  @@unique([idEmpresaEmpleadora, periodoEvaluacion])
+  @@map("campana_evaluacion")
+}

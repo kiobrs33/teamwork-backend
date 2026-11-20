@@ -1,3 +1,4 @@
+import { normalizarPeriodo } from 'src/common/resultados/resultados-evaluacion';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   BadRequestException,
@@ -480,13 +481,74 @@ export class EmpresaEmpleadoraService {
 
       this.validarReglasNegocio(dto, empresa);
 
-      return await this.prisma.empresaEmpleadora.update({
-        where: { idEmpresaEmpleadora: id },
-        data: {
-          ...dto,
-          fechaModificacion: new Date(),
-          actualizadoPorId: user.idUsuario,
-        },
+      const periodoActual = normalizarPeriodo(empresa.periodoEvaluacion);
+      const periodoNuevo =
+        dto.periodoEvaluacion !== undefined
+          ? normalizarPeriodo(dto.periodoEvaluacion)
+          : periodoActual;
+      const cambiaCampana = !!periodoActual && periodoNuevo !== periodoActual;
+
+      if (cambiaCampana && periodoNuevo) {
+        const yaCerrada = await this.prisma.campanaEvaluacion.findUnique({
+          where: {
+            idEmpresaEmpleadora_periodoEvaluacion: {
+              idEmpresaEmpleadora: id,
+              periodoEvaluacion: periodoNuevo,
+            },
+          },
+        });
+        if (yaCerrada) {
+          throw new ConflictException(
+            `La campaña ${periodoNuevo} ya se cerró y no se puede reabrir: sus resultados quedaron registrados con su configuración.`,
+          );
+        }
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        // Cambiar el periodo CIERRA la campaña anterior: se guarda la
+        // configuración con la que se calificó (la de la empresa se
+        // sobrescribe ahora mismo) y sus evaluaciones abiertas pasan a
+        // CERRADA, que es lo que las vuelve de solo lectura en el historial.
+        if (cambiaCampana) {
+          await tx.campanaEvaluacion.create({
+            data: {
+              idEmpresaEmpleadora: id,
+              periodoEvaluacion: periodoActual!,
+              modeloEmpresa: empresa.modeloEmpresa,
+              porcentajeCompetecias: empresa.porcentajeCompetecias,
+              porcentajeObjetivos: empresa.porcentajeObjetivos,
+              porcentajeEvaluacionJefeCompetencia:
+                empresa.porcentajeEvaluacionJefeCompetencia,
+              porcentajeEvaluacionSubordinadoCompetencia:
+                empresa.porcentajeEvaluacionSubordinadoCompetencia,
+              tipoCalificacionCompetencia: empresa.tipoCalificacionCompetencia,
+              competenciaResultadoEsperado: empresa.competenciaResultadoEsperado,
+              cerradoPorId: user.idUsuario,
+            },
+          });
+
+          await tx.evaluacionCompetencia.updateMany({
+            where: {
+              periodoEvaluacion: periodoActual,
+              estadoEvaluacion: 'PROCESO',
+              evaluado: { idEmpresaEmpleadora: id },
+            },
+            data: {
+              estadoEvaluacion: 'CERRADA',
+              actualizadoPorId: user.idUsuario,
+              fechaModificacion: new Date(),
+            },
+          });
+        }
+
+        return tx.empresaEmpleadora.update({
+          where: { idEmpresaEmpleadora: id },
+          data: {
+            ...dto,
+            fechaModificacion: new Date(),
+            actualizadoPorId: user.idUsuario,
+          },
+        });
       });
     } catch (error) {
       this.logger.error('Error al actualizar empresa', error as Error);

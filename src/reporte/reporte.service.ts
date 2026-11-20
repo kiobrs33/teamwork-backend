@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import { PdfRendererService } from './pdf/pdf-renderer.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { configuracionDeCampana } from 'src/common/resultados/campana';
 import {
   calcularResultados,
   clasificarDesempeno,
@@ -11,12 +18,19 @@ import {
   origenDeEvaluacion,
   pesosDeEmpresa,
   hayBrecha,
+  normalizarPeriodo,
   redondear,
   resultadoDeCompetenciasAsignadas,
   resultadoDeObjetivo,
   SIN_EVALUAR_TEXTO,
   type NotasDeEvaluado,
 } from 'src/common/resultados/resultados-evaluacion';
+
+/** Ordena poniendo primero las evaluaciones del jefe (las que puntúan). */
+const primeroDelJefe = (
+  a: { tipoEvaluador: string | null },
+  b: { tipoEvaluador: string | null },
+) => Number(a.tipoEvaluador !== 'JEFE') - Number(b.tipoEvaluador !== 'JEFE');
 
 @Injectable()
 export class ReporteService {
@@ -25,7 +39,162 @@ export class ReporteService {
     private prisma: PrismaService,
   ) {}
 
-  async obtenerDataReporteEvaluacion(idEmpleado: number) {
+  // ─────────────────────────── acceso ───────────────────────────
+
+  /**
+   * Quién puede ver los resultados de quién. Lo decide el token, no la URL:
+   * - ADMIN: todo.
+   * - JEFE: cualquier campaña de sus subordinados directos actuales.
+   * - Uno mismo: solo campañas CERRADAS. La vigente sigue en curso y sus
+   *   cifras cambian cada vez que alguien califica (decisión del cliente:
+   *   el trabajador evalúa la vigente y consulta las anteriores).
+   */
+  async verificarAcceso(
+    user: AuthUser,
+    idEmpleado: number,
+    periodo?: string | null,
+  ) {
+    if (user.rol === Rol.ADMIN) return;
+
+    const [yo, objetivo] = await Promise.all([
+      this.prisma.empleado.findFirst({
+        where: { idUsuario: user.idUsuario, estado: true },
+        select: { idEmpleado: true, codigoEmpleado: true },
+      }),
+      this.prisma.empleado.findUnique({
+        where: { idEmpleado },
+        select: {
+          codigoEmpleadoJefe: true,
+          empresaEmpleadora: { select: { periodoEvaluacion: true } },
+        },
+      }),
+    ]);
+    if (!yo || !objetivo) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
+
+    if (yo.idEmpleado === idEmpleado) {
+      const vigente = normalizarPeriodo(
+        objetivo.empresaEmpleadora?.periodoEvaluacion,
+      );
+      const pedido = normalizarPeriodo(periodo) ?? vigente;
+      if (pedido === vigente) {
+        throw new ForbiddenException(
+          'Los resultados de la campaña en curso estarán disponibles cuando se cierre.',
+        );
+      }
+      return;
+    }
+
+    if (
+      user.rol === Rol.JEFE &&
+      objetivo.codigoEmpleadoJefe === yo.codigoEmpleado
+    ) {
+      return;
+    }
+
+    // Igual que con las evidencias: sin acceso, como si no existiera.
+    throw new NotFoundException('Empleado no encontrado');
+  }
+
+  /** El empleado del usuario conectado (para "Mis resultados"). */
+  async idEmpleadoDe(user: AuthUser) {
+    const yo = await this.prisma.empleado.findFirst({
+      where: { idUsuario: user.idUsuario, estado: true },
+      select: { idEmpleado: true },
+    });
+    if (!yo) throw new NotFoundException('Tu usuario no tiene un trabajador asociado.');
+    return yo.idEmpleado;
+  }
+
+  // ─────────────────────────── historial ───────────────────────────
+
+  /**
+   * Las campañas de un trabajador con su resultado: las cerradas de su
+   * empresa más cualquiera en la que tenga evaluaciones u objetivos, y la
+   * vigente. `soloCerradas` es para cuando lo consulta el propio trabajador.
+   */
+  async campanasDeEmpleado(idEmpleado: number, soloCerradas = false) {
+    const empleado = await this.prisma.empleado.findUnique({
+      where: { idEmpleado },
+      select: {
+        idEmpresaEmpleadora: true,
+        empresaEmpleadora: { select: { periodoEvaluacion: true } },
+      },
+    });
+    if (!empleado) throw new NotFoundException('Empleado no encontrado');
+
+    const vigente = normalizarPeriodo(empleado.empresaEmpleadora?.periodoEvaluacion);
+
+    const [cerradas, deEvaluaciones, deObjetivos] = await Promise.all([
+      this.prisma.campanaEvaluacion.findMany({
+        where: { idEmpresaEmpleadora: empleado.idEmpresaEmpleadora },
+        select: { periodoEvaluacion: true, fechaCierre: true },
+      }),
+      this.prisma.evaluacionCompetencia.findMany({
+        where: { idEvaluado: idEmpleado, estado: true, periodoEvaluacion: { not: null } },
+        distinct: ['periodoEvaluacion'],
+        select: { periodoEvaluacion: true },
+      }),
+      this.prisma.objetivo.findMany({
+        where: { idEmpleado, estado: true, periodoEvaluacion: { not: null } },
+        distinct: ['periodoEvaluacion'],
+        select: { periodoEvaluacion: true },
+      }),
+    ]);
+
+    const fechaCierre = new Map(
+      cerradas.map((c) => [c.periodoEvaluacion, c.fechaCierre]),
+    );
+    // Solo las campañas en las que participó; la vigente siempre.
+    const periodos = new Set<string>(
+      [...deEvaluaciones, ...deObjetivos]
+        .map((p) => normalizarPeriodo(p.periodoEvaluacion))
+        .filter((p): p is string => !!p),
+    );
+    if (vigente) periodos.add(vigente);
+
+    const lista = [...periodos]
+      .filter((p) => !soloCerradas || p !== vigente)
+      .sort()
+      .reverse();
+
+    return Promise.all(
+      lista.map(async (periodo) => {
+        const d = await this.datosReporte(idEmpleado, periodo);
+        return {
+          periodo,
+          vigente: periodo === vigente,
+          fechaCierre: fechaCierre.get(periodo) ?? null,
+          sinEvaluar: d.sinEvaluar,
+          resultadoFinal: d.resultadosTexto.evaluacionFinal,
+          resultadoCompetencias: d.resultadosTexto.competencias,
+          resultadoObjetivos: d.resultadosTexto.objetivos,
+          clasificacion: d.clasificacionCompetencias,
+          competencias: d.competenciasDetalle.length,
+          objetivos: d.objetivosDetalle.length,
+        };
+      }),
+    );
+  }
+
+  /** PDF individual de una campaña (la vigente si no se indica). */
+  async obtenerDataReporteEvaluacion(idEmpleado: number, periodo?: string) {
+    const data = await this.datosReporte(idEmpleado, periodo);
+    return this.pdfRenderer.render('evaluacion', data);
+  }
+
+  /**
+   * Todo lo que necesita el informe de una campaña. Separado del render para
+   * que el historial ("Mis resultados") calcule con exactamente lo mismo que
+   * el PDF.
+   *
+   * Una campaña cerrada se arma con lo que quedó de ella, no con el estado
+   * actual: la configuración guardada al cerrarla (`CampanaEvaluacion`), las
+   * competencias que se le evaluaron (su unidad pudo cambiar) y la foto de
+   * puesto/área/unidad que lleva cada evaluación.
+   */
+  async datosReporte(idEmpleado: number, periodoPedido?: string) {
     const empleado = await this.prisma.empleado.findUnique({
       where: { idEmpleado },
       include: {
@@ -41,7 +210,17 @@ export class ReporteService {
       throw new NotFoundException('Empleado no encontrado');
     }
 
-    const empresa = empleado.empresaEmpleadora;
+    const campana = await configuracionDeCampana(
+      this.prisma,
+      empleado.empresaEmpleadora,
+      periodoPedido,
+    );
+    // Datos de la empresa (nombre, logo) + configuración de ESA campaña.
+    const empresa = {
+      ...empleado.empresaEmpleadora,
+      ...campana,
+      periodoEvaluacion: campana.periodo,
+    };
     const peso = pesosDeEmpresa(empresa);
 
     // ==============================
@@ -87,17 +266,35 @@ export class ReporteService {
     // evaluar no aparecía: ni como fila de la tabla ni como esquina del radar.
     // Una trabajadora con dos competencias asignadas y una evaluada dibujaba
     // un radar de una sola punta.
-    const asignadas =
-      await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
-        where: {
-          idUnidadOcupacionalEmpleadora:
-            empleado.idUnidadOcupacionalEmpleadora,
-          competencia: { estado: true },
-          competenciaNivel: { estado: true },
-        },
-        include: { competencia: true, competenciaNivel: true },
-        orderBy: { idCompetencia: 'asc' },
-      });
+    //
+    // En una campaña cerrada, en cambio, le tocaba lo que se le evaluó en
+    // ella: la unidad de hoy puede ser otra.
+    const asignadas = campana.cerrada
+      ? [
+          ...new Map(
+            [...evaluaciones]
+              // La del jefe primero: su nivel es el que manda si difieren.
+              .sort(primeroDelJefe)
+              .map((ev) => [
+                ev.idCompetencia,
+                {
+                  idCompetencia: ev.idCompetencia,
+                  competencia: ev.competencia,
+                  competenciaNivel: ev.nivel,
+                },
+              ]),
+          ).values(),
+        ].sort((a, b) => a.idCompetencia - b.idCompetencia)
+      : await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+          where: {
+            idUnidadOcupacionalEmpleadora:
+              empleado.idUnidadOcupacionalEmpleadora,
+            competencia: { estado: true },
+            competenciaNivel: { estado: true },
+          },
+          include: { competencia: true, competenciaNivel: true },
+          orderBy: { idCompetencia: 'asc' },
+        });
 
     // Las notas vigentes, indexadas por competencia.
     const notasPorCompetencia = new Map<number, NotasDeEvaluado>();
@@ -110,6 +307,7 @@ export class ReporteService {
       if (nota === null) continue;
 
       const origen = origenDeEvaluacion({
+        tipoEvaluador: ev.tipoEvaluador,
         idEvaluado: ev.idEvaluado,
         idEvaluador: ev.idEvaluador,
         codigoEvaluado: empleado.codigoEmpleado,
@@ -144,6 +342,8 @@ export class ReporteService {
       where: {
         estado: true,
         idEmpleado,
+        // Solo los de esta campaña: antes se mezclaban todos los ciclos.
+        periodoEvaluacion: campana.periodo,
       },
       include: {
         objetivoDetalles: {
@@ -427,7 +627,53 @@ export class ReporteService {
     const texto = (valor: number, vacio: boolean) =>
       vacio ? SIN_EVALUAR_TEXTO : String(valor);
 
+    // Puesto, área, gerencia y unidad: los de la campaña. En una cerrada
+    // salen de la foto guardada en sus evaluaciones (la del jefe primero);
+    // la cabecera de hoy diría dónde está ahora, no dónde estaba.
+    const cabecera = {
+      puesto: empleado.puestoEmpleadora.descripcion,
+      gerencia: empleado.gerenciaEmpleadora.descripcion,
+      area: empleado.areaEmpleadora.descripcion,
+      grupo: empleado.unidadOcupacionalEmpleadora.descripcion,
+    };
+    const foto = campana.cerrada
+      ? ([...evaluaciones].sort(primeroDelJefe)
+          .find((ev) => ev.idUnidadEvaluado) ?? null)
+      : null;
+    if (foto) {
+      const [puesto, gerencia, area, unidad] = await Promise.all([
+        foto.idPuestoEvaluado
+          ? this.prisma.puestoEmpleadora.findUnique({
+              where: { idPuestoEmpleadora: foto.idPuestoEvaluado },
+            })
+          : null,
+        foto.idGerenciaEvaluado
+          ? this.prisma.gerenciaEmpleadora.findUnique({
+              where: { idGerenciaEmpleadora: foto.idGerenciaEvaluado },
+            })
+          : null,
+        foto.idAreaEvaluado
+          ? this.prisma.areaEmpleadora.findUnique({
+              where: { idAreaEmpleadora: foto.idAreaEvaluado },
+            })
+          : null,
+        foto.idUnidadEvaluado
+          ? this.prisma.unidadOcupacionalEmpleadora.findUnique({
+              where: { idUnidadOcupacionalEmpleadora: foto.idUnidadEvaluado },
+            })
+          : null,
+      ]);
+      cabecera.puesto = puesto?.descripcion ?? cabecera.puesto;
+      cabecera.gerencia = gerencia?.descripcion ?? cabecera.gerencia;
+      cabecera.area = area?.descripcion ?? cabecera.area;
+      cabecera.grupo = unidad?.descripcion ?? cabecera.grupo;
+    }
+
     const data = {
+      campana: {
+        periodo: campana.periodo,
+        cerrada: campana.cerrada,
+      },
       sinEvaluar: resultados.sinEvaluar,
       competenciasSinEvaluar: resultados.competenciasSinEvaluar,
       objetivosSinEvaluar: resultados.objetivosSinEvaluar,
@@ -447,12 +693,7 @@ export class ReporteService {
         codigoEmpleado: empleado.codigoEmpleado,
       },
 
-      empleado: {
-        puesto: empleado.puestoEmpleadora.descripcion,
-        gerencia: empleado.gerenciaEmpleadora.descripcion,
-        area: empleado.areaEmpleadora.descripcion,
-        grupo: empleado.unidadOcupacionalEmpleadora.descripcion,
-      },
+      empleado: cabecera,
 
       resultados: {
         competencias: resultados.resultadoCompetencias,
@@ -505,6 +746,6 @@ export class ReporteService {
       },
     };
 
-    return this.pdfRenderer.render('evaluacion', data);
+    return data;
   }
 }

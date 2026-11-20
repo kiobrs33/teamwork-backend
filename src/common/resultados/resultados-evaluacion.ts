@@ -65,6 +65,21 @@ export const notaDeEvaluacion = (
 
 export type OrigenEvaluacion = 'auto' | 'jefe' | 'subordinado' | 'otro';
 
+/** Cómo se guarda cada origen en `EvaluacionCompetencia.tipoEvaluador`. */
+export const TIPO_POR_ORIGEN: Record<OrigenEvaluacion, string> = {
+  auto: 'AUTO',
+  jefe: 'JEFE',
+  subordinado: 'SUBORDINADO',
+  otro: 'OTRO',
+};
+
+const ORIGEN_POR_TIPO: Record<string, OrigenEvaluacion> = {
+  AUTO: 'auto',
+  JEFE: 'jefe',
+  SUBORDINADO: 'subordinado',
+  OTRO: 'otro',
+};
+
 /**
  * De quién viene la nota, según los tres papeles que define el modelo.
  *
@@ -78,6 +93,13 @@ export type OrigenEvaluacion = 'auto' | 'jefe' | 'subordinado' | 'otro';
  *   subordinados y se llevaba su 30 % de la nota sin serlo; ahora se descarta.
  */
 export const origenDeEvaluacion = (datos: {
+  /**
+   * La foto guardada al iniciar la evaluación (`EvaluacionCompetencia.
+   * tipoEvaluador`). Si está, MANDA: así un cambio de jefe posterior no
+   * convierte en "otro" las notas que puso el jefe de entonces. Las
+   * comparaciones de abajo solo corren para filas sin foto.
+   */
+  tipoEvaluador?: string | null;
   // Los dos son opcionales en el esquema, así que llegan como `number | null`.
   idEvaluado: number | null;
   idEvaluador: number | null;
@@ -87,6 +109,9 @@ export const origenDeEvaluacion = (datos: {
   /** El jefe del evaluador: así se confirma que de verdad es subordinado. */
   codigoJefeDelEvaluador?: string | null;
 }): OrigenEvaluacion => {
+  const foto = ORIGEN_POR_TIPO[datos.tipoEvaluador ?? ''];
+  if (foto) return foto;
+
   if (datos.idEvaluador !== null && datos.idEvaluador === datos.idEvaluado) {
     return 'auto';
   }

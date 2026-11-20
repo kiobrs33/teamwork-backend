@@ -28,10 +28,13 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { User } from 'src/auth/auth.decorator';
+import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { ReporteService } from './reporte.service';
 
 import {
@@ -71,17 +74,65 @@ export class ReporteController {
     description: 'Empleado no encontrado.',
   })
   async generarReporteEvaluacionPDF(
+    @User() user: AuthUser,
     @Param('idEmpleado', ParseIntPipe) idEmpleado: number,
+    @Query('periodo') periodo: string | undefined,
     @Res() res: Response,
   ) {
-    const pdf =
-      await this.reporteService.obtenerDataReporteEvaluacion(idEmpleado);
+    // Sin `periodo`, la campaña vigente. El acceso se comprueba con el token:
+    // antes cualquier usuario con sesión descargaba el informe de cualquiera.
+    await this.reporteService.verificarAcceso(user, idEmpleado, periodo);
+
+    const pdf = await this.reporteService.obtenerDataReporteEvaluacion(
+      idEmpleado,
+      periodo,
+    );
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=reporte-evaluacion-${idEmpleado}.pdf`,
+      'Content-Disposition': `attachment; filename=reporte-evaluacion-${idEmpleado}${periodo ? `-${periodo}` : ''}.pdf`,
     });
 
     res.end(pdf);
+  }
+  // ─────────────────────────── historial ───────────────────────────
+
+  @Get('mis-campanas')
+  @ApiOperation({
+    summary: 'Mis resultados: campañas CERRADAS del usuario conectado',
+  })
+  async misCampanas(@User() user: AuthUser) {
+    const idEmpleado = await this.reporteService.idEmpleadoDe(user);
+    return {
+      message: 'Campañas cerradas del trabajador.',
+      data: {
+        idEmpleado,
+        campanas: await this.reporteService.campanasDeEmpleado(idEmpleado, true),
+      },
+    };
+  }
+
+  @Get('campanas/:idEmpleado')
+  @ApiOperation({
+    summary: 'Historial de campañas de un trabajador (admin o su jefe)',
+  })
+  async campanas(
+    @User() user: AuthUser,
+    @Param('idEmpleado', ParseIntPipe) idEmpleado: number,
+  ) {
+    const propio =
+      user.rol !== 'ADMIN' &&
+      (await this.reporteService.idEmpleadoDe(user).catch(() => null)) ===
+        idEmpleado;
+    // Sobre uno mismo, las mismas reglas que "Mis resultados".
+    if (!propio) {
+      await this.reporteService.verificarAcceso(user, idEmpleado);
+    }
+    return {
+      message: 'Historial de campañas.',
+      data: {
+        campanas: await this.reporteService.campanasDeEmpleado(idEmpleado, propio),
+      },
+    };
   }
 }

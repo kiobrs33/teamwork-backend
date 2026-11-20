@@ -291,9 +291,13 @@ export class EmpleadoService {
         calificados AS (
           SELECT ec.id_evaluado AS empleado,
                  it.id_competencia_nivel_item AS item,
-                 (ec.id_evaluador = ec.id_evaluado) AS es_auto,
-                 (ev.codigo_empleado IS NOT NULL
-                  AND ev.codigo_empleado = e.codigo_empleado_jefe) AS es_jefe
+                 -- La foto guardada al iniciar manda (ver origenDeEvaluacion);
+                 -- la comparación con el jefe actual solo para filas sin foto.
+                 COALESCE(ec.tipo_evaluador = 'AUTO',
+                          ec.id_evaluador = ec.id_evaluado) AS es_auto,
+                 COALESCE(ec.tipo_evaluador = 'JEFE',
+                          ev.codigo_empleado IS NOT NULL
+                          AND ev.codigo_empleado = e.codigo_empleado_jefe) AS es_jefe
           FROM evaluacion_competencia_item it
           JOIN evaluacion_competencia ec
             ON ec."idEvaluacionCompetencia" = it.id_evaluacion_competencia
@@ -337,7 +341,13 @@ export class EmpleadoService {
                )::int AS hechas
         FROM objetivo_detalle d
         JOIN objetivo o ON o.id_objetivo = d.id_objetivo
+        JOIN empleado e ON e.id_empleado = o."idEmpleado"
+        JOIN empresa_empleadora emp
+          ON emp.id_empresa_empleadora = e.id_empresa_empleadora
         WHERE d.estado AND o.estado
+          -- Solo los de la campaña vigente, como las competencias.
+          AND o.periodo_evaluacion
+              IS NOT DISTINCT FROM substring(emp.periodo_evaluacion FROM 1 FOR 7)
           AND o."idEmpleado" = ANY(${ids})
         GROUP BY 1`,
       codigosJefe.length
@@ -459,6 +469,7 @@ export class EmpleadoService {
           idCompetencia: true,
           idEvaluado: true,
           idEvaluador: true,
+          tipoEvaluador: true,
           evaluador: {
             select: { codigoEmpleado: true, codigoEmpleadoJefe: true },
           },
@@ -483,6 +494,7 @@ export class EmpleadoService {
           idCompetencia: true,
           idEvaluado: true,
           idEvaluador: true,
+          tipoEvaluador: true,
           evaluador: {
             select: { codigoEmpleado: true, codigoEmpleadoJefe: true },
           },
@@ -504,7 +516,11 @@ export class EmpleadoService {
       }),
 
       this.prisma.objetivo.findMany({
-        where: { estado: true, idEmpleado },
+        where: {
+          estado: true,
+          idEmpleado,
+          periodoEvaluacion: normalizarPeriodo(periodo),
+        },
         select: {
           idObjetivo: true,
           objetivoDetalles: {
@@ -529,6 +545,7 @@ export class EmpleadoService {
 
     for (const ev of evaluaciones) {
       const origen = origenDeEvaluacion({
+        tipoEvaluador: ev.tipoEvaluador,
         idEvaluado: ev.idEvaluado,
         idEvaluador: ev.idEvaluador,
         codigoEvaluado: empleado.codigoEmpleado,
@@ -616,6 +633,7 @@ export class EmpleadoService {
         // que se perdió eran notas del jefe (las que puntúan) o una
         // autoevaluación.
         origen: origenDeEvaluacion({
+          tipoEvaluador: a.tipoEvaluador,
           idEvaluado: a.idEvaluado,
           idEvaluador: a.idEvaluador,
           codigoEvaluado: empleado.codigoEmpleado,

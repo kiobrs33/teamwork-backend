@@ -152,7 +152,9 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   al Jefe" y, en cuanto un subordinado califica, la nota del jefe se recalcula
   para toda la campaña como `jefe×% + subordinados×%`; al revés, las notas de
   subordinados ya puestas dejan de contar en silencio. **Nada de esto avisa ni
-  queda registrado.**
+  queda registrado.** Esto vale para la campaña **vigente**: al cerrarla (ver
+  "Campañas" en el modelo de datos) su configuración queda congelada en
+  `CampanaEvaluacion`, y desde entonces sus resultados ya no se mueven.
 - **Las ventanas de vigencia son solo del front.** `fechaVigenciaInicio/Fin`
   gobierna todas las pantallas de evaluación (`useEvaluationPeriod` +
   `EvaluationGuard`) y `fechaVigenciaInicioObjetivo/FinObjetivo` pone en
@@ -340,7 +342,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   recibe los strings crudos. Normalizar en el servicio.
 - El cuerpo de las peticiones admite hasta **50 MB** (cargas masivas desde Excel).
 
-### Modelo de datos — `prisma/schema.prisma`, 36 migraciones
+### Modelo de datos — `prisma/schema.prisma`, 37 migraciones
 
 ```
 EmpresaEmpleadora ─┬─ GerenciaEmpleadora
@@ -348,6 +350,7 @@ EmpresaEmpleadora ─┬─ GerenciaEmpleadora
                    ├─ PuestoEmpleadora
                    ├─ UnidadOcupacionalEmpleadora ── UnidadOcupacionalCompetenciaNivel
                    ├─ Competencia ── CompetenciaNivel ── CompetenciaNivelItem
+                   ├─ CampanaEvaluacion (una por campaña cerrada)
                    └─ Empleado (1:1 Usuario, roles ADMIN | JEFE | EMPLEADO)
                         ├─ Objetivo ── ObjetivoDetalle
                         │                └─ RetroalimentacionDetalle
@@ -356,6 +359,34 @@ EmpresaEmpleadora ─┬─ GerenciaEmpleadora
 ```
 
 Decisiones de diseño que no se deducen leyendo el esquema:
+
+- **Campañas e historial** (`20261120215711_historial_campanas`; requerimientos
+  5 y 7 del cliente). Una campaña es el `periodoEvaluacion` ("YYYY-MM") de la
+  empresa; **cambiarlo cierra la anterior** (`EmpresaEmpleadoraService.update`,
+  en una transacción): guarda su configuración en `CampanaEvaluacion` y pasa
+  sus evaluaciones `PROCESO` a `CERRADA`. Una campaña cerrada no se reabre
+  (409). Para calcular, `configuracionDeCampana()` (`common/resultados/
+  campana.ts`) devuelve la guardada si la campaña está cerrada y la de la
+  empresa si es la vigente.
+  - **Cada evaluación lleva una foto de la estructura al iniciarse**
+    (`tipoEvaluador`, `codigoJefeEvaluado`, `id*Evaluado`). `origenDeEvaluacion`
+    usa `tipoEvaluador` si está, y las consultas crudas de `conAgregados`
+    también: **cambiar el jefe, el puesto o la unidad ya no reescribe notas ya
+    puestas** (antes las del jefe anterior pasaban a "otro" y dejaban de
+    contar). Si el jefe cambia a mitad de campaña, las notas de los dos jefes
+    cuentan como "jefe".
+  - `Objetivo` y `Evidencia` llevan `periodoEvaluacion`, sellado al crearlos.
+    Todo lo que lista objetivos (jefe, admin, avance, Excel, PDF) se limita a
+    la campaña vigente o a la pedida: antes se mezclaban los ciclos.
+  - El PDF acepta `?periodo=`. Para una cerrada toma como "asignadas" las
+    competencias que se le evaluaron en ella (su unidad pudo cambiar) y la
+    cabecera de la foto. `GET /reporte/campanas/:id` y
+    `GET /reporte/mis-campanas` devuelven el historial con el mismo cálculo.
+  - **Acceso** (`ReporteService.verificarAcceso`, del token): ADMIN todo;
+    JEFE las de sus subordinados actuales; **uno mismo solo campañas
+    cerradas** (decisión del cliente: la vigente se evalúa, las anteriores se
+    consultan). El backfill atribuyó lo existente a la estructura y campaña
+    actuales: nunca se había guardado otra cosa.
 
 - Nombres **camelCase en Prisma**, `snake_case` en la BD vía `@map`.
 - **Todo es multi-empresa**: la jerarquía del empleado se ancla en
@@ -588,7 +619,8 @@ El front espera la API en el **4055** (`VITE_API_URL`).
 2. **No hay autorización, solo autenticación — salvo en evidencias.**
    `JwtAuthGuard` está en 12 de 14 controladores, pero **no existe ningún
    `RolesGuard`** — el `rol` solo se lee para meterlo en el token. La única
-   excepción es `EvidenciaService`, que deriva el alcance del token
+   excepción son `EvidenciaService` y el PDF/historial de `ReporteService`
+   (`verificarAcceso`); el primero deriva el alcance del token
    (`alcanceDe`): ADMIN todo; JEFE lee lo de sus subordinados directos y lo
    suyo, y sube/elimina solo lo de sus subordinados; EMPLEADO lee solo lo
    suyo. Una evidencia ajena responde 404, no 403, para no confirmar ids. Es

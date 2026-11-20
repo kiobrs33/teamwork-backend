@@ -1,4 +1,5 @@
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
+import { configuracionDeCampana } from 'src/common/resultados/campana';
 import {
   BadRequestException,
   HttpException,
@@ -33,6 +34,7 @@ import {
   notaDeEvaluacion,
   notasVacias,
   origenDeEvaluacion,
+  TIPO_POR_ORIGEN,
   redondear,
   resultadoDeCompetenciasAsignadas,
   resultadoDeObjetivo,
@@ -927,6 +929,52 @@ export class CompetenciaService {
     );
   }
 
+  /** Foto de la estructura que se guarda con cada evaluación nueva. */
+  private async fotoDeEvaluacion(
+    idEvaluado?: number | null,
+    idEvaluador?: number | null,
+  ) {
+    const [evaluado, evaluador] = await Promise.all([
+      idEvaluado
+        ? this.prisma.empleado.findUnique({
+            where: { idEmpleado: idEvaluado },
+            select: {
+              codigoEmpleado: true,
+              codigoEmpleadoJefe: true,
+              idUnidadOcupacionalEmpleadora: true,
+              idPuestoEmpleadora: true,
+              idAreaEmpleadora: true,
+              idGerenciaEmpleadora: true,
+            },
+          })
+        : null,
+      idEvaluador
+        ? this.prisma.empleado.findUnique({
+            where: { idEmpleado: idEvaluador },
+            select: { codigoEmpleado: true, codigoEmpleadoJefe: true },
+          })
+        : null,
+    ]);
+
+    const origen = origenDeEvaluacion({
+      idEvaluado: idEvaluado ?? null,
+      idEvaluador: idEvaluador ?? null,
+      codigoEvaluado: evaluado?.codigoEmpleado,
+      codigoEvaluador: evaluador?.codigoEmpleado,
+      codigoEmpleadoJefe: evaluado?.codigoEmpleadoJefe,
+      codigoJefeDelEvaluador: evaluador?.codigoEmpleadoJefe,
+    });
+
+    return {
+      tipoEvaluador: TIPO_POR_ORIGEN[origen],
+      codigoJefeEvaluado: evaluado?.codigoEmpleadoJefe ?? null,
+      idUnidadEvaluado: evaluado?.idUnidadOcupacionalEmpleadora ?? null,
+      idPuestoEvaluado: evaluado?.idPuestoEmpleadora ?? null,
+      idAreaEvaluado: evaluado?.idAreaEmpleadora ?? null,
+      idGerenciaEvaluado: evaluado?.idGerenciaEmpleadora ?? null,
+    };
+  }
+
   // ======================================================
   //                  INICIAR EVALUACIÓN
   // ======================================================
@@ -1002,7 +1050,12 @@ export class CompetenciaService {
         throw new BadRequestException('Nivel de competencia no válido.');
       }
 
-      // 3) Crear la evaluación
+      // 3) Crear la evaluación, con la foto de la estructura de hoy: quién
+      // evalúa (jefe, auto, subordinado) y dónde estaba el evaluado. Si
+      // mañana cambia su jefe o su unidad, esta evaluación sigue contando
+      // como lo que fue.
+      const foto = await this.fotoDeEvaluacion(idEvaluado, idEvaluador);
+
       evaluacion = await this.prisma.evaluacionCompetencia.create({
         data: {
           idEvaluado,
@@ -1010,6 +1063,7 @@ export class CompetenciaService {
           idCompetencia,
           idCompetenciaNivel,
           periodoEvaluacion,
+          ...foto,
           estadoEvaluacion: 'PROCESO',
           creadoPorId: user.idUsuario,
         },
@@ -1472,16 +1526,29 @@ export class CompetenciaService {
     idEmpresaEmpleadora: number,
     filtros: ExportEmpresaQueryDto = {},
   ) {
-    const empresa = await this.prisma.empresaEmpleadora.findFirst({
+    const empresaBase = await this.prisma.empresaEmpleadora.findFirst({
       where: {
         idEmpresaEmpleadora,
         estado: true,
       },
     });
 
-    if (!empresa) {
+    if (!empresaBase) {
       throw new NotFoundException('Empresa no encontrada');
     }
+
+    // Una campaña cerrada se calcula con la configuración que tenía, no con
+    // la actual de la empresa.
+    const campana = await configuracionDeCampana(
+      this.prisma,
+      empresaBase,
+      filtros.periodoEvaluacion,
+    );
+    const empresa = {
+      ...empresaBase,
+      ...campana,
+      periodoEvaluacion: campana.periodo,
+    };
 
     // ===============================
     // 1️⃣ OBTENER DATA
@@ -1523,9 +1590,16 @@ export class CompetenciaService {
       },
     });
 
+    // Mismo periodo que las evaluaciones: los objetivos de otra campaña no
+    // entran (antes se mezclaban todas).
+    const periodoReporte = this.normalizarPeriodo(
+      filtros.periodoEvaluacion ?? empresa.periodoEvaluacion,
+    );
+
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
         estado: true,
+        periodoEvaluacion: periodoReporte,
         empleado: whereEmpleado,
       },
       include: {
@@ -1572,6 +1646,7 @@ export class CompetenciaService {
       if (nota === null) continue;
 
       const origen = origenDeEvaluacion({
+        tipoEvaluador: ev.tipoEvaluador,
         idEvaluado: ev.idEvaluado,
         idEvaluador: ev.idEvaluador,
         codigoEvaluado: ev.evaluado.codigoEmpleado,
@@ -1716,6 +1791,16 @@ export class CompetenciaService {
       competenciasPorUnidad.set(a.idUnidadOcupacionalEmpleadora, lista);
     }
 
+    // En una campaña cerrada, lo que le tocaba a cada quien es lo que se le
+    // evaluó en ella: su unidad pudo cambiar después.
+    const evaluadasPorEmpleado = new Map<number, Set<number>>();
+    for (const ev of evaluaciones) {
+      if (!ev.idEvaluado) continue;
+      const set = evaluadasPorEmpleado.get(ev.idEvaluado) ?? new Set<number>();
+      set.add(ev.idCompetencia);
+      evaluadasPorEmpleado.set(ev.idEvaluado, set);
+    }
+
     for (const emp of empleados.values()) {
       const base = this.calcularResultadosEmpleadoDesdeAgrupado(empresa, emp);
 
@@ -1723,9 +1808,11 @@ export class CompetenciaService {
       // contando 0 las que nadie evaluó.
       const deAsignadas = resultadoDeCompetenciasAsignadas(
         empresa,
-        competenciasPorUnidad.get(
-          emp.empleado.idUnidadOcupacionalEmpleadora,
-        ) ?? [],
+        campana.cerrada
+          ? [...(evaluadasPorEmpleado.get(emp.empleado.idEmpleado) ?? [])]
+          : (competenciasPorUnidad.get(
+              emp.empleado.idUnidadOcupacionalEmpleadora,
+            ) ?? []),
         emp.porCompetencia,
       );
 
@@ -1934,9 +2021,17 @@ export class CompetenciaService {
     idEmpresaEmpleadora: number,
     filtros: ExportEmpresaQueryDto = {},
   ) {
+    const empresaObj = await this.prisma.empresaEmpleadora.findUnique({
+      where: { idEmpresaEmpleadora },
+      select: { periodoEvaluacion: true },
+    });
     const objetivos = await this.prisma.objetivo.findMany({
       where: {
         estado: true,
+        // La campaña pedida o la vigente: sin esto salían todas mezcladas.
+        periodoEvaluacion: this.normalizarPeriodo(
+          filtros.periodoEvaluacion ?? empresaObj?.periodoEvaluacion,
+        ),
         empleado: this.filtroEmpleadoExport(idEmpresaEmpleadora, filtros),
       },
       include: {

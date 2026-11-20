@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Rol } from 'src/empleado/types/empleadoTypes';
+import { normalizarPeriodo } from 'src/common/resultados/resultados-evaluacion';
 
 import { CreateEvidenciaDto } from './dto/create-evidencia.dto';
 import { EvidenciaQueryDto, TIPOS_EVIDENCIA } from './dto/evidencia-query.dto';
@@ -173,28 +174,41 @@ export class EvidenciaService {
         );
       }
 
-      // El objetivo o la evaluación tienen que ser del mismo trabajador.
+      // El objetivo o la evaluación tienen que ser del mismo trabajador. De
+      // ellos sale también la campaña de la evidencia.
+      let periodoEvaluacion: string | null = null;
       if (idObjetivo) {
         const objetivo = await this.prisma.objetivo.findFirst({
           where: { idObjetivo, idEmpleado, estado: true },
-          select: { idObjetivo: true },
+          select: { idObjetivo: true, periodoEvaluacion: true },
         });
         if (!objetivo) {
           throw new BadRequestException(
             'El objetivo no pertenece al trabajador indicado',
           );
         }
+        periodoEvaluacion = objetivo.periodoEvaluacion;
       }
       if (idEvaluacionCompetencia) {
         const evaluacion = await this.prisma.evaluacionCompetencia.findFirst({
           where: { idEvaluacionCompetencia, idEvaluado: idEmpleado },
-          select: { idEvaluacionCompetencia: true },
+          select: { idEvaluacionCompetencia: true, periodoEvaluacion: true },
         });
         if (!evaluacion) {
           throw new BadRequestException(
             'La evaluación no pertenece al trabajador indicado',
           );
         }
+        periodoEvaluacion = evaluacion.periodoEvaluacion;
+      }
+      if (!periodoEvaluacion) {
+        const empleado = await this.prisma.empleado.findUnique({
+          where: { idEmpleado },
+          select: { empresaEmpleadora: { select: { periodoEvaluacion: true } } },
+        });
+        periodoEvaluacion = normalizarPeriodo(
+          empleado?.empresaEmpleadora?.periodoEvaluacion,
+        );
       }
 
       return await this.prisma.evidencia.create({
@@ -207,6 +221,7 @@ export class EvidenciaService {
           urlArchivo: url,
           publicId: publicId,
           tipoArchivo: file.mimetype,
+          periodoEvaluacion,
 
           creadoPorId: user.idUsuario,
         },
@@ -270,6 +285,9 @@ export class EvidenciaService {
         });
       }
     }
+
+    const periodo = normalizarPeriodo(query.periodoEvaluacion);
+    if (periodo) and.push({ periodoEvaluacion: periodo });
 
     if (tipo === 'OBJETIVO') and.push({ idObjetivo: { not: null } });
     if (tipo === 'COMPETENCIA') {
