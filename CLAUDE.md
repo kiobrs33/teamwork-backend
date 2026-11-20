@@ -342,7 +342,7 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   recibe los strings crudos. Normalizar en el servicio.
 - El cuerpo de las peticiones admite hasta **50 MB** (cargas masivas desde Excel).
 
-### Modelo de datos — `prisma/schema.prisma`, 37 migraciones
+### Modelo de datos — `prisma/schema.prisma`, 38 migraciones
 
 ```
 EmpresaEmpleadora ─┬─ GerenciaEmpleadora
@@ -360,6 +360,16 @@ EmpresaEmpleadora ─┬─ GerenciaEmpleadora
 
 Decisiones de diseño que no se deducen leyendo el esquema:
 
+- **⚠️ En transición: la campaña como entidad** (`20261120232455_campana_entidad`).
+  `CampanaEvaluacion` ya es la campaña completa (nombre, periodo evaluado
+  `periodoDesde/Hasta`, vigencias, configuración, `estado` EN_CURSO/CERRADA)
+  y evaluaciones, objetivos y evidencias llevan `idCampanaEvaluacion`. **El
+  código todavía filtra por `periodoEvaluacion` ("YYYY-MM")**; la fase 2 lo
+  pasa a `idCampanaEvaluacion` y la config/vigencias dejan de leerse de la
+  empresa. Hasta entonces, todo lo que se cree debe seguir sellando el
+  periodo. El backfill creó una campaña por (empresa, mes) con el mes como
+  periodo evaluado: en los datos reales ese mes no coincide con las fechas
+  de vigencia, así que los nombres/periodos se corrigen a mano después.
 - **Campañas e historial** (`20261120215711_historial_campanas`; requerimientos
   5 y 7 del cliente). Una campaña es el `periodoEvaluacion` ("YYYY-MM") de la
   empresa; **cambiarlo cierra la anterior** (`EmpresaEmpleadoraService.update`,

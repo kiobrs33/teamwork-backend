@@ -167,6 +167,8 @@ model Objetivo {
   // Campaña ("YYYY-MM") a la que pertenece, copiada de la empresa al crearlo.
   // Sin esto los objetivos de un ciclo se mezclaban con los del siguiente.
   periodoEvaluacion         String?                    @map("periodo_evaluacion")
+  idCampanaEvaluacion       Int?                       @map("id_campana_evaluacion")
+  campana                   CampanaEvaluacion?         @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
   estado                    Boolean                    @default(true)
   creadoPorId               Int                        @map("creado_por_id")
   actualizadoPorId          Int?                       @map("actualizado_por_id")
@@ -177,6 +179,7 @@ model Objetivo {
   evidencias                Evidencia[]
 
   @@index([idEmpleado, periodoEvaluacion], map: "objetivo_periodo_idx")
+  @@index([idCampanaEvaluacion])
   @@map("objetivo")
 }
 
@@ -320,6 +323,8 @@ model EvaluacionCompetencia {
   // campo, la evaluación del periodo nuevo reabría la fila del periodo viejo
   // y sobrescribía sus calificaciones.
   periodoEvaluacion       String?                     @map("periodo_evaluacion")
+  idCampanaEvaluacion     Int?                        @map("id_campana_evaluacion")
+  campana                 CampanaEvaluacion?          @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
   // Foto de la estructura al iniciar la evaluación. El vínculo jefe/
   // subordinado y la unidad se leían del estado ACTUAL del empleado, así que
   // un cambio de jefe, puesto o unidad reescribía evaluaciones ya hechas: las
@@ -351,6 +356,7 @@ model EvaluacionCompetencia {
   evidencias              Evidencia[]
 
   @@index([idEvaluado, idEvaluador, idCompetencia, periodoEvaluacion], map: "evaluacion_competencia_periodo_idx")
+  @@index([idCampanaEvaluacion])
   @@map("evaluacion_competencia")
 }
 
@@ -447,6 +453,8 @@ model Evidencia {
   tipoArchivo             String // pdf, docx, etc.
   // Campaña ("YYYY-MM") en la que se subió.
   periodoEvaluacion       String?                @map("periodo_evaluacion")
+  idCampanaEvaluacion     Int?                   @map("id_campana_evaluacion")
+  campana                 CampanaEvaluacion?     @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
   estado                  Boolean                @default(true)
   creadoPorId             Int                    @map("creado_por_id")
   actualizadoPorId        Int?                   @map("actualizado_por_id")
@@ -458,15 +466,26 @@ model Evidencia {
 
 // Relacionado al idEmpleado  
 
-// Campañas cerradas. Se crea una fila al cambiar `periodoEvaluacion` de la
-// empresa: guarda la configuración con la que se calificó esa campaña (pesos,
-// modelo, escala), porque la de la empresa se sobrescribe y recalcular un
-// resultado viejo con la configuración nueva da otra cifra.
+// Una campaña (ciclo) de evaluación de una empresa: nombre, periodo evaluado,
+// ventanas del proceso y la configuración con la que se califica. Evaluaciones,
+// objetivos y evidencias pertenecen a una campaña por `idCampanaEvaluacion`.
+// Reglas (en el servicio, Prisma no modela índices parciales): una sola
+// campaña EN_CURSO por empresa y periodos evaluados que no se superponen.
 model CampanaEvaluacion {
   idCampanaEvaluacion                        Int               @id @default(autoincrement()) @map("id_campana_evaluacion")
   idEmpresaEmpleadora                        Int               @map("id_empresa_empleadora")
   empresaEmpleadora                          EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
-  periodoEvaluacion                          String            @map("periodo_evaluacion")
+  nombre                                     String
+  // Tramo de desempeño que se evalúa (no cuándo se califica: eso son las
+  // vigencias de abajo).
+  periodoDesde                               DateTime          @map("periodo_desde")
+  periodoHasta                               DateTime          @map("periodo_hasta")
+  // Cuándo se puede calificar.
+  fechaVigenciaInicio                        DateTime          @map("fecha_vigencia_inicio")
+  fechaVigenciaFin                           DateTime          @map("fecha_vigencia_fin")
+  fechaVigenciaInicioObjetivo                DateTime?         @map("fecha_vigencia_inicio_objetivo")
+  fechaVigenciaFinObjetivo                   DateTime?         @map("fecha_vigencia_fin_objetivo")
+  // Configuración de ESTA campaña (se copia de la empresa al abrirla).
   modeloEmpresa                              String            @map("modelo_empresa")
   porcentajeCompetecias                      Int?              @map("porcentaje_competencias")
   porcentajeObjetivos                        Int?              @map("porcentaje_objetivos")
@@ -474,9 +493,24 @@ model CampanaEvaluacion {
   porcentajeEvaluacionSubordinadoCompetencia Int?              @map("porcentaje_evaluacion_subordinado")
   tipoCalificacionCompetencia                String?           @map("tipo_calificacion")
   competenciaResultadoEsperado               Int?              @map("resultado_esperado")
-  fechaCierre                                DateTime          @default(now()) @map("fecha_cierre")
+  // EN_CURSO | CERRADA
+  estado                                     String            @default("EN_CURSO")
+  // "YYYY-MM" heredado del modelo anterior. Solo para la transición: las
+  // campañas nuevas no lo usan y se eliminará.
+  periodoEvaluacion                          String?           @map("periodo_evaluacion")
+  fechaCreacion                              DateTime          @default(now()) @map("fecha_creacion")
+  creadoPorId                                Int?              @map("creado_por_id")
+  fechaCierre                                DateTime?         @map("fecha_cierre")
   cerradoPorId                               Int?              @map("cerrado_por_id")
+  // Reapertura (solo admin): queda registrado quién y cuándo.
+  fechaReapertura                            DateTime?         @map("fecha_reapertura")
+  reabiertoPorId                             Int?              @map("reabierto_por_id")
+
+  evaluaciones EvaluacionCompetencia[]
+  objetivos    Objetivo[]
+  evidencias   Evidencia[]
 
   @@unique([idEmpresaEmpleadora, periodoEvaluacion])
+  @@index([idEmpresaEmpleadora, estado])
   @@map("campana_evaluacion")
 }
