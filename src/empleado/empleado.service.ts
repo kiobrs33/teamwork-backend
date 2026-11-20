@@ -1,5 +1,10 @@
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
+  AvanceQueryDto,
+  ESTADOS_AVANCE,
+  EstadoAvance,
+} from './dto/avance-query.dto';
+import {
   ConflictException,
   HttpException,
   Injectable,
@@ -801,6 +806,138 @@ export class EmpleadoService {
       return { empresaEmpleadora: { nombreEmpresa: direccion } };
 
     return sortBy ? { [sortBy]: direccion } : { fechaCreacion: 'desc' };
+  }
+
+  // ============================================================
+  // AVANCE DE LA EVALUACIÓN (reporte consolidado)
+  // ============================================================
+  /**
+   * Indicadores del proceso para el seguimiento del administrador. Sale de
+   * `conAgregados`, el mismo cálculo que la columna de avance del listado,
+   * para que las dos pantallas den la misma cifra.
+   *
+   * El estado de cada trabajador mira lo que PUNTÚA: la evaluación del jefe
+   * y los objetivos. La autoevaluación se informa aparte porque no puntúa
+   * (ver resultados-evaluacion.ts), pero sí "inicia" el proceso.
+   */
+  async avance(query: AvanceQueryDto) {
+    try {
+      const where = await this.construirWhereListado(query);
+      const empleados = await this.prisma.empleado.findMany({
+        // El administrador no se evalúa: contarlo bajaría el cumplimiento.
+        where: { AND: [where, { usuario: { rol: { not: 'ADMIN' } } }] },
+        orderBy: [{ apellidos: 'asc' }, { nombres: 'asc' }],
+        include: {
+          usuario: { select: { rol: true } },
+          empresaEmpleadora: {
+            select: { nombreEmpresa: true, periodoEvaluacion: true },
+          },
+          gerenciaEmpleadora: { select: { descripcion: true } },
+          areaEmpleadora: { select: { descripcion: true } },
+          unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+          puestoEmpleadora: { select: { descripcion: true } },
+        },
+      });
+
+      const filas = (await this.conAgregados(empleados)).map((e) => {
+        const c = e.avanceCompetencias;
+        const o = e.avanceObjetivos;
+        const jefeListo = c.total === 0 || c.hechasJefe >= c.total;
+        const objetivosListos = o.total === 0 || o.hechas >= o.total;
+
+        let estado: EstadoAvance;
+        if (c.total === 0 && o.total === 0) estado = 'SIN_ASIGNACION';
+        else if (jefeListo && objetivosListos) estado = 'COMPLETO';
+        else if (c.hechasJefe === 0 && c.hechasAuto === 0 && o.hechas === 0)
+          estado = 'SIN_INICIAR';
+        else estado = 'EN_CURSO';
+
+        return {
+          idEmpleado: e.idEmpleado,
+          codigoEmpleado: e.codigoEmpleado,
+          nombres: e.nombres,
+          apellidos: e.apellidos,
+          documento: e.documento,
+          rol: e.usuario.rol,
+          idEmpresaEmpleadora: e.idEmpresaEmpleadora,
+          empresa: e.empresaEmpleadora.nombreEmpresa,
+          periodo: normalizarPeriodo(e.empresaEmpleadora.periodoEvaluacion),
+          gerencia: e.gerenciaEmpleadora?.descripcion ?? null,
+          area: e.areaEmpleadora?.descripcion ?? null,
+          unidad: e.unidadOcupacionalEmpleadora?.descripcion ?? null,
+          puesto: e.puestoEmpleadora?.descripcion ?? null,
+          codigoEmpleadoJefe: e.codigoEmpleadoJefe,
+          jefe: e.jefe ? `${e.jefe.nombres} ${e.jefe.apellidos}` : null,
+          competencias: c,
+          objetivos: o,
+          // No `estado`: el PurgeResponseInterceptor borra esa clave.
+          estadoAvance: estado,
+        };
+      });
+
+      type Fila = (typeof filas)[number];
+
+      const pct = (hechas: number, total: number) =>
+        total === 0 ? null : Math.round((hechas / total) * 1000) / 10;
+
+      /** Indicadores de un grupo de trabajadores. */
+      const resumir = (grupo: Fila[]) => {
+        const s = grupo.reduce(
+          (a, f) => ({
+            compTotal: a.compTotal + f.competencias.total,
+            compJefe: a.compJefe + Math.min(f.competencias.hechasJefe, f.competencias.total),
+            compAuto: a.compAuto + Math.min(f.competencias.hechasAuto, f.competencias.total),
+            objTotal: a.objTotal + f.objetivos.total,
+            objHechas: a.objHechas + Math.min(f.objetivos.hechas, f.objetivos.total),
+          }),
+          { compTotal: 0, compJefe: 0, compAuto: 0, objTotal: 0, objHechas: 0 },
+        );
+        const porEstado = Object.fromEntries(
+          ESTADOS_AVANCE.map((e) => [e, grupo.filter((f) => f.estadoAvance === e).length]),
+        ) as Record<EstadoAvance, number>;
+
+        return {
+          trabajadores: grupo.length,
+          porEstado,
+          // Cumplimiento = lo que puntúa (jefe + objetivos) sobre lo asignado.
+          cumplimiento: pct(s.compJefe + s.objHechas, s.compTotal + s.objTotal),
+          evaluacionJefe: pct(s.compJefe, s.compTotal),
+          autoevaluacion: pct(s.compAuto, s.compTotal),
+          objetivos: pct(s.objHechas, s.objTotal),
+          items: s,
+        };
+      };
+
+      const agrupar = (clave: (f: Fila) => string) => {
+        const grupos = new Map<string, Fila[]>();
+        filas.forEach((f) => {
+          const k = clave(f);
+          grupos.set(k, [...(grupos.get(k) ?? []), f]);
+        });
+        return [...grupos]
+          .map(([nombre, grupo]) => ({ nombre, ...resumir(grupo) }))
+          .sort((a, b) => (a.cumplimiento ?? 101) - (b.cumplimiento ?? 101));
+      };
+
+      const estadoFiltro = ESTADOS_AVANCE.includes(query.estadoAvance as EstadoAvance)
+        ? query.estadoAvance
+        : undefined;
+
+      return {
+        // Los indicadores van SIN el filtro de estado: filtrar por
+        // "completos" y ver 100 % de cumplimiento no le dice nada a nadie.
+        resumen: resumir(filas),
+        porJefe: agrupar((f) => f.jefe ?? 'Sin jefe asignado'),
+        porArea: agrupar((f) => f.area ?? 'Sin área'),
+        porGerencia: agrupar((f) => f.gerencia ?? 'Sin gerencia'),
+        trabajadores: estadoFiltro
+          ? filas.filter((f) => f.estadoAvance === estadoFiltro)
+          : filas,
+      };
+    } catch (error) {
+      this.logger.error('Error al calcular el avance:', error);
+      handlePrismaError(error, 'empleados');
+    }
   }
 
   async findAll(query: EmployeeQueryDto) {

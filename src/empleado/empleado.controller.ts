@@ -27,6 +27,7 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { EmployeeQueryDto } from './dto/employee-query.dto';
+import { AvanceQueryDto } from './dto/avance-query.dto';
 
 import { Response } from 'express';
 import { Res } from '@nestjs/common';
@@ -94,6 +95,19 @@ export class EmpleadoController {
   }
 
   // OBTENER EMPLEADOS POR ID DE EMPRESA EMPLEADORA
+  // Antes de ':id': si no, 'avance' entra como id y el ParseIntPipe da 400.
+  @Get('avance')
+  @ApiOperation({
+    summary:
+      'Avance consolidado de la evaluación: indicadores, desglose por jefe/área/gerencia y estado por trabajador',
+  })
+  async avance(@Query() query: AvanceQueryDto) {
+    return {
+      message: 'Avance de la evaluación.',
+      data: await this.empleadoService.avance(query),
+    };
+  }
+
   @Get('empresa/:id')
   @ApiOperation({
     summary: 'Obtener empleados por empresa empleadora',

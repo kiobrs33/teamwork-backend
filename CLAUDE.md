@@ -321,6 +321,14 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   numéricas (evaluadas y totales), no como un `"1/2"` de texto, para que se
   puedan cruzar en una tabla dinámica. El autofiltro se calcula desde
   `columnCount`: estaba fijo en `'H1'` y se quedaba corto al tocar columnas.
+- **`GET /empleado/avance` es el reporte de avance** (pantalla Avance del
+  front). Acepta los filtros del listado de empleados más `estadoAvance` y
+  devuelve `resumen`, `porJefe`, `porArea`, `porGerencia` y `trabajadores`.
+  Sale de `conAgregados`, así que cuadra con la columna del listado. **Lo que
+  puntúa decide el estado** (jefe + objetivos); la autoevaluación se informa
+  aparte. Excluye a los ADMIN y calcula los indicadores **sin** el filtro de
+  estado (filtrar "completos" y ver 100 % no informa nada). El estado viaja
+  como `estadoAvance` porque `PurgeResponseInterceptor` borra `estado`.
 - **`DELETE /empleado/masivo` da de baja varios a la vez, todo o nada**, y es
   por donde pasa también el borrado de una sola fila desde el front. La regla de
   `remove` (no se da de baja a quien todavía es jefe de alguien) se evalúa
