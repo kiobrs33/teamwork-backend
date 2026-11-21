@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -30,11 +40,13 @@ import { UpdateManyRetroalimentacionDto } from './dto/update-many-retroalimentac
 
 @ApiTags('Retroalimentación Detalle')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Rol.JEFE, ...ADMINISTRADORES)
 @Controller('retroalimentacion-detalle')
 export class RetroalimentacionDetalleController {
   constructor(
     private readonly retroalimentacionDetalleService: RetroalimentacionDetalleService,
+    private readonly alcances: AlcanceService,
   ) {}
 
   // =========================
@@ -48,9 +60,11 @@ export class RetroalimentacionDetalleController {
     description: 'Retroalimentación creada',
   })
   async create(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: CreateRetroalimentacionDetalleDto,
   ) {
+    await this.alcances.verificarObjetivo(alcance, dto.idObjetivo);
     const data = await this.retroalimentacionDetalleService.create(user, dto);
 
     return {
@@ -71,9 +85,11 @@ export class RetroalimentacionDetalleController {
     type: CreateManyRetroalimentacionDto,
   })
   async createMany(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: CreateManyRetroalimentacionDto,
   ) {
+    await this.alcances.verificarObjetivo(alcance, dto.idObjetivo);
     const result = await this.retroalimentacionDetalleService.createMany(
       user,
       dto.idObjetivo,
@@ -98,9 +114,11 @@ export class RetroalimentacionDetalleController {
     type: UpdateManyRetroalimentacionDto,
   })
   async updateMany(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: UpdateManyRetroalimentacionDto,
   ) {
+    await this.alcances.verificarObjetivo(alcance, dto.idObjetivo);
     const result = await this.retroalimentacionDetalleService.updateMany(
       user,
       dto.idObjetivo,
@@ -121,7 +139,8 @@ export class RetroalimentacionDetalleController {
   @ApiOperation({
     summary: 'Listar retroalimentaciones',
   })
-  async findAll() {
+  @Roles(Rol.ADMIN)
+  async findAll(@AlcanceActual() alcance: Alcance) {
     const data = await this.retroalimentacionDetalleService.findAll();
 
     return {
@@ -142,7 +161,11 @@ export class RetroalimentacionDetalleController {
     name: 'id',
     description: 'ID objetivo',
   })
-  async findByObjetivo(@Param('id', ParseIntPipe) id: number) {
+  async findByObjetivo(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificarObjetivo(alcance, id);
     const data =
       await this.retroalimentacionDetalleService.findByObjetivoId(id);
 
@@ -160,7 +183,12 @@ export class RetroalimentacionDetalleController {
   @ApiOperation({
     summary: 'Obtener por id',
   })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const idObjetivo = await this.alcances.objetivoDeRetroalimentacion(id);
+    await this.alcances.verificarObjetivo(alcance, idObjetivo);
     const data = await this.retroalimentacionDetalleService.findOne(id);
 
     return {
@@ -178,10 +206,13 @@ export class RetroalimentacionDetalleController {
     summary: 'Actualizar retroalimentación',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateRetroalimentacionDetalleDto,
   ) {
+    const idObjetivo = await this.alcances.objetivoDeRetroalimentacion(id);
+    await this.alcances.verificarObjetivo(alcance, idObjetivo);
     const data = await this.retroalimentacionDetalleService.update(
       user,
       id,
@@ -202,7 +233,13 @@ export class RetroalimentacionDetalleController {
   @ApiOperation({
     summary: 'Eliminar retroalimentación',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const idObjetivo = await this.alcances.objetivoDeRetroalimentacion(id);
+    await this.alcances.verificarObjetivo(alcance, idObjetivo);
     const data = await this.retroalimentacionDetalleService.remove(user, id);
 
     return {

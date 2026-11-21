@@ -1,3 +1,5 @@
+import { Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { TODOS } from 'src/autorizacion/alcance';
 import {
   Controller,
   Post,
@@ -38,7 +40,9 @@ import { evidenciaStorage } from 'src/common/interceptors/cloudinary.evidencias.
 
 @ApiTags('Evidencias')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+// El alcance fino (qué trabajadores) lo decide `alcanceDe` en el servicio.
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...TODOS)
 @Controller('evidencias')
 export class EvidenciaController {
   constructor(private readonly service: EvidenciaService) {}
@@ -88,7 +92,10 @@ export class EvidenciaController {
   }
 
   @Get('export/excel')
-  @ApiOperation({ summary: 'Exportar evidencias (mismos filtros y alcance por rol que el listado)' })
+  @ApiOperation({
+    summary:
+      'Exportar evidencias (mismos filtros y alcance por rol que el listado)',
+  })
   async exportExcel(
     @User() user: AuthUser,
     @Query() query: EvidenciaQueryDto,

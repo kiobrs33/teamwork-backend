@@ -1,3 +1,5 @@
+import { Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { TODOS } from 'src/autorizacion/alcance';
 // import { Controller, Get, Param, ParseIntPipe, Res } from '@nestjs/common';
 // import { Response } from 'express';
 // import { ReporteService } from './reporte.service';
@@ -49,7 +51,9 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 
 @ApiTags('Reportes')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+// Quién ve qué informe lo decide `verificarAcceso` en el servicio.
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...TODOS)
 @Controller('reporte')
 export class ReporteController {
   constructor(private readonly reporteService: ReporteService) {}
@@ -81,7 +85,9 @@ export class ReporteController {
   ) {
     // Sin `campana` (id), la en curso. El acceso se comprueba con el token:
     // antes cualquier usuario con sesión descargaba el informe de cualquiera.
-    const idCampana = campanaParam ? Number(campanaParam) || undefined : undefined;
+    const idCampana = campanaParam
+      ? Number(campanaParam) || undefined
+      : undefined;
     await this.reporteService.verificarAcceso(user, idEmpleado, idCampana);
 
     const pdf = await this.reporteService.obtenerDataReporteEvaluacion(
@@ -108,7 +114,10 @@ export class ReporteController {
       message: 'Campañas cerradas del trabajador.',
       data: {
         idEmpleado,
-        campanas: await this.reporteService.campanasDeEmpleado(idEmpleado, true),
+        campanas: await this.reporteService.campanasDeEmpleado(
+          idEmpleado,
+          true,
+        ),
       },
     };
   }
@@ -132,7 +141,10 @@ export class ReporteController {
     return {
       message: 'Historial de campañas.',
       data: {
-        campanas: await this.reporteService.campanasDeEmpleado(idEmpleado, propio),
+        campanas: await this.reporteService.campanasDeEmpleado(
+          idEmpleado,
+          propio,
+        ),
       },
     };
   }

@@ -78,6 +78,23 @@ export class EvidenciaService {
   private async alcanceDe(user: AuthUser): Promise<Alcance> {
     if (user.rol === Rol.ADMIN) return { todo: true };
 
+    // Administrador de empresa (RR. HH.): todo lo de su empresa, nada de otra.
+    if (user.rol === Rol.ADMIN_EMPRESA) {
+      const usuario = await this.prisma.usuario.findUnique({
+        where: { idUsuario: Number(user.idUsuario) },
+        select: { idEmpresaEmpleadora: true },
+      });
+      const ids = usuario?.idEmpresaEmpleadora
+        ? (
+            await this.prisma.empleado.findMany({
+              where: { idEmpresaEmpleadora: usuario.idEmpresaEmpleadora },
+              select: { idEmpleado: true },
+            })
+          ).map((e) => e.idEmpleado)
+        : [];
+      return { todo: false, lectura: ids, escritura: ids };
+    }
+
     const empleado = await this.prisma.empleado.findFirst({
       where: { idUsuario: user.idUsuario, estado: true },
       select: { idEmpleado: true, codigoEmpleado: true },
@@ -130,7 +147,11 @@ export class EvidenciaService {
       const autor = porId.get(e.creadoPorId);
       return {
         ...e,
-        tipo: e.idObjetivo ? 'OBJETIVO' : e.idEvaluacionCompetencia ? 'COMPETENCIA' : null,
+        tipo: e.idObjetivo
+          ? 'OBJETIVO'
+          : e.idEvaluacionCompetencia
+            ? 'COMPETENCIA'
+            : null,
         fechaSubida: e.fechaCreacion,
         subidoPor: autor
           ? {
@@ -298,14 +319,15 @@ export class EvidenciaService {
 
     if (query.fechaDesde || query.fechaHasta) {
       const rango: Prisma.DateTimeFilter = {};
-      if (query.fechaDesde) rango.gte = new Date(`${query.fechaDesde}T00:00:00-05:00`);
-      if (query.fechaHasta) rango.lte = new Date(`${query.fechaHasta}T23:59:59.999-05:00`);
+      if (query.fechaDesde)
+        rango.gte = new Date(`${query.fechaDesde}T00:00:00-05:00`);
+      if (query.fechaHasta)
+        rango.lte = new Date(`${query.fechaHasta}T23:59:59.999-05:00`);
       and.push({ fechaCreacion: rango });
     }
 
     return { AND: and };
   }
-
 
   async findAll(user: AuthUser, query: EvidenciaQueryDto) {
     try {
@@ -373,7 +395,11 @@ export class EvidenciaService {
             { header: 'Archivo', key: 'nombreArchivo', width: 36 },
             { header: 'Tipo de archivo', key: 'tipoArchivo', width: 20 },
             { header: 'Enlace', key: 'urlArchivo', width: 50 },
-            { header: 'Código de empleado', key: 'codigoEmpleado', tipo: 'texto' },
+            {
+              header: 'Código de empleado',
+              key: 'codigoEmpleado',
+              tipo: 'texto',
+            },
             { header: 'Trabajador', key: 'trabajador', width: 28 },
             { header: 'Documento', key: 'documento', tipo: 'texto' },
             { header: 'Empresa', key: 'empresa', width: 26 },
@@ -496,7 +522,9 @@ export class EvidenciaService {
         await cloudinary.uploader
           .destroy(evidencia.publicId, { resource_type: 'auto' } as any)
           .catch((e) =>
-            this.logger.warn(`No se pudo borrar ${evidencia.publicId} en Cloudinary: ${e}`),
+            this.logger.warn(
+              `No se pudo borrar ${evidencia.publicId} en Cloudinary: ${e}`,
+            ),
           );
       }
 

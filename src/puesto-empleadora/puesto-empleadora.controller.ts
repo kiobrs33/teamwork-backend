@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -34,11 +44,13 @@ import { Res } from '@nestjs/common';
 
 @ApiTags('Puesto Empleadora')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMINISTRADORES)
 @Controller('puesto-empleadora')
 export class PuestoEmpleadoraController {
   constructor(
     private readonly puestoEmpleadoraService: PuestoEmpleadoraService,
+    private readonly alcances: AlcanceService,
   ) {}
 
   @Post()
@@ -47,7 +59,12 @@ export class PuestoEmpleadoraController {
     status: 201,
     description: 'Puesto empleadora creado exitosamente.',
   })
-  async create(@User() user: AuthUser, @Body() dto: CreatePuestoEmpleadoraDto) {
+  async create(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Body() dto: CreatePuestoEmpleadoraDto,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', dto.idEmpresaEmpleadora);
     const puesto = await this.puestoEmpleadoraService.create(user, dto);
     return {
       message: 'Puesto empleadora creado exitosamente.',
@@ -58,7 +75,15 @@ export class PuestoEmpleadoraController {
   @Get()
   @ApiOperation({ summary: 'Listar todos los puestos empleadora' })
   @ApiResponse({ status: 200, description: 'Lista de puestos empleadora.' })
-  async findAll(@Query() query: PuestoQueryDto) {
+  @Roles(...TODOS)
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: PuestoQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // const resp = await this.puestoEmpleadoraService.findAll({
     //   page: query.page ?? 1,
     //   limit: query.limit ?? 0,
@@ -79,7 +104,12 @@ export class PuestoEmpleadoraController {
     status: 200,
     description: 'Lista de los puestos de la empresa especificada.',
   })
-  async findByEmpresa(@Param('id') id: string) {
+  @Roles(...TODOS)
+  async findByEmpresa(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id') id: string,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', Number(id));
     const puestos = await this.puestoEmpleadoraService.findByEmpresaId(
       Number(id),
     );
@@ -93,7 +123,12 @@ export class PuestoEmpleadoraController {
   @ApiOperation({ summary: 'Obtener puesto empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID del puesto empleadora' })
   @ApiResponse({ status: 200, description: 'Puesto empleadora encontrado.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'puesto', id);
     const puesto = await this.puestoEmpleadoraService.findOne(id);
     return {
       message: 'Puesto empleadora encontrado.',
@@ -109,10 +144,15 @@ export class PuestoEmpleadoraController {
     description: 'Puesto empleadora actualizado correctamente.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePuestoEmpleadoraDto,
   ) {
+    await this.alcances.verificar(alcance, 'puesto', id);
+    // No se puede mudar el registro a una empresa fuera de su alcance.
+    if (dto.idEmpresaEmpleadora !== undefined)
+      verificarEmpresa(alcance, Number(dto.idEmpresaEmpleadora), 'Empresa');
     const puesto = await this.puestoEmpleadoraService.update(user, id, dto);
     return {
       message: `Puesto empleadora con ID ${id} actualizado correctamente.`,
@@ -127,7 +167,12 @@ export class PuestoEmpleadoraController {
     status: 200,
     description: 'Puesto empleadora eliminado correctamente.',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'puesto', id);
     const puesto = await this.puestoEmpleadoraService.remove(user, id);
     return {
       message: `Puesto empleadora con ID ${id} eliminado correctamente.`,
@@ -144,9 +189,12 @@ export class PuestoEmpleadoraController {
     description: 'Importacion de puesto empleadora creada exitosamente.',
   })
   async importExcelData(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() data: CreatePuestoEmpleadoraDto[],
   ) {
+    for (const fila of data)
+      verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
     const { count } = await this.puestoEmpleadoraService.importData(user, data);
     return {
       message: 'Puestos empleadora creados exitosamente.',
@@ -156,7 +204,15 @@ export class PuestoEmpleadoraController {
 
   @Get('export/excel')
   @ApiOperation({ summary: 'Exportar puestos empleadoras a Excel' })
-  async exportExcel(@Query() query: PuestoQueryDto, @Res() res: Response) {
+  async exportExcel(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: PuestoQueryDto,
+    @Res() res: Response,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     const buffer = await this.puestoEmpleadoraService.exportExcel(query);
 
     res.setHeader(

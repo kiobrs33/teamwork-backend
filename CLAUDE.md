@@ -160,7 +160,8 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   `EvaluationGuard`) y `fechaVigenciaInicioObjetivo/FinObjetivo` pone en
   solo-lectura la edición de objetivos del JEFE (`usePermissions`). **Ningún
   endpoint del backend mira esas fechas**, así que con un token válido se
-  califica fuera de vigencia. Mismo caso que el control de roles (§trampa 1).
+  califica fuera de vigencia. Los roles y la empresa sí se validan (ver
+  "Roles y aislamiento por empresa"); las fechas de vigencia, no.
 - **Las competencias de un trabajador salen de su unidad ocupacional**
   (`UnidadOcupacionalCompetenciaNivel`), **no de que alguien haya abierto su
   panel de evaluación.** El informe las recorría desde `evaluacion_competencia`
@@ -240,7 +241,8 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
 - **Soft delete** en todas las entidades: `estado: boolean`, nunca `DELETE` real.
 - **Auditoría** `creadoPorId` / `actualizadoPorId` vía el decorador `@User()`
   (`src/auth/auth.decorator.ts`). Ese decorador **solo** alimenta auditoría;
-  hoy no decide accesos en ningún lado (ver §5.2).
+  no decide accesos: eso lo hace `RolesGuard` con `@AlcanceActual()` (ver
+  "Roles y aislamiento por empresa").
 - Los endpoints de descarga (Excel, PDF) usan `@Res()` + `res.send/end(buffer)`,
   lo que los saca del `ResponseInterceptor`. **Ojo: cuando fallan sí pasan por
   `AllExceptionsFilter` y responden JSON**, así que el cliente tiene que mirar
@@ -281,7 +283,8 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   (áreas, gerencias, unidades, puestos, competencias), y `GET /objetivo`
   también, por la empresa del trabajador. Es el filtro del selector de empresa
   del front, que hace trabajar al administrador con una empresa a la vez. Es
-  opcional: sin él devuelven todas, como antes (no es aislamiento, ver §5.3).
+  opcional para el superadmin; a los demás `empresaDelListado` les fuerza la
+  suya (ver "Roles y aislamiento por empresa").
   `GET /empresa-empleadora?limit=0` devuelve `campanaEnCurso` y los avances
   igual que la rama paginada (antes la lista completa llegaba sin ellos).
 - **Editar una competencia empareja los ítems por `idCompetenciaNivelItem`,
@@ -408,7 +411,7 @@ Decisiones de diseño que no se deducen leyendo el esquema:
   sus subordinados actuales; **uno mismo solo campañas cerradas**.
 - Nombres **camelCase en Prisma**, `snake_case` en la BD vía `@map`.
 - **Todo es multi-empresa**: la jerarquía del empleado se ancla en
-  `idEmpresaEmpleadora`. Hoy nada lo hace cumplir a nivel de consulta (§5.3).
+  `idEmpresaEmpleadora`, y `src/autorizacion/` lo hace cumplir en cada ruta.
 - `EvaluacionCompetenciaItem.textoItemEvaluado` es un **snapshot deliberado**:
   editar una competencia no debe alterar evaluaciones ya hechas. Pero el
   snapshot solo congela el *texto*: **la lista de lo que falta por calificar se
@@ -627,6 +630,56 @@ El front espera la API en el **4055** (`VITE_API_URL`).
 
 ---
 
+## Roles y aislamiento por empresa — `src/autorizacion/`
+
+Cuatro roles: **`ADMIN`** (superadministrador, el equipo de TeamWork: todas las
+empresas), **`ADMIN_EMPRESA`** (RR. HH. de una empresa: todo, pero solo la
+suya), `JEFE` y `EMPLEADO`. El administrador de empresa es un `Usuario` **sin
+`Empleado`** (no se evalúa): su nombre y su empresa viven en
+`usuario.nombre_completo` / `usuario.id_empresa_empleadora`
+(`20261121090000_administrador_de_empresa`). Una cuenta por persona, para saber
+quién hizo qué.
+
+- **Cada controlador lleva `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles(...)`**
+  (de clase, y por ruta cuando cambia). `RolesGuard` **falla cerrado**: una
+  ruta sin `@Roles` responde 500 en vez de quedar abierta. Al agregar un
+  endpoint, ponerle `@Roles`.
+- **El alcance se calcula en el servidor en cada petición** (`AlcanceService.de`):
+  rol y empresa salen de la base, no del token ni de la URL, y un usuario dado
+  de baja queda fuera aunque su token siga vigente. Llega al handler con
+  `@AlcanceActual()`.
+- **Listados:** `empresaDelListado(alcance, pedida)` fuerza la empresa del
+  usuario e ignora la que pida. **Por id:** `alcances.verificar(alcance,
+  'area' | 'empleado' | …, id)` responde **404, no 403** si es de otra empresa
+  (no confirma que el id existe). Escrituras con `idEmpresaEmpleadora` en el
+  cuerpo comprueban también esa empresa (no se puede "mudar" un registro).
+- **Jefe y empleado, más fino que la empresa:** `verificarUsuario` (rutas
+  `by-user/:id`: solo los suyos), `verificarTrabajador` (él, o sus
+  subordinados directos si es jefe), `verificarParEvaluacion` (para iniciar,
+  el evaluador es él y el evaluado él, un subordinado o su propio jefe),
+  `verificarEvaluacion` (ver: evaluador o evaluado; calificar/cerrar: solo
+  evaluador), `verificarObjetivo` (el jefe, solo objetivos de sus
+  subordinados, no los suyos).
+- **`verificarRolAsignable`:** desde Trabajadores solo se asignan `JEFE` y
+  `EMPLEADO`; `ADMIN` solo lo da el superadmin y `ADMIN_EMPRESA` nunca (sin
+  esto, RR. HH. podía crearse un ADMIN y ver todas las empresas).
+- **Quién hace qué:** empresas (crear, editar, logo, borrar), abrir/editar/
+  reabrir campañas y Empleos (escritura): solo `ADMIN`. **Cerrar** una campaña:
+  también `ADMIN_EMPRESA`. Estructura, trabajadores, competencias, objetivos,
+  evidencias, avance y reportes: los dos administradores, cada uno a su
+  alcance. Evidencias y reportes conservan su control propio (`alcanceDe`,
+  `verificarAcceso`), ahora con la rama de `ADMIN_EMPRESA`.
+- **Administradores de empresa** (`administrador-empresa`,
+  `empresa-empleadora/:idEmpresa/administradores`): listar, crear y editar
+  (nombre, restablecer contraseña, desactivar). Los gestiona el superadmin y el
+  propio RR. HH. de esa empresa; nadie se desactiva a sí mismo. **La contraseña
+  la pone quien crea la cuenta y se entrega por fuera del sistema: no hay
+  correo.** `PATCH /auth/contrasena` cambia la propia (opcional). El login
+  devuelve además `nombreCompleto` y `empresaAdministrada`.
+- Pruebas manuales de este modelo (25 casos de aislamiento + 26 de jefe y
+  empleado) en el historial de la sesión que lo introdujo; no hay tests
+  automáticos (§4.4).
+
 ## 5. Deuda abierta — seguridad, sin resolver
 
 1. **Secretos en el historial de git.** El commit `302c612` solo dejó de rastrear
@@ -634,28 +687,12 @@ El front espera la API en el **4055** (`VITE_API_URL`).
    `JWT_SECRET_KEY` y el `CLOUDINARY_API_SECRET`. Hay que **rotar las tres**;
    reescribir el historial no basta por sí solo.
 
-2. **No hay autorización, solo autenticación — salvo en evidencias.**
-   `JwtAuthGuard` está en 12 de 14 controladores, pero **no existe ningún
-   `RolesGuard`** — el `rol` solo se lee para meterlo en el token. La única
-   excepción son `EvidenciaService` y el PDF/historial de `ReporteService`
-   (`verificarAcceso`); el primero deriva el alcance del token
-   (`alcanceDe`): ADMIN todo; JEFE lee lo de sus subordinados directos y lo
-   suyo, y sube/elimina solo lo de sus subordinados; EMPLEADO lee solo lo
-   suyo. Una evidencia ajena responde 404, no 403, para no confirmar ids. Es
-   el patrón a copiar al cerrar el resto. Fuera de ahí los roles se aplican
-   únicamente en el frontend, así que cualquier EMPLEADO con su token puede llamar `DELETE /empleado/:id` con
-   curl. Al agregar endpoints, asumir que **no hay red de seguridad**.
-
-3. **Sin aislamiento entre empresas.** `GET /objetivo` devuelve los objetivos de
-   todas; `PATCH /objetivo/:id` lo edita cualquier autenticado. El scoping debe
-   derivarse del token, nunca del parámetro de la URL.
-
-4. **Se filtran hashes de contraseña.** `PURGE_KEYS` borra `password`, pero el
+2. **Se filtran hashes de contraseña.** `PURGE_KEYS` borra `password`, pero el
    campo Prisma se llama **`contrasena`**, y `empleado.service.ts` hace
    `include: { usuario: true }` sin `select`. `GET /empleado` devuelve el bcrypt
    de cada empleado.
 
-5. `app.enableCors({ origin: '*' })` en `main.ts`.
+3. `app.enableCors({ origin: '*' })` en `main.ts`.
 
 ## 6. Deuda abierta — mantenibilidad
 
@@ -667,10 +704,6 @@ El front espera la API en el **4055** (`VITE_API_URL`).
 - **~1.300 líneas comentadas** (≈11% del código). Varios archivos guardan dos
   versiones completas de la misma clase.
 - **52 `console.log`** pese a tener `nestjs-pino` configurado.
-- **`PATCH /competencia/evaluaciones/:id` ya comprueba que los ítems enviados
-  sean de esa evaluación** (antes se calificaba la de cualquier otro trabajador
-  mandando ids ajenos). El resto de endpoints sigue sin comprobar de quién es lo
-  que se toca — ver §5.2 y §5.3.
 
 ---
 

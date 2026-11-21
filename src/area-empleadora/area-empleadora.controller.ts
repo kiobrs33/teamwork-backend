@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -33,10 +43,14 @@ import { Res } from '@nestjs/common';
 
 @ApiTags('Área Empleadora')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMINISTRADORES)
 @Controller('area-empleadora')
 export class AreaEmpleadoraController {
-  constructor(private readonly areaEmpleadoraService: AreaEmpleadoraService) {}
+  constructor(
+    private readonly areaEmpleadoraService: AreaEmpleadoraService,
+    private readonly alcances: AlcanceService,
+  ) {}
 
   // Crear área empleadora
   @Post()
@@ -45,7 +59,12 @@ export class AreaEmpleadoraController {
     status: 201,
     description: 'Área empleadora creada exitosamente.',
   })
-  async create(@User() user: AuthUser, @Body() dto: CreateAreaEmpleadoraDto) {
+  async create(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Body() dto: CreateAreaEmpleadoraDto,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', dto.idEmpresaEmpleadora);
     const area = await this.areaEmpleadoraService.create(user, dto);
     return {
       message: 'Área empleadora creada exitosamente.',
@@ -57,7 +76,15 @@ export class AreaEmpleadoraController {
   @Get()
   @ApiOperation({ summary: 'Listar todas las áreas empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de áreas empleadoras.' })
-  async findAll(@Query() query: AreaQueryDto) {
+  @Roles(...TODOS)
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: AreaQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // const resp = await this.areaEmpleadoraService.findAll({
     //   page: query.page ?? 1,
     //   limit: query.limit ?? 0,
@@ -79,7 +106,12 @@ export class AreaEmpleadoraController {
     status: 200,
     description: 'Lista de areas de la empresa especificada.',
   })
-  async findByEmpresa(@Param('id') id: string) {
+  @Roles(...TODOS)
+  async findByEmpresa(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id') id: string,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', Number(id));
     const areas = await this.areaEmpleadoraService.findByEmpresaId(Number(id));
 
     return {
@@ -93,7 +125,12 @@ export class AreaEmpleadoraController {
   @ApiOperation({ summary: 'Obtener área empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID del área empleadora' })
   @ApiResponse({ status: 200, description: 'Área empleadora encontrada.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'area', id);
     const area = await this.areaEmpleadoraService.findOne(id);
     return {
       message: 'Área empleadora encontrada.',
@@ -110,10 +147,15 @@ export class AreaEmpleadoraController {
     description: 'Área empleadora actualizada correctamente.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAreaEmpleadoraDto,
   ) {
+    await this.alcances.verificar(alcance, 'area', id);
+    // No se puede mudar el registro a una empresa fuera de su alcance.
+    if (dto.idEmpresaEmpleadora !== undefined)
+      verificarEmpresa(alcance, Number(dto.idEmpresaEmpleadora), 'Empresa');
     const area = await this.areaEmpleadoraService.update(user, id, dto);
     return {
       message: `Área empleadora con ID ${id} actualizada correctamente.`,
@@ -129,7 +171,12 @@ export class AreaEmpleadoraController {
     status: 200,
     description: 'Área empleadora eliminada correctamente.',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'area', id);
     const area = await this.areaEmpleadoraService.remove(user, id);
     return {
       message: `Área empleadora con ID ${id} eliminada correctamente.`,
@@ -147,9 +194,12 @@ export class AreaEmpleadoraController {
     description: 'Importacion de area empleadora creada exitosamente.',
   })
   async importExcelData(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() data: CreateAreaEmpleadoraDto[],
   ) {
+    for (const fila of data)
+      verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
     const { count } = await this.areaEmpleadoraService.importData(user, data);
     return {
       message: 'Areas empleadora creadas exitosamente.',
@@ -160,7 +210,15 @@ export class AreaEmpleadoraController {
   // Exportar áreas empleadoras a Excel
   @Get('export/excel')
   @ApiOperation({ summary: 'Exportar áreas empleadoras a Excel' })
-  async exportExcel(@Query() query: AreaQueryDto, @Res() res: Response) {
+  async exportExcel(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: AreaQueryDto,
+    @Res() res: Response,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     const buffer = await this.areaEmpleadoraService.exportExcel(query);
 
     res.setHeader(

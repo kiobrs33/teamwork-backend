@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -37,11 +47,13 @@ import { Res } from '@nestjs/common';
 
 @ApiTags('Unidad Ocupacional Empleadora')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMINISTRADORES)
 @Controller('unidad-ocupacional-empleadora')
 export class UnidadOcupacionalEmpleadoraController {
   constructor(
     private readonly unidadOcupacionalEmpleadoraService: UnidadOcupacionalEmpleadoraService,
+    private readonly alcances: AlcanceService,
   ) {}
 
   @Post()
@@ -51,9 +63,11 @@ export class UnidadOcupacionalEmpleadoraController {
     description: 'Unidad ocupacional empleadora creada exitosamente.',
   })
   async create(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: CreateUnidadOcupacionalEmpleadoraDto,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', dto.idEmpresaEmpleadora);
     const unidad = await this.unidadOcupacionalEmpleadoraService.create(
       user,
       dto,
@@ -72,7 +86,15 @@ export class UnidadOcupacionalEmpleadoraController {
     status: 200,
     description: 'Lista de unidades ocupacionales empleadoras.',
   })
-  async findAll(@Query() query: UnidadOcupacionalQueryDto) {
+  @Roles(...TODOS)
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: UnidadOcupacionalQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // const resp = await this.unidadOcupacionalEmpleadoraService.findAll({
     //   page: query.page ?? 1,
     //   limit: query.limit ?? 0,
@@ -94,7 +116,12 @@ export class UnidadOcupacionalEmpleadoraController {
     status: 200,
     description: 'Lista de unidades ocupacionales empleadoras por Empresa.',
   })
-  async findAllByCompany(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findAllByCompany(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', Number(id));
     const unidades =
       await this.unidadOcupacionalEmpleadoraService.findAllByCompany(id);
     return {
@@ -118,7 +145,12 @@ export class UnidadOcupacionalEmpleadoraController {
     description:
       'Mapa completo de unidades ocupacionales con competencias y niveles.',
   })
-  async obtenerMapaUnidadesPorEmpresa(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async obtenerMapaUnidadesPorEmpresa(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', Number(id));
     const unidades =
       await this.unidadOcupacionalEmpleadoraService.obtenerUnidadesConCompetenciasPorEmpresa(
         id,
@@ -140,7 +172,12 @@ export class UnidadOcupacionalEmpleadoraController {
     status: 200,
     description: 'Unidad ocupacional empleadora encontrada.',
   })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'unidad', id);
     const unidad = await this.unidadOcupacionalEmpleadoraService.findOne(id);
     return {
       message: 'Unidad ocupacional empleadora encontrada.',
@@ -159,10 +196,15 @@ export class UnidadOcupacionalEmpleadoraController {
     description: 'Unidad ocupacional empleadora actualizada correctamente.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUnidadOcupacionalEmpleadoraDto,
   ) {
+    await this.alcances.verificar(alcance, 'unidad', id);
+    // No se puede mudar el registro a una empresa fuera de su alcance.
+    if (dto.idEmpresaEmpleadora !== undefined)
+      verificarEmpresa(alcance, Number(dto.idEmpresaEmpleadora), 'Empresa');
     const unidad = await this.unidadOcupacionalEmpleadoraService.update(
       user,
       id,
@@ -186,7 +228,12 @@ export class UnidadOcupacionalEmpleadoraController {
     status: 200,
     description: 'Unidad ocupacional empleadora eliminada correctamente.',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'unidad', id);
     const unidad = await this.unidadOcupacionalEmpleadoraService.remove(
       user,
       id,
@@ -230,9 +277,12 @@ export class UnidadOcupacionalEmpleadoraController {
       'Importacion de unidad ocupacional empleadora creada exitosamente.',
   })
   async importExcelData(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() data: CreateUnidadOcupacionalEmpleadoraDto[],
   ) {
+    for (const fila of data)
+      verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
     const { count } = await this.unidadOcupacionalEmpleadoraService.importData(
       user,
       data,
@@ -254,7 +304,20 @@ export class UnidadOcupacionalEmpleadoraController {
       'Qué evaluaciones abiertas se anularían al guardar esta asignación',
   })
   @ApiResponse({ status: 201, description: 'Impacto calculado.' })
-  async impactoAsignacion(@Body() dto: AsignarCompetenciasDto) {
+  async impactoAsignacion(
+    @AlcanceActual() alcance: Alcance,
+    @Body() dto: AsignarCompetenciasDto,
+  ) {
+    await this.alcances.verificarVarios(
+      alcance,
+      'unidad',
+      dto.unidades.map((u) => u.idUnidadOcupacionalEmpleadora),
+    );
+    await this.alcances.verificarVarios(
+      alcance,
+      'competencia',
+      dto.unidades.flatMap((u) => u.competencias.map((c) => c.idCompetencia)),
+    );
     const impacto =
       await this.unidadOcupacionalEmpleadoraService.calcularImpactoAsignacion(
         dto.unidades,
@@ -276,9 +339,20 @@ export class UnidadOcupacionalEmpleadoraController {
       'Competencias asignadas correctamente y se devuelve el mapa actualizado por unidad.',
   })
   async asignarCompetencias(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: AsignarCompetenciasDto,
   ) {
+    await this.alcances.verificarVarios(
+      alcance,
+      'unidad',
+      dto.unidades.map((u) => u.idUnidadOcupacionalEmpleadora),
+    );
+    await this.alcances.verificarVarios(
+      alcance,
+      'competencia',
+      dto.unidades.flatMap((u) => u.competencias.map((c) => c.idCompetencia)),
+    );
     const resultado =
       await this.unidadOcupacionalEmpleadoraService.asignarCompetenciasRetornarMapa(
         user,
@@ -296,9 +370,14 @@ export class UnidadOcupacionalEmpleadoraController {
     summary: 'Exportar unidades ocupacionales empleadoras a Excel',
   })
   async exportExcel(
+    @AlcanceActual() alcance: Alcance,
     @Query() query: UnidadOcupacionalQueryDto,
     @Res() res: Response,
   ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     const buffer =
       await this.unidadOcupacionalEmpleadoraService.exportExcel(query);
 

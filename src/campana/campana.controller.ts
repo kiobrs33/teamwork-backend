@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Body,
   Controller,
@@ -15,7 +25,6 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-import { Rol } from 'src/empleado/types/empleadoTypes';
 import { CampanaService, paraRespuesta } from './campana.service';
 import {
   ActualizarCampanaDto,
@@ -23,19 +32,18 @@ import {
   CrearCampanaDto,
 } from './dto/campana.dto';
 
-/** Solo el administrador gestiona campañas (lo decide el token). */
-const soloAdmin = (user: AuthUser) => {
-  if (user.rol !== Rol.ADMIN) {
-    throw new ForbiddenException('Solo un administrador gestiona campañas.');
-  }
-};
-
 @ApiTags('Campañas')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+// Abrir, editar y reabrir: solo el superadministrador (TeamWork define cómo
+// se evalúa). RR. HH. de la empresa ve y cierra sus campañas.
+@Roles(Rol.ADMIN)
 @Controller('campana')
 export class CampanaController {
-  constructor(private readonly service: CampanaService) {}
+  constructor(
+    private readonly service: CampanaService,
+    private readonly alcances: AlcanceService,
+  ) {}
 
   private resp<T extends { estado: string; fechaCreacion: Date }>(c?: T) {
     return c ? paraRespuesta(c) : c;
@@ -43,8 +51,16 @@ export class CampanaController {
 
   @Get()
   @ApiOperation({ summary: 'Campañas de una empresa (la en curso primero)' })
-  async listar(@User() user: AuthUser, @Query() query: CampanaQueryDto) {
-    soloAdmin(user);
+  @Roles(...ADMINISTRADORES)
+  async listar(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Query() query: CampanaQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    ) as number;
     return {
       message: 'Campañas de la empresa.',
       data: { campanas: await this.service.listar(query.idEmpresaEmpleadora) },
@@ -52,24 +68,40 @@ export class CampanaController {
   }
 
   @Get(':id')
-  async obtener(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    soloAdmin(user);
-    return { message: 'Campaña.', data: { campana: paraRespuesta(await this.service.obtener(id)) } };
+  @Roles(...ADMINISTRADORES)
+  async obtener(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'campana', id);
+    return {
+      message: 'Campaña.',
+      data: { campana: paraRespuesta(await this.service.obtener(id)) },
+    };
   }
 
   @Get(':id/impacto-cierre')
   @ApiOperation({ summary: 'Qué queda sin calificar si se cierra hoy' })
-  async impacto(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    soloAdmin(user);
-    return { message: 'Impacto del cierre.', data: await this.service.impactoCierre(id) };
+  @Roles(...ADMINISTRADORES)
+  async impacto(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'campana', id);
+    return {
+      message: 'Impacto del cierre.',
+      data: await this.service.impactoCierre(id),
+    };
   }
 
   @Post()
   @ApiOperation({
-    summary: 'Abrir una campaña (con cerrarActual cierra la en curso en el mismo paso)',
+    summary:
+      'Abrir una campaña (con cerrarActual cierra la en curso en el mismo paso)',
   })
   async abrir(@User() user: AuthUser, @Body() dto: CrearCampanaDto) {
-    soloAdmin(user);
     const r = await this.service.abrir(user, dto);
     return {
       message: 'Campaña abierta.',
@@ -83,16 +115,22 @@ export class CampanaController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ActualizarCampanaDto,
   ) {
-    soloAdmin(user);
     return {
       message: 'Campaña actualizada.',
-      data: { campana: this.resp(await this.service.actualizar(user, id, dto)) },
+      data: {
+        campana: this.resp(await this.service.actualizar(user, id, dto)),
+      },
     };
   }
 
   @Post(':id/cerrar')
-  async cerrar(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    soloAdmin(user);
+  @Roles(...ADMINISTRADORES)
+  async cerrar(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'campana', id);
     return {
       message: 'Campaña cerrada.',
       data: { campana: this.resp(await this.service.cerrar(user, id)) },
@@ -101,7 +139,6 @@ export class CampanaController {
 
   @Post(':id/reabrir')
   async reabrir(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    soloAdmin(user);
     return {
       message: 'Campaña reabierta.',
       data: { campana: this.resp(await this.service.reabrir(user, id)) },

@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 // unidad-empleadora.controller.ts
 import {
   Controller,
@@ -35,11 +45,13 @@ import { Res } from '@nestjs/common';
 
 @ApiTags('Gerencia Empleadora')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMINISTRADORES)
 @Controller('gerencia-empleadora')
 export class GerenciaEmpleadoraController {
   constructor(
     private readonly gerenciaEmpleadoraService: GerenciaEmpleadoraService,
+    private readonly alcances: AlcanceService,
   ) {}
 
   // Crear gerencia empleadora
@@ -50,9 +62,11 @@ export class GerenciaEmpleadoraController {
     description: 'Gerencia empleadora creada exitosamente.',
   })
   async create(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: CreateGerenciaEmpleadoraDto,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', dto.idEmpresaEmpleadora);
     const gerencia = await this.gerenciaEmpleadoraService.create(user, dto);
     return {
       message: 'Gerencia empleadora creada exitosamente.',
@@ -64,7 +78,15 @@ export class GerenciaEmpleadoraController {
   @Get()
   @ApiOperation({ summary: 'Listar todas las gerencias empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de gerencias empleadoras.' })
-  async findAll(@Query() query: GerenciaQueryDto) {
+  @Roles(...TODOS)
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: GerenciaQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // const resp = await this.gerenciaEmpleadoraService.findAll({
     //   page: query.page ?? 1,
     //   limit: query.limit ?? 0,
@@ -85,7 +107,12 @@ export class GerenciaEmpleadoraController {
     status: 200,
     description: 'Lista de gerencias de la empresa especificada.',
   })
-  async findByEmpresa(@Param('id') id: string) {
+  @Roles(...TODOS)
+  async findByEmpresa(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id') id: string,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', Number(id));
     const gerencias = await this.gerenciaEmpleadoraService.findByEmpresaId(
       Number(id),
     );
@@ -101,7 +128,12 @@ export class GerenciaEmpleadoraController {
   @ApiOperation({ summary: 'Obtener gerencia empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID de la gerencia empleadora' })
   @ApiResponse({ status: 200, description: 'Gerencia empleadora encontrada.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'gerencia', id);
     const gerencia = await this.gerenciaEmpleadoraService.findOne(id);
     return {
       message: 'Gerencia empleadora encontrada.',
@@ -118,10 +150,15 @@ export class GerenciaEmpleadoraController {
     description: 'Gerencia empleadora actualizada correctamente.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateGerenciaEmpleadoraDto,
   ) {
+    await this.alcances.verificar(alcance, 'gerencia', id);
+    // No se puede mudar el registro a una empresa fuera de su alcance.
+    if (dto.idEmpresaEmpleadora !== undefined)
+      verificarEmpresa(alcance, Number(dto.idEmpresaEmpleadora), 'Empresa');
     const gerencia = await this.gerenciaEmpleadoraService.update(user, id, dto);
     return {
       message: `Gerencia empleadora con ID ${id} actualizada correctamente.`,
@@ -137,7 +174,12 @@ export class GerenciaEmpleadoraController {
     status: 200,
     description: 'Gerencia empleadora eliminada correctamente.',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'gerencia', id);
     const gerencia = await this.gerenciaEmpleadoraService.remove(user, id);
     return {
       message: `Gerencia empleadora con ID ${id} eliminada correctamente.`,
@@ -155,9 +197,12 @@ export class GerenciaEmpleadoraController {
     description: 'Importacion de gerencia empleadora creada exitosamente.',
   })
   async importExcelData(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() data: CreateGerenciaEmpleadoraDto[],
   ) {
+    for (const fila of data)
+      verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
     const { count } = await this.gerenciaEmpleadoraService.importData(
       user,
       data,
@@ -170,7 +215,15 @@ export class GerenciaEmpleadoraController {
 
   @Get('export/excel')
   @ApiOperation({ summary: 'Exportar gerencias empleadoras a Excel' })
-  async exportExcel(@Query() query: GerenciaQueryDto, @Res() res: Response) {
+  async exportExcel(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: GerenciaQueryDto,
+    @Res() res: Response,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     const buffer = await this.gerenciaEmpleadoraService.exportExcel(query);
 
     res.setHeader(

@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import { enviarExcel } from 'src/common/excel/libro-excel';
 // empresa-empleadora.controller.ts
 import {
@@ -46,10 +56,14 @@ interface ArchivoLogoSubido {
 
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Rol.ADMIN)
 @Controller('empresa-empleadora')
 export class EmpresaEmpleadoraController {
-  constructor(private readonly service: EmpresaEmpleadoraService) {}
+  constructor(
+    private readonly service: EmpresaEmpleadoraService,
+    private readonly alcances: AlcanceService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Crear una nueva empresa empleadora' })
@@ -109,7 +123,15 @@ export class EmpresaEmpleadoraController {
   @Get()
   @ApiOperation({ summary: 'Listar todas las empresas empleadoras' })
   @ApiResponse({ status: 200, description: 'Lista de empresas empleadoras.' })
-  async findAll(@Query() query: EmpresaQueryDto) {
+  @Roles(...ADMINISTRADORES)
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: EmpresaQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // Pasar la query completa: destructurarla dejaba fuera los filtros por
     // columna y el ordenamiento que el servicio sí sabe aplicar.
     const resp = await this.service.findAll(query);
@@ -122,8 +144,19 @@ export class EmpresaEmpleadoraController {
 
   // Antes de ':id', o 'export' entra como id y el ParseIntPipe responde 400.
   @Get('export/excel')
-  @ApiOperation({ summary: 'Exportar empresas a Excel (mismos filtros que el listado)' })
-  async exportExcel(@Query() query: EmpresaQueryDto, @Res() res: Response) {
+  @ApiOperation({
+    summary: 'Exportar empresas a Excel (mismos filtros que el listado)',
+  })
+  @Roles(...ADMINISTRADORES)
+  async exportExcel(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: EmpresaQueryDto,
+    @Res() res: Response,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     enviarExcel(res, await this.service.exportExcel(query), 'empresas');
   }
 
@@ -131,7 +164,12 @@ export class EmpresaEmpleadoraController {
   @ApiOperation({ summary: 'Obtener empresa empleadora por ID' })
   @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
   @ApiResponse({ status: 200, description: 'Empresa empleadora encontrada.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', id);
     const empresa = await this.service.findOne(id);
     return {
       message: 'Empresa empleadora encontrada.',

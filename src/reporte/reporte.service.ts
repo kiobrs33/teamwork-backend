@@ -59,6 +59,28 @@ export class ReporteService {
   ) {
     if (user.rol === Rol.ADMIN) return;
 
+    // Administrador de empresa: los informes de cualquier trabajador de su
+    // empresa, de cualquier campaña; de otra empresa, como si no existiera.
+    if (user.rol === Rol.ADMIN_EMPRESA) {
+      const [usuario, trabajador] = await Promise.all([
+        this.prisma.usuario.findUnique({
+          where: { idUsuario: Number(user.idUsuario) },
+          select: { idEmpresaEmpleadora: true },
+        }),
+        this.prisma.empleado.findUnique({
+          where: { idEmpleado },
+          select: { idEmpresaEmpleadora: true },
+        }),
+      ]);
+      if (
+        !usuario?.idEmpresaEmpleadora ||
+        trabajador?.idEmpresaEmpleadora !== usuario.idEmpresaEmpleadora
+      ) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
+      return;
+    }
+
     const [yo, objetivo] = await Promise.all([
       this.prisma.empleado.findFirst({
         where: { idUsuario: user.idUsuario, estado: true },
@@ -106,7 +128,10 @@ export class ReporteService {
       where: { idUsuario: user.idUsuario, estado: true },
       select: { idEmpleado: true },
     });
-    if (!yo) throw new NotFoundException('Tu usuario no tiene un trabajador asociado.');
+    if (!yo)
+      throw new NotFoundException(
+        'Tu usuario no tiene un trabajador asociado.',
+      );
     return yo.idEmpleado;
   }
 
@@ -126,7 +151,11 @@ export class ReporteService {
 
     const [deEvaluaciones, deObjetivos, enCurso] = await Promise.all([
       this.prisma.evaluacionCompetencia.findMany({
-        where: { idEvaluado: idEmpleado, estado: true, idCampanaEvaluacion: { not: null } },
+        where: {
+          idEvaluado: idEmpleado,
+          estado: true,
+          idCampanaEvaluacion: { not: null },
+        },
         distinct: ['idCampanaEvaluacion'],
         select: { idCampanaEvaluacion: true },
       }),
@@ -291,53 +320,56 @@ export class ReporteService {
     // En una cerrada, lo que le tocaba es la foto guardada al cerrarla
     // (CampanaAsignacion); sin foto (cerradas antes de existir), lo que se le
     // evaluó en ella.
-    const foto = cerrada && campana
-      ? await this.prisma.campanaAsignacion.findMany({
-          where: {
-            idCampanaEvaluacion: campana.idCampanaEvaluacion,
-            idEmpleado,
-          },
-          orderBy: { idCompetencia: 'asc' },
-        })
-      : [];
-    const asignadas = cerrada && foto.length
-      ? await Promise.all(
-          foto.map(async (f) => ({
-            idCompetencia: f.idCompetencia,
-            competencia: await this.prisma.competencia.findUniqueOrThrow({
-              where: { idCompetencia: f.idCompetencia },
-            }),
-            competenciaNivel: await this.prisma.competenciaNivel.findUniqueOrThrow({
-              where: { idCompetenciaNivel: f.idCompetenciaNivel },
-            }),
-          })),
-        )
-      : cerrada
-      ? [
-          ...new Map(
-            [...evaluaciones]
-              // La del jefe primero: su nivel es el que manda si difieren.
-              .sort(primeroDelJefe)
-              .map((ev) => [
-                ev.idCompetencia,
-                {
-                  idCompetencia: ev.idCompetencia,
-                  competencia: ev.competencia,
-                  competenciaNivel: ev.nivel,
-                },
-              ]),
-          ).values(),
-        ].sort((a, b) => a.idCompetencia - b.idCompetencia)
-      : await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
-          where: {
-            idUnidadOcupacionalEmpleadora:
-              empleado.idUnidadOcupacionalEmpleadora,
-            competencia: { estado: true },
-            competenciaNivel: { estado: true },
-          },
-          include: { competencia: true, competenciaNivel: true },
-          orderBy: { idCompetencia: 'asc' },
-        });
+    const foto =
+      cerrada && campana
+        ? await this.prisma.campanaAsignacion.findMany({
+            where: {
+              idCampanaEvaluacion: campana.idCampanaEvaluacion,
+              idEmpleado,
+            },
+            orderBy: { idCompetencia: 'asc' },
+          })
+        : [];
+    const asignadas =
+      cerrada && foto.length
+        ? await Promise.all(
+            foto.map(async (f) => ({
+              idCompetencia: f.idCompetencia,
+              competencia: await this.prisma.competencia.findUniqueOrThrow({
+                where: { idCompetencia: f.idCompetencia },
+              }),
+              competenciaNivel:
+                await this.prisma.competenciaNivel.findUniqueOrThrow({
+                  where: { idCompetenciaNivel: f.idCompetenciaNivel },
+                }),
+            })),
+          )
+        : cerrada
+          ? [
+              ...new Map(
+                [...evaluaciones]
+                  // La del jefe primero: su nivel es el que manda si difieren.
+                  .sort(primeroDelJefe)
+                  .map((ev) => [
+                    ev.idCompetencia,
+                    {
+                      idCompetencia: ev.idCompetencia,
+                      competencia: ev.competencia,
+                      competenciaNivel: ev.nivel,
+                    },
+                  ]),
+              ).values(),
+            ].sort((a, b) => a.idCompetencia - b.idCompetencia)
+          : await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+              where: {
+                idUnidadOcupacionalEmpleadora:
+                  empleado.idUnidadOcupacionalEmpleadora,
+                competencia: { estado: true },
+                competenciaNivel: { estado: true },
+              },
+              include: { competencia: true, competenciaNivel: true },
+              orderBy: { idCompetencia: 'asc' },
+            });
 
     // Las notas vigentes, indexadas por competencia.
     const notasPorCompetencia = new Map<number, NotasDeEvaluado>();
@@ -495,9 +527,7 @@ export class ReporteService {
 
       // La autoevaluación no puntúa, sirve para esto: si el trabajador se pone
       // 100 y el jefe le pone 20, la fila se marca para que alguien lo mire.
-      const notaJefe = notas.evaluacionesJefe.length
-        ? r.promedioJefe
-        : null;
+      const notaJefe = notas.evaluacionesJefe.length ? r.promedioJefe : null;
       const notaAuto = notas.autoEvaluaciones.length ? r.promedioAuto : null;
       const brecha = hayBrecha(notaAuto, notaJefe);
 
@@ -594,9 +624,7 @@ export class ReporteService {
           ? [
               {
                 label: 'Subordinados',
-                data: competenciasDetalle.map(
-                  (c) => c.evaluacionSubordinados,
-                ),
+                data: competenciasDetalle.map((c) => c.evaluacionSubordinados),
                 borderColor: '#27ae60',
                 backgroundColor: 'rgba(39,174,96,0.20)',
                 pointBackgroundColor: '#27ae60',
@@ -680,7 +708,8 @@ export class ReporteService {
       grupo: empleado.unidadOcupacionalEmpleadora.descripcion,
     };
     const fotoCabecera = cerrada
-      ? ([...evaluaciones].sort(primeroDelJefe)
+      ? ([...evaluaciones]
+          .sort(primeroDelJefe)
           .find((ev) => ev.idUnidadEvaluado) ?? null)
       : null;
     if (fotoCabecera) {
@@ -702,7 +731,9 @@ export class ReporteService {
           : null,
         fotoCabecera.idUnidadEvaluado
           ? this.prisma.unidadOcupacionalEmpleadora.findUnique({
-              where: { idUnidadOcupacionalEmpleadora: fotoCabecera.idUnidadEvaluado },
+              where: {
+                idUnidadOcupacionalEmpleadora: fotoCabecera.idUnidadEvaluado,
+              },
             })
           : null,
       ]);

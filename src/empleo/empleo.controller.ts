@@ -1,3 +1,5 @@
+import { Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -30,7 +32,10 @@ export class EmpleoController {
   constructor(private readonly empleoService: EmpleoService) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  // Las ofertas son de TeamWork (bolsa de trabajo pública): solo el
+  // superadministrador las publica, edita o retira. Leerlas es público.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Rol.ADMIN)
   @ApiOperation({ summary: 'Crear un nuevo empleo' })
   async create(@User() user: AuthUser, @Body() dto: CreateEmpleoDto) {
     const empleo = await this.empleoService.create(user, dto);
@@ -62,7 +67,10 @@ export class EmpleoController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  // Las ofertas son de TeamWork (bolsa de trabajo pública): solo el
+  // superadministrador las publica, edita o retira. Leerlas es público.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Rol.ADMIN)
   @ApiOperation({ summary: 'Actualizar un empleo' })
   async update(
     @User() user: AuthUser,
@@ -77,7 +85,10 @@ export class EmpleoController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  // Las ofertas son de TeamWork (bolsa de trabajo pública): solo el
+  // superadministrador las publica, edita o retira. Leerlas es público.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Rol.ADMIN)
   @ApiOperation({ summary: 'Eliminar un empleo (soft delete)' })
   async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const empleo = await this.empleoService.remove(user, id);

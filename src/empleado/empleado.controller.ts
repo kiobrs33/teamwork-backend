@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -34,17 +44,27 @@ import { Res } from '@nestjs/common';
 
 @ApiTags('Empleados')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMINISTRADORES)
 @Controller('empleado')
 export class EmpleadoController {
-  constructor(private readonly empleadoService: EmpleadoService) {}
+  constructor(
+    private readonly empleadoService: EmpleadoService,
+    private readonly alcances: AlcanceService,
+  ) {}
 
   // CREAR EMPLEADO
   @Post()
   @ApiOperation({ summary: 'Crear un nuevo empleado' })
   @ApiResponse({ status: 201, description: 'Empleado creado exitosamente.' })
   @ApiBody({ type: CreateEmpleadoDto })
-  async create(@User() user: AuthUser, @Body() body: CreateEmpleadoDto) {
+  async create(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Body() body: CreateEmpleadoDto,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', body.idEmpresaEmpleadora);
+    this.alcances.verificarRolAsignable(alcance, body.rol);
     const empleado = await this.empleadoService.create(user, body);
     return {
       message: 'Empleado creado exitosamente.',
@@ -64,7 +84,15 @@ export class EmpleadoController {
     isArray: true,
     description: 'Lista de empleados a crear de forma masiva',
   })
-  async createMany(@User() user: AuthUser, @Body() body: CreateEmpleadoDto[]) {
+  async createMany(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Body() body: CreateEmpleadoDto[],
+  ) {
+    for (const fila of body) {
+      verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
+      this.alcances.verificarRolAsignable(alcance, fila.rol);
+    }
     // console.log('CONTROLLLER MASIVO', body);
     const resp = await this.empleadoService.createMany(user, body);
     return {
@@ -80,7 +108,14 @@ export class EmpleadoController {
   @Get()
   @ApiOperation({ summary: 'Listar empleados (paginado o todos)' })
   @ApiResponse({ status: 200, description: 'Lista de empleados.' })
-  async findAll(@Query() query: EmployeeQueryDto) {
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: EmployeeQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // const resp = await this.empleadoService.findAll({
     //   page: query.page ?? 1,
     //   limit: query.limit ?? 0,
@@ -101,7 +136,14 @@ export class EmpleadoController {
     summary:
       'Avance consolidado de la evaluación: indicadores, desglose por jefe/área/gerencia y estado por trabajador',
   })
-  async avance(@Query() query: AvanceQueryDto) {
+  async avance(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: AvanceQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     return {
       message: 'Avance de la evaluación.',
       data: await this.empleadoService.avance(query),
@@ -116,7 +158,11 @@ export class EmpleadoController {
     status: 200,
     description: 'Lista de empleados obtenidos correctamente.',
   })
-  async findByEmpresa(@Param('id', ParseIntPipe) id: number) {
+  async findByEmpresa(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', id);
     const empleados = await this.empleadoService.findByEmpresa(id);
 
     return {
@@ -130,7 +176,12 @@ export class EmpleadoController {
   @ApiOperation({ summary: 'Obtener empleado por ID de usuario' })
   @ApiParam({ name: 'id', description: 'ID del usuario' })
   @ApiResponse({ status: 200, description: 'Empleado encontrado.' })
-  async findOneByUsuario(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findOneByUsuario(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificarUsuario(alcance, id);
     const empleado = await this.empleadoService.findOneByUsuario(id);
     return {
       message: 'Empleado encontrado.',
@@ -148,7 +199,12 @@ export class EmpleadoController {
     status: 200,
     description: 'Competencias asignadas obtenidas correctamente.',
   })
-  async findCompetenciasByEmpleado(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findCompetenciasByEmpleado(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificarTrabajador(alcance, id);
     const empleado = await this.empleadoService.findCompetenciasByEmpleado(id);
 
     return {
@@ -162,7 +218,11 @@ export class EmpleadoController {
   @ApiOperation({ summary: 'Obtener empleado por ID' })
   @ApiParam({ name: 'id', description: 'ID del empleado' })
   @ApiResponse({ status: 200, description: 'Empleado encontrado.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empleado', id);
     const empleado = await this.empleadoService.findOne(id);
     return {
       message: 'Empleado encontrado.',
@@ -179,10 +239,15 @@ export class EmpleadoController {
     description: 'Empleado actualizado correctamente.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateEmpleadoDto,
   ) {
+    await this.alcances.verificar(alcance, 'empleado', id);
+    if (dto.idEmpresaEmpleadora !== undefined)
+      verificarEmpresa(alcance, Number(dto.idEmpresaEmpleadora), 'Empresa');
+    this.alcances.verificarRolAsignable(alcance, dto.rol);
     const empleado = await this.empleadoService.update(user, id, dto);
     return {
       message: `Empleado con ID ${id} actualizado correctamente.`,
@@ -199,7 +264,11 @@ export class EmpleadoController {
   })
   @ApiParam({ name: 'id', description: 'ID del empleado' })
   @ApiResponse({ status: 200, description: 'Estado de evaluación.' })
-  async estadoEvaluacion(@Param('id', ParseIntPipe) id: number) {
+  async estadoEvaluacion(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empleado', id);
     const estado = await this.empleadoService.estadoEvaluacion(id);
     return { message: 'Estado de evaluación.', data: estado };
   }
@@ -215,7 +284,12 @@ export class EmpleadoController {
     status: 200,
     description: 'Empleados eliminados correctamente.',
   })
-  async removeMany(@User() user: AuthUser, @Body() body: EliminarEmpleadosDto) {
+  async removeMany(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Body() body: EliminarEmpleadosDto,
+  ) {
+    await this.alcances.verificarVarios(alcance, 'empleado', body.ids);
     const resp = await this.empleadoService.removeMany(user, body.ids);
     const cuantos = resp?.eliminados.length ?? 0;
 
@@ -236,7 +310,12 @@ export class EmpleadoController {
     status: 200,
     description: 'Empleado eliminado correctamente.',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empleado', id);
     const empleado = await this.empleadoService.remove(user, id);
     return {
       message: `Empleado con ID ${id} eliminado correctamente.`,
@@ -254,7 +333,12 @@ export class EmpleadoController {
     status: 200,
     description: 'Lista de subordinados obtenida exitosamente.',
   })
-  async findSubordinadosByUsuario(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async findSubordinadosByUsuario(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificarUsuario(alcance, id);
     const subordinados =
       await this.empleadoService.findSubordinadosByUsuario(id);
     return {
@@ -274,9 +358,12 @@ export class EmpleadoController {
     description:
       'Subordinados con sus competencias asignadas obtenidos correctamente.',
   })
+  @Roles(...TODOS)
   async findSubordinadosWithCompetenciasByJefe(
+    @AlcanceActual() alcance: Alcance,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    await this.alcances.verificarTrabajador(alcance, id);
     const subordinados =
       await this.empleadoService.findSubordinadosWithCompetenciasByJefe(id);
 
@@ -308,9 +395,12 @@ export class EmpleadoController {
     status: 500,
     description: 'Error interno al obtener el jefe con competencias.',
   })
+  @Roles(...TODOS)
   async findJefeWithCompetenciasByUsuario(
+    @AlcanceActual() alcance: Alcance,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    await this.alcances.verificarUsuario(alcance, id);
     const jefeConCompetencias =
       await this.empleadoService.findJefeWithCompetenciasByUsuario(id);
 
@@ -322,7 +412,15 @@ export class EmpleadoController {
 
   @Get('export/excel')
   @ApiOperation({ summary: 'Exportar empleados a Excel' })
-  async exportExcel(@Query() query: EmployeeQueryDto, @Res() res: Response) {
+  async exportExcel(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: EmployeeQueryDto,
+    @Res() res: Response,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     const buffer = await this.empleadoService.exportExcel(query);
 
     res.setHeader(

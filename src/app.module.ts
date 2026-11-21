@@ -1,3 +1,5 @@
+import { AdministradorEmpresaModule } from './administrador-empresa/administrador-empresa.module';
+import { AutorizacionModule } from './autorizacion/autorizacion.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -22,6 +24,8 @@ import { CampanaModule } from './campana/campana.module';
 
 @Module({
   imports: [
+    AutorizacionModule,
+    AdministradorEmpresaModule,
     ConfigModule.forRoot({
       isGlobal: true, // Disponible en toda la app
       // Dos archivos, en este orden: el del entorno pisa a la base.

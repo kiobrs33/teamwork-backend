@@ -49,17 +49,25 @@ model Empleado {
 }
 
 model Usuario {
-  idUsuario         Int       @id @default(autoincrement()) @map("id_usuario")
-  codigoUsuario     String    @unique @map("codigo_usuario")
-  contrasena        String
-  rol               String    @default("EMPLEADO")
-  estado            Boolean   @default(true)
-  creadoPorId       Int?      @map("creado_por_id")
-  actualizadoPorId  Int?      @map("actualizado_por_id")
-  fechaCreacion     DateTime  @default(now()) @map("fecha_creacion")
-  fechaModificacion DateTime? @map("fecha_modificacion")
-  empleado          Empleado?
+  idUsuario           Int                @id @default(autoincrement()) @map("id_usuario")
+  codigoUsuario       String             @unique @map("codigo_usuario")
+  contrasena          String
+  rol                 String             @default("EMPLEADO")
+  /// Administrador de empresa (ADMIN_EMPRESA): la persona de RR. HH. que usa
+  /// la cuenta y la empresa que administra. No es un trabajador evaluado, por
+  /// eso no tiene Empleado. Para JEFE/EMPLEADO la empresa sale de su Empleado
+  /// y para ADMIN (TeamWork) no hay empresa: administra todas.
+  nombreCompleto      String?            @map("nombre_completo")
+  idEmpresaEmpleadora Int?               @map("id_empresa_empleadora")
+  empresaEmpleadora   EmpresaEmpleadora? @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
+  estado              Boolean            @default(true)
+  creadoPorId         Int?               @map("creado_por_id")
+  actualizadoPorId    Int?               @map("actualizado_por_id")
+  fechaCreacion       DateTime           @default(now()) @map("fecha_creacion")
+  fechaModificacion   DateTime?          @map("fecha_modificacion")
+  empleado            Empleado?
 
+  @@index([idEmpresaEmpleadora])
   @@map("usuario")
 }
 
@@ -97,6 +105,7 @@ model EmpresaEmpleadora {
   unidadOcupacionalEmpleadoras               UnidadOcupacionalEmpleadora[]
   competencias                               Competencia[]
   campanas                                   CampanaEvaluacion[]
+  administradores                            Usuario[]
 
   @@map("empresa_empleadora")
 }

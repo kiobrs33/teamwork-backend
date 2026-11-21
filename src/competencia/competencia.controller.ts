@@ -1,3 +1,13 @@
+import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
+import { AlcanceService } from 'src/autorizacion/alcance.service';
+import {
+  Alcance,
+  ADMINISTRADORES,
+  TODOS,
+  empresaDelListado,
+  verificarEmpresa,
+} from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import { enviarExcel } from 'src/common/excel/libro-excel';
 import {
   Controller,
@@ -39,10 +49,14 @@ import { ExportEmpresaQueryDto } from './dto/export-empresa-query.dto';
 
 @ApiTags('Competencia')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMINISTRADORES)
 @Controller('competencia')
 export class CompetenciaController {
-  constructor(private readonly competenciaService: CompetenciaService) {}
+  constructor(
+    private readonly competenciaService: CompetenciaService,
+    private readonly alcances: AlcanceService,
+  ) {}
 
   // ======================================================
   //                GET ALL COMPETENCIAS
@@ -50,7 +64,14 @@ export class CompetenciaController {
   @Get()
   @ApiOperation({ summary: 'Listar todas las competencias' })
   @ApiResponse({ status: 200, description: 'Lista de competencias.' })
-  async findAll(@Query() query: CompetenciaQueryDto) {
+  async findAll(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: CompetenciaQueryDto,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
     // El query entero: con solo `page/limit/search`, los filtros por columna
     // de la tabla (id, código, título, empresa, RUC) se descartaban.
     const resp = await this.competenciaService.findAll({
@@ -67,10 +88,23 @@ export class CompetenciaController {
   // Antes de ':id', o 'export' entra como id y el ParseIntPipe responde 400.
   @Get('export/excel')
   @ApiOperation({
-    summary: 'Exportar el catálogo de competencias (formato del importador) y sus asignaciones',
+    summary:
+      'Exportar el catálogo de competencias (formato del importador) y sus asignaciones',
   })
-  async exportCatalogo(@Query() query: CompetenciaQueryDto, @Res() res: Response) {
-    enviarExcel(res, await this.competenciaService.exportCatalogoExcel(query), 'competencias');
+  async exportCatalogo(
+    @AlcanceActual() alcance: Alcance,
+    @Query() query: CompetenciaQueryDto,
+    @Res() res: Response,
+  ) {
+    query.idEmpresaEmpleadora = empresaDelListado(
+      alcance,
+      query.idEmpresaEmpleadora,
+    );
+    enviarExcel(
+      res,
+      await this.competenciaService.exportCatalogoExcel(query),
+      'competencias',
+    );
   }
 
   @Get('company/:id')
@@ -81,7 +115,11 @@ export class CompetenciaController {
     status: 200,
     description: 'Lista de competencias por Empresa.',
   })
-  async findAllByCompany(@Param('id', ParseIntPipe) id: number) {
+  async findAllByCompany(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', id);
     const competencias = await this.competenciaService.findAllByCompany(id);
     return {
       message: 'Lista de competencias por Empresa.',
@@ -113,7 +151,11 @@ export class CompetenciaController {
   @ApiOperation({ summary: 'Obtener competencia por ID' })
   @ApiParam({ name: 'id', description: 'ID de la competencia' })
   @ApiResponse({ status: 200, description: 'Competencia encontrada.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  async findOne(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'competencia', id);
     const competencia = await this.competenciaService.findOne(id);
     return {
       message: 'Competencia encontrada.',
@@ -134,10 +176,14 @@ export class CompetenciaController {
     description: 'Competencia actualizada correctamente con sus niveles.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @Param('id', ParseIntPipe) id: number,
     @User() user: AuthUser,
     @Body() dto: UpdateCompetenciaDto,
   ) {
+    await this.alcances.verificar(alcance, 'competencia', id);
+    if (dto.idEmpresaEmpleadora !== undefined)
+      verificarEmpresa(alcance, Number(dto.idEmpresaEmpleadora), 'Empresa');
     const competencia = await this.competenciaService.update(id, user, dto);
     return {
       message: `Competencia con ID ${id} actualizada correctamente.`,
@@ -155,7 +201,12 @@ export class CompetenciaController {
     status: 200,
     description: 'Competencia eliminada correctamente.',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'competencia', id);
     const competencia = await this.competenciaService.remove(user, id);
     return {
       message: `Competencia con ID ${id} eliminada correctamente.`,
@@ -175,9 +226,11 @@ export class CompetenciaController {
     description: 'Competencia creada exitosamente.',
   })
   async createConNiveles(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: CreateCompetenciaNivelesItemsDto,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', dto.idEmpresaEmpleadora);
     const competencia = await this.competenciaService.createConDetalles(
       user,
       dto,
@@ -201,9 +254,12 @@ export class CompetenciaController {
     description: 'Competencias importadas exitosamente.',
   })
   async importExcelData(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() data: CreateCompetenciaNivelesItemsDto[],
   ) {
+    for (const fila of data)
+      verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
     const competencias = await this.competenciaService.importData(user, data);
     return {
       message: 'Competencias creadas exitosamente.',
@@ -222,10 +278,17 @@ export class CompetenciaController {
     status: 201,
     description: 'Evaluación iniciada o evaluación existente en PROCESO.',
   })
+  @Roles(...TODOS)
   async iniciarEvaluacion(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: IniciarEvaluacionDto,
   ) {
+    await this.alcances.verificarParEvaluacion(
+      alcance,
+      dto.idEvaluado,
+      dto.idEvaluador,
+    );
     const evaluacion = await this.competenciaService.iniciarEvaluacion(
       user,
       dto,
@@ -244,7 +307,14 @@ export class CompetenciaController {
   @ApiOperation({ summary: 'Obtener evaluación completa por ID' })
   @ApiParam({ name: 'id', description: 'ID de la evaluación' })
   @ApiResponse({ status: 200, description: 'Evaluación encontrada.' })
-  async obtenerEvaluacion(@Param('id', ParseIntPipe) id: number) {
+  @Roles(...TODOS)
+  async obtenerEvaluacion(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificarEvaluacion(alcance, id, {
+      soloEvaluador: false,
+    });
     const evaluacion = await this.competenciaService.obtenerEvaluacion(id);
 
     return {
@@ -266,11 +336,16 @@ export class CompetenciaController {
     status: 200,
     description: 'Evaluación actualizada correctamente.',
   })
+  @Roles(...TODOS)
   async actualizarEvaluacion(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateEvaluacionDto,
   ) {
+    await this.alcances.verificarEvaluacion(alcance, id, {
+      soloEvaluador: true,
+    });
     const evaluacion = await this.competenciaService.actualizarEvaluacion(
       user,
       id,
@@ -293,10 +368,15 @@ export class CompetenciaController {
     status: 200,
     description: 'Evaluación cerrada correctamente.',
   })
+  @Roles(...TODOS)
   async cerrarEvaluacion(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    await this.alcances.verificarEvaluacion(alcance, id, {
+      soloEvaluador: true,
+    });
     const evaluacion = await this.competenciaService.cerrarEvaluacion(id, user);
 
     return {
@@ -318,9 +398,13 @@ export class CompetenciaController {
     description: 'Evaluación anulada correctamente.',
   })
   async anularEvaluacion(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    await this.alcances.verificarEvaluacion(alcance, id, {
+      soloEvaluador: true,
+    });
     const evaluacion = await this.competenciaService.anularEvaluacion(id, user);
 
     return {
@@ -332,11 +416,15 @@ export class CompetenciaController {
   @Get('evaluaciones/empresa/:idEmpresaEmpleadora/campanas')
   @ApiOperation({ summary: 'Campañas de la empresa (en curso y cerradas)' })
   async campanasDeEmpresa(
+    @AlcanceActual() alcance: Alcance,
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', idEmpresaEmpleadora);
     return {
       message: 'Campañas de la empresa.',
-      data: await this.competenciaService.campanasDeEmpresa(idEmpresaEmpleadora),
+      data: await this.competenciaService.campanasDeEmpresa(
+        idEmpresaEmpleadora,
+      ),
     };
   }
 
@@ -356,8 +444,10 @@ export class CompetenciaController {
     description: 'Lista de empleados evaluados y total.',
   })
   async empleadosEvaluadosPorEmpresa(
+    @AlcanceActual() alcance: Alcance,
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', idEmpresaEmpleadora);
     const result =
       await this.competenciaService.empleadosEvaluadosPorEmpresa(
         idEmpresaEmpleadora,
@@ -385,10 +475,12 @@ export class CompetenciaController {
     description: 'Archivo Excel generado correctamente',
   })
   async exportarResultadosEmpresaExcel(
+    @AlcanceActual() alcance: Alcance,
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
     @Query() filtros: ExportEmpresaQueryDto,
     @Res() res: Response,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', idEmpresaEmpleadora);
     const workbook =
       await this.competenciaService.exportarResultadosEmpresaExcel(
         idEmpresaEmpleadora,
@@ -411,10 +503,12 @@ export class CompetenciaController {
   @Get('reportes/empresa/:idEmpresaEmpleadora/competencias/export-excel')
   @ApiOperation({ summary: 'Exportar competencias evaluadas en Excel' })
   async exportarCompetenciasPorEmpresa(
+    @AlcanceActual() alcance: Alcance,
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
     @Query() filtros: ExportEmpresaQueryDto,
     @Res() res: Response,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', idEmpresaEmpleadora);
     const workbook =
       await this.competenciaService.exportarCompetenciasPorEmpresaExcel(
         idEmpresaEmpleadora,
@@ -437,10 +531,12 @@ export class CompetenciaController {
   @Get('reportes/empresa/:idEmpresaEmpleadora/objetivos/export-excel')
   @ApiOperation({ summary: 'Exportar objetivos en Excel' })
   async exportarObjetivosPorEmpresa(
+    @AlcanceActual() alcance: Alcance,
     @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
     @Query() filtros: ExportEmpresaQueryDto,
     @Res() res: Response,
   ) {
+    await this.alcances.verificar(alcance, 'empresa', idEmpresaEmpleadora);
     const workbook =
       await this.competenciaService.exportarObjetivosPorEmpresaExcel(
         idEmpresaEmpleadora,
