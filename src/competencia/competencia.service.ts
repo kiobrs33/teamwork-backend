@@ -154,6 +154,7 @@ export class CompetenciaService {
     codigo,
     titulo,
     nombreEmpresaEmpleadora,
+    idEmpresaEmpleadora,
     ruc,
   }: CompetenciaQueryDto) {
     try {
@@ -171,6 +172,11 @@ export class CompetenciaService {
 
       const where: Prisma.CompetenciaWhereInput = {
         estado: true,
+
+        // La empresa del selector del front (columna directa, no por nombre).
+        ...(idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(idEmpresaEmpleadora),
+        }),
 
         // ============ FILTROS POR COLUMNA (se combinan con AND) ============
         ...(idCompetencia && { idCompetencia: Number(idCompetencia) }),

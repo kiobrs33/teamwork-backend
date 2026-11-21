@@ -470,8 +470,11 @@ export class EmpresaEmpleadoraService {
           orderBy,
         });
 
+        // Lo mismo que la rama paginada: sin esto la lista completa (la del
+        // selector de empresa del front) llegaba sin campaña en curso ni
+        // avances, y toda la cartera parecía "sin campaña".
         return {
-          data,
+          data: await this.conCampanaEnCurso(await this.conAvances(data)),
           meta: {
             total: data.length,
             page: 1,

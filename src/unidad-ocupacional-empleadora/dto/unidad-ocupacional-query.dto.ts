@@ -34,6 +34,16 @@ export class UnidadOcupacionalQueryDto {
   @IsString()
   descripcion?: string;
 
+  /**
+   * Recorta a una empresa. Es el filtro del selector de empresa del front:
+   * el administrador trabaja con una empresa a la vez.
+   */
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  idEmpresaEmpleadora?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

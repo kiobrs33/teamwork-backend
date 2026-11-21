@@ -41,11 +41,17 @@ export class AreaEmpleadoraService {
     idAreaEmpleadora,
     descripcion,
     nombreEmpresaEmpleadora,
+    idEmpresaEmpleadora,
     ruc,
   }: AreaQueryDto) {
     try {
       const where: Prisma.AreaEmpleadoraWhereInput = {
         estado: true,
+
+        // La empresa del selector del front (columna directa, no por nombre).
+        ...(idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(idEmpresaEmpleadora),
+        }),
 
         ...(idAreaEmpleadora && {
           idAreaEmpleadora: Number(idAreaEmpleadora),

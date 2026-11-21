@@ -66,10 +66,16 @@ export class UnidadOcupacionalEmpleadoraService {
     descripcion,
     ruc,
     nombreEmpresaEmpleadora,
+    idEmpresaEmpleadora,
   }: UnidadOcupacionalQueryDto) {
     try {
       const where: Prisma.UnidadOcupacionalEmpleadoraWhereInput = {
         estado: true,
+
+        // La empresa del selector del front (columna directa, no por nombre).
+        ...(idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(idEmpresaEmpleadora),
+        }),
 
         ...(idUnidadOcupacionalEmpleadora && {
           idUnidadOcupacionalEmpleadora: Number(idUnidadOcupacionalEmpleadora),

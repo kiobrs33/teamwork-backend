@@ -44,10 +44,16 @@ export class GerenciaEmpleadoraService {
     descripcion,
     ruc,
     nombreEmpresaEmpleadora,
+    idEmpresaEmpleadora,
   }: GerenciaQueryDto) {
     try {
       const where: Prisma.GerenciaEmpleadoraWhereInput = {
         estado: true,
+
+        // La empresa del selector del front (columna directa, no por nombre).
+        ...(idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(idEmpresaEmpleadora),
+        }),
 
         ...(idGerenciaEmpleadora && {
           idGerenciaEmpleadora: Number(idGerenciaEmpleadora),

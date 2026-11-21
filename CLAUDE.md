@@ -277,6 +277,13 @@ Módulos: `auth`, `empleado`, `empresa-empleadora`, `area-empleadora`,
   `findAll({ page, limit, search })` y con eso los filtros del servicio nunca se
   aplicaban: la fila de filtros del front no hacía nada. `area-empleadora` ya
   tenía el arreglo; al tocar otro listado, comprobar lo mismo.
+- **Los listados de estructura y de competencias aceptan `idEmpresaEmpleadora`**
+  (áreas, gerencias, unidades, puestos, competencias), y `GET /objetivo`
+  también, por la empresa del trabajador. Es el filtro del selector de empresa
+  del front, que hace trabajar al administrador con una empresa a la vez. Es
+  opcional: sin él devuelven todas, como antes (no es aislamiento, ver §5.3).
+  `GET /empresa-empleadora?limit=0` devuelve `campanaEnCurso` y los avances
+  igual que la rama paginada (antes la lista completa llegaba sin ellos).
 - **Editar una competencia empareja los ítems por `idCompetenciaNivelItem`,
   no por posición.** El front lo manda en un `Form.Item` oculto. Emparejando
   por `secuencial`, borrar o reordenar un ítem intermedio hacía que los

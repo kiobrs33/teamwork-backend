@@ -20,6 +20,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -40,8 +41,18 @@ export class ObjetivoController {
   @Get()
   @ApiOperation({ summary: 'Listar todos los objetivos' })
   @ApiResponse({ status: 200, description: 'Lista de objetivos.' })
-  async findAll() {
-    const objetivos = await this.objetivoService.findAll();
+  @ApiQuery({
+    name: 'idEmpresaEmpleadora',
+    required: false,
+    description: 'Solo los objetivos de los trabajadores de esa empresa.',
+  })
+  async findAll(@Query('idEmpresaEmpleadora') idEmpresaEmpleadora?: string) {
+    // Opcional: sin él devuelve todos, como antes. Lo usa el selector de
+    // empresa del front, que trabaja con una empresa a la vez.
+    const idEmpresa = Number(idEmpresaEmpleadora);
+    const objetivos = await this.objetivoService.findAll(
+      Number.isInteger(idEmpresa) && idEmpresa > 0 ? idEmpresa : undefined,
+    );
     return { message: 'Lista de objetivos', data: { objetivos } };
   }
 

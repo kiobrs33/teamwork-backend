@@ -128,10 +128,14 @@ export class ObjetivoService {
   // ======================================================
   // GET ALL
   // ======================================================
-  async findAll() {
+  async findAll(idEmpresaEmpleadora?: number) {
     try {
       return await this.prisma.objetivo.findMany({
-        where: { estado: true, ...(await this.whereCampanaVigente()) },
+        where: {
+          estado: true,
+          ...(await this.whereCampanaVigente()),
+          ...(idEmpresaEmpleadora && { empleado: { idEmpresaEmpleadora } }),
+        },
         orderBy: { fechaCreacion: 'desc' },
         include: {
           empleado: true,
