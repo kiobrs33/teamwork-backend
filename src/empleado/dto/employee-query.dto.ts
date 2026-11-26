@@ -88,6 +88,15 @@ export class EmployeeQueryDto {
   rol?: string;
 
   /**
+   * Situación laboral a listar. Por defecto ACTIVO: los suspendidos y
+   * cesados no operan y se consultan aparte.
+   */
+  @ApiPropertyOptional({ enum: ['ACTIVO', 'SUSPENDIDO', 'CESADO'] })
+  @IsOptional()
+  @IsIn(['ACTIVO', 'SUSPENDIDO', 'CESADO'])
+  situacion?: string;
+
+  /**
    * Nombres y apellidos en una sola caja, como se ven en el listado.
    *
    * Se parte en palabras y cada una tiene que aparecer en `nombres` o en

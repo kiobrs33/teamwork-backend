@@ -23,6 +23,7 @@ import {
   UseGuards,
   Query,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { ObjetivoService } from './objetivo.service';
 import { UpdateObjetivoDto } from './dto/update-objetivo.dto';
@@ -60,9 +61,16 @@ export class ObjetivoController {
     required: false,
     description: 'Solo los objetivos de los trabajadores de esa empresa.',
   })
+  @ApiQuery({
+    name: 'idCampanaEvaluacion',
+    required: false,
+    description:
+      'Los de esa campaña (p. ej. una cerrada, para consultarlos). Sin él, los de la campaña en curso.',
+  })
   async findAll(
     @AlcanceActual() alcance: Alcance,
     @Query('idEmpresaEmpleadora') idEmpresaEmpleadora?: string,
+    @Query('idCampanaEvaluacion') idCampanaEvaluacion?: string,
   ) {
     idEmpresaEmpleadora = String(
       empresaDelListado(alcance, idEmpresaEmpleadora) ?? '',
@@ -70,8 +78,14 @@ export class ObjetivoController {
     // Opcional: sin él devuelve todos, como antes. Lo usa el selector de
     // empresa del front, que trabaja con una empresa a la vez.
     const idEmpresa = Number(idEmpresaEmpleadora);
+    // Una campaña concreta solo si es de una empresa a la que se tiene acceso.
+    const idCampana = Number(idCampanaEvaluacion);
+    const conCampana = Number.isInteger(idCampana) && idCampana > 0;
+    if (conCampana)
+      await this.alcances.verificar(alcance, 'campana', idCampana);
     const objetivos = await this.objetivoService.findAll(
       Number.isInteger(idEmpresa) && idEmpresa > 0 ? idEmpresa : undefined,
+      conCampana ? idCampana : undefined,
     );
     return { message: 'Lista de objetivos', data: { objetivos } };
   }
@@ -137,6 +151,7 @@ export class ObjetivoController {
     @Body() dto: EvaluarObjetivoDto,
   ) {
     await this.alcances.verificarObjetivo(alcance, id);
+    await this.alcances.verificarVigencia(alcance, 'evaluacion');
     const objetivo = await this.objetivoService.evaluarObjetivo(id, user, dto);
 
     return {
@@ -144,6 +159,17 @@ export class ObjetivoController {
       data: {
         objetivo,
       },
+    };
+  }
+
+  // Antes de `:id`, que si no lo atraparía.
+  @Get('mios')
+  @Roles(Rol.JEFE, Rol.EMPLEADO)
+  @ApiOperation({ summary: 'Mis objetivos de la campaña en curso' })
+  async mios(@User() user: AuthUser) {
+    return {
+      message: 'Mis objetivos.',
+      data: await this.objetivoService.misObjetivos(user),
     };
   }
 
@@ -174,6 +200,7 @@ export class ObjetivoController {
     // Tampoco se puede reasignar el objetivo a alguien fuera de su alcance.
     if (dto.idEmpleado !== undefined)
       await this.alcances.verificarDueñoDeObjetivos(alcance, dto.idEmpleado);
+    await this.alcances.verificarVigencia(alcance, 'objetivos');
     const objetivo = await this.objetivoService.update(id, user, dto);
     return { message: `Objetivo ${id} actualizado`, data: { objetivo } };
   }
@@ -188,6 +215,7 @@ export class ObjetivoController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     await this.alcances.verificarObjetivo(alcance, id);
+    await this.alcances.verificarVigencia(alcance, 'objetivos');
     const objetivo = await this.objetivoService.remove(user, id);
     return { message: `Objetivo ${id} eliminado`, data: { objetivo } };
   }
@@ -201,6 +229,7 @@ export class ObjetivoController {
     @Body() dto: CreateObjetivoConDetallesDto,
   ) {
     await this.alcances.verificarDueñoDeObjetivos(alcance, dto.idEmpleado);
+    await this.alcances.verificarVigencia(alcance, 'objetivos');
     const objetivo = await this.objetivoService.createConDetalles(user, dto);
     return { message: 'Objetivo creado exitosamente', data: { objetivo } };
   }
@@ -212,12 +241,27 @@ export class ObjetivoController {
     @User() user: AuthUser,
     @Body() dto: CreateObjetivosMasivosDto,
   ) {
-    await this.alcances.verificarCodigos(
-      alcance,
-      dto.objetivos.map((o) => o.codigoEmpleado),
+    // El código de empleado es único por empresa: hace falta saber cuál.
+    const idEmpresa = Number(
+      empresaDelListado(alcance, dto.idEmpresaEmpleadora),
     );
-    const objetivos = await this.objetivoService.createMasivo(user, dto);
-    return { message: 'Objetivos creados masivamente', data: { objetivos } };
+    if (!Number.isInteger(idEmpresa) || idEmpresa <= 0)
+      throw new BadRequestException('Indique la empresa de los objetivos.');
+    // La empresa ya está dentro del alcance (`empresaDelListado` da -1 si
+    // no). Los códigos que no existen los informa el servicio por fila,
+    // junto con los demás errores del archivo.
+    const objetivos = await this.objetivoService.createMasivo(user, {
+      ...dto,
+      idEmpresaEmpleadora: idEmpresa,
+    });
+    const fichas = (n: number) =>
+      n === 1 ? '1 trabajador' : `${n} trabajadores`;
+    return {
+      message: objetivos.omitidos
+        ? `Objetivos importados para ${fichas(objetivos.count)}. Ya tenían objetivos y se omitieron: ${fichas(objetivos.omitidos)}.`
+        : `Objetivos importados para ${fichas(objetivos.count)}.`,
+      data: objetivos,
+    };
   }
 
   @Get('empresa/:idEmpresa/empleados-evaluados')

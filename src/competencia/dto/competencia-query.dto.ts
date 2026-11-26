@@ -1,5 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsInt, Min, IsString, IsIn } from 'class-validator';
+
+/** Columnas por las que la tabla puede ordenar (en el servidor). */
+export const COMPETENCIA_SORT_FIELDS = [
+  'idCompetencia',
+  'codigo',
+  'titulo',
+  'fechaCreacion',
+] as const;
 import { Type } from 'class-transformer';
 
 export class CompetenciaQueryDto {
@@ -59,4 +67,19 @@ export class CompetenciaQueryDto {
   @IsOptional()
   @IsString()
   ruc?: string;
+
+  // ================= ORDEN =================
+  // Ordenar en el servidor: con un comparador local solo se reacomodaba la
+  // página visible.
+  @ApiPropertyOptional({ enum: COMPETENCIA_SORT_FIELDS })
+  @IsOptional()
+  @IsIn(COMPETENCIA_SORT_FIELDS as unknown as string[], {
+    message: `El campo de ordenamiento debe ser uno de: ${COMPETENCIA_SORT_FIELDS.join(', ')}.`,
+  })
+  sortBy?: (typeof COMPETENCIA_SORT_FIELDS)[number];
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsIn(['asc', 'desc'], { message: 'El orden debe ser asc o desc.' })
+  sortOrder?: 'asc' | 'desc';
 }

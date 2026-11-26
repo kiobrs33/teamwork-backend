@@ -18,7 +18,7 @@ import {
 } from './dto/empresa-query.dto';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
-import { v2 as cloudinary } from 'cloudinary';
+import { borrarArchivo } from 'src/config/cloudinary';
 
 // El ValidationPipe global corre con `transform` desactivado, así que la query
 // llega con strings aunque el DTO declare números. Se normaliza acá.
@@ -167,7 +167,7 @@ export class EmpresaEmpleadoraService {
     throw new ConflictException(
       existente.estado
         ? `Ya existe una empresa registrada con el RUC ${ruc} (${existente.nombreEmpresa}).`
-        : `El RUC ${ruc} pertenece a una empresa eliminada (${existente.nombreEmpresa}).`,
+        : `El RUC ${ruc} es de ${existente.nombreEmpresa}, que está archivada. Restáurela desde Empresas › Archivadas en lugar de registrarla de nuevo: así conserva su historial.`,
     );
   }
 
@@ -364,18 +364,51 @@ export class EmpresaEmpleadoraService {
             { header: 'Dirección', key: 'direccionEmpresa', width: 32 },
             { header: 'Modelo', key: 'modeloEmpresa' },
             { header: 'Campaña en curso', key: 'campana', width: 28 },
-            { header: 'Tipo de calificación', key: 'tipoCalificacionCompetencia' },
+            {
+              header: 'Tipo de calificación',
+              key: 'tipoCalificacionCompetencia',
+            },
             { header: '% Competencias', key: 'porcentajeCompetecias' },
             { header: '% Objetivos', key: 'porcentajeObjetivos' },
             { header: '% Jefe', key: 'porcentajeEvaluacionJefeCompetencia' },
-            { header: '% Subordinados', key: 'porcentajeEvaluacionSubordinadoCompetencia' },
-            { header: 'Resultado esperado', key: 'competenciaResultadoEsperado' },
-            { header: 'Periodo evaluado desde', key: 'periodoDesde', tipo: 'fecha' },
-            { header: 'Periodo evaluado hasta', key: 'periodoHasta', tipo: 'fecha' },
-            { header: 'Inicio evaluación', key: 'fechaVigenciaInicio', tipo: 'fecha' },
-            { header: 'Fin evaluación', key: 'fechaVigenciaFin', tipo: 'fecha' },
-            { header: 'Inicio objetivos', key: 'fechaVigenciaInicioObjetivo', tipo: 'fecha' },
-            { header: 'Fin objetivos', key: 'fechaVigenciaFinObjetivo', tipo: 'fecha' },
+            {
+              header: '% Subordinados',
+              key: 'porcentajeEvaluacionSubordinadoCompetencia',
+            },
+            {
+              header: 'Resultado esperado',
+              key: 'competenciaResultadoEsperado',
+            },
+            {
+              header: 'Periodo evaluado desde',
+              key: 'periodoDesde',
+              tipo: 'fecha',
+            },
+            {
+              header: 'Periodo evaluado hasta',
+              key: 'periodoHasta',
+              tipo: 'fecha',
+            },
+            {
+              header: 'Inicio evaluación',
+              key: 'fechaVigenciaInicio',
+              tipo: 'fecha',
+            },
+            {
+              header: 'Fin evaluación',
+              key: 'fechaVigenciaFin',
+              tipo: 'fecha',
+            },
+            {
+              header: 'Inicio objetivos',
+              key: 'fechaVigenciaInicioObjetivo',
+              tipo: 'fecha',
+            },
+            {
+              header: 'Fin objetivos',
+              key: 'fechaVigenciaFinObjetivo',
+              tipo: 'fecha',
+            },
             { header: 'Trabajadores activos', key: 'trabajadores' },
           ],
           filas: conCampana.map((e) => ({
@@ -385,9 +418,13 @@ export class EmpresaEmpleadoraService {
             periodoHasta: e.campanaEnCurso?.periodoHasta,
             // En 90° el reparto jefe/subordinado no aplica: el jefe pesa 100.
             porcentajeEvaluacionJefeCompetencia:
-              e.modeloEmpresa === '90' ? 100 : e.porcentajeEvaluacionJefeCompetencia,
+              e.modeloEmpresa === '90'
+                ? 100
+                : e.porcentajeEvaluacionJefeCompetencia,
             porcentajeEvaluacionSubordinadoCompetencia:
-              e.modeloEmpresa === '90' ? null : e.porcentajeEvaluacionSubordinadoCompetencia,
+              e.modeloEmpresa === '90'
+                ? null
+                : e.porcentajeEvaluacionSubordinadoCompetencia,
             trabajadores: e._count.empleados,
           })),
         },
@@ -408,10 +445,15 @@ export class EmpresaEmpleadoraService {
     const search = aTexto(query.search);
 
     const where: Prisma.EmpresaEmpleadoraWhereInput = {
-      estado: true,
+      // Archivada = estado en false (ver `archivar`).
+      estado: query.archivadas !== 'true',
 
       // ============ FILTROS POR COLUMNA (se combinan con AND) ============
       ...(idEmpresaEmpleadora !== undefined && { idEmpresaEmpleadora }),
+      ...(idEmpresaEmpleadora === undefined &&
+        query.idsPermitidos && {
+          idEmpresaEmpleadora: { in: query.idsPermitidos },
+        }),
 
       ...(nombreEmpresa && {
         nombreEmpresa: { contains: nombreEmpresa, mode: 'insensitive' },
@@ -456,6 +498,17 @@ export class EmpresaEmpleadoraService {
     };
 
     return { where, orderBy };
+  }
+
+  /** Deja a una cuenta del equipo atendiendo la empresa (al crearla). */
+  async asignarAlEquipo(idUsuario: number, idEmpresaEmpleadora: number) {
+    await this.prisma.usuarioEmpresa.upsert({
+      where: {
+        idUsuario_idEmpresaEmpleadora: { idUsuario, idEmpresaEmpleadora },
+      },
+      create: { idUsuario, idEmpresaEmpleadora, asignadoPorId: idUsuario },
+      update: {},
+    });
   }
 
   async findAll(query: EmpresaQueryDto) {
@@ -612,67 +665,67 @@ export class EmpresaEmpleadoraService {
   }
 
   // REMOVE (soft delete)
-  async remove(user: AuthUser, id: number) {
+  /**
+   * Archiva una empresa: deja de aparecer en la cartera y nadie de ella puede
+   * entrar (lo cortan el login y el alcance, que miran el `estado` de la
+   * empresa), pero **no se borra nada**: trabajadores, estructura, campañas,
+   * evaluaciones y bitácora quedan como estaban, y `restaurar` la devuelve
+   * tal cual. Antes "eliminar" exigía vaciarla primero (dar de baja a todos
+   * sus trabajadores, áreas, puestos…) y no tenía vuelta atrás.
+   *
+   * Los registros de una empresa archivada siguen con `estado` true, pero
+   * cuelgan de una empresa que no se lista: las pantallas trabajan siempre
+   * dentro de una empresa activa (su id va en la consulta).
+   */
+  async archivar(user: AuthUser, id: number) {
     try {
       const empresa = await this.prisma.empresaEmpleadora.findFirst({
-        where: {
-          idEmpresaEmpleadora: id,
-          estado: true,
-        },
+        where: { idEmpresaEmpleadora: id, estado: true },
       });
 
       if (!empresa) {
         throw new NotFoundException('Empresa no encontrada');
       }
 
-      // La baja es lógica y no arrastra a los hijos: si se permitiera, empleados,
-      // unidades y competencias quedarían activos colgando de una empresa que ya
-      // no aparece en ninguna consulta.
-      const dependencias = await this.contarDependenciasActivas(id);
-
-      if (dependencias.length) {
-        throw new ConflictException(
-          `No se puede eliminar la empresa porque todavía tiene ${dependencias.join(', ')}.`,
-        );
-      }
-
       return await this.prisma.empresaEmpleadora.update({
         where: { idEmpresaEmpleadora: id },
         data: {
           estado: false,
+          fechaArchivo: new Date(),
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
         },
       });
     } catch (error) {
-      this.logger.error('Error al eliminar empresa', error as Error);
+      this.logger.error('Error al archivar empresa', error as Error);
       handlePrismaError(error, 'empresa empleadora');
     }
   }
 
-  private async contarDependenciasActivas(idEmpresaEmpleadora: number) {
-    const where = { idEmpresaEmpleadora, estado: true };
+  /** Devuelve a la cartera una empresa archivada, con todo lo que tenía. */
+  async restaurar(user: AuthUser, id: number) {
+    try {
+      const empresa = await this.prisma.empresaEmpleadora.findFirst({
+        where: { idEmpresaEmpleadora: id, estado: false },
+      });
 
-    const [empleados, areas, puestos, gerencias, unidades, competencias] =
-      await Promise.all([
-        this.prisma.empleado.count({ where }),
-        this.prisma.areaEmpleadora.count({ where }),
-        this.prisma.puestoEmpleadora.count({ where }),
-        this.prisma.gerenciaEmpleadora.count({ where }),
-        this.prisma.unidadOcupacionalEmpleadora.count({ where }),
-        this.prisma.competencia.count({ where }),
-      ]);
+      if (!empresa) {
+        throw new NotFoundException('Empresa archivada no encontrada');
+      }
 
-    return [
-      [empleados, 'empleado(s)'],
-      [areas, 'área(s)'],
-      [puestos, 'puesto(s)'],
-      [gerencias, 'gerencia(s)'],
-      [unidades, 'unidad(es) ocupacional(es)'],
-      [competencias, 'competencia(s)'],
-    ]
-      .filter(([total]) => (total as number) > 0)
-      .map(([total, etiqueta]) => `${total} ${etiqueta}`);
+      return await this.prisma.empresaEmpleadora.update({
+        where: { idEmpresaEmpleadora: id },
+        data: {
+          estado: true,
+          fechaArchivo: null,
+          fechaModificacion: new Date(),
+          actualizadoPorId: user.idUsuario,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Error al restaurar empresa', error as Error);
+      handlePrismaError(error, 'empresa empleadora');
+    }
   }
 
   async updateLogo(id: number, url: string, publicId: string) {
@@ -690,16 +743,7 @@ export class EmpresaEmpleadoraService {
 
       // Borrar el logo anterior de Cloudinary. Si falla no se aborta la
       // operación: lo importante es que la empresa quede con el logo nuevo.
-      if (empresa.logoPublicId) {
-        try {
-          await cloudinary.uploader.destroy(empresa.logoPublicId);
-        } catch (error) {
-          this.logger.warn(
-            `No se pudo borrar el logo anterior (${empresa.logoPublicId}) de Cloudinary`,
-            error as Error,
-          );
-        }
-      }
+      await borrarArchivo(empresa.logoPublicId);
 
       return await this.prisma.empresaEmpleadora.update({
         where: {

@@ -1,3 +1,4 @@
+import { CompetenciaService } from 'src/competencia/competencia.service';
 import {
   BadRequestException,
   ConflictException,
@@ -14,6 +15,7 @@ import {
   CAMPANA_CERRADA,
   CAMPANA_EN_CURSO,
 } from 'src/common/resultados/campana';
+import { OPCIONES_LIKERT } from 'src/common/resultados/resultados-evaluacion';
 import { ActualizarCampanaDto, CrearCampanaDto } from './dto/campana.dto';
 
 type Tx = Prisma.TransactionClient;
@@ -36,10 +38,14 @@ const aFecha = (v?: string | null) => (v ? new Date(v) : null);
  * `fechaCreacion`: el estado de la campaña y su fecha de apertura viajan con
  * otro nombre.
  */
-export const paraRespuesta = <T extends { estado: string; fechaCreacion: Date }>(
+export const paraRespuesta = <
+  T extends { estado: string; fechaCreacion: Date },
+>(
   c: T,
 ) => ({ ...c, estadoCampana: c.estado, fechaApertura: c.fechaCreacion });
 const fechaCorta = (d: Date) => d.toISOString().slice(0, 10);
+/** "31/12/2026": para los mensajes que lee el usuario. */
+const fechaLegible = (d: Date) => fechaCorta(d).split('-').reverse().join('/');
 
 /**
  * Campañas (ciclos) de evaluación. Reglas:
@@ -58,7 +64,10 @@ const fechaCorta = (d: Date) => d.toISOString().slice(0, 10);
 export class CampanaService {
   private readonly logger = new Logger(CampanaService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private competencias: CompetenciaService,
+  ) {}
 
   // ─────────────────────────── lectura ───────────────────────────
 
@@ -125,11 +134,44 @@ export class CampanaService {
           where: {
             estado: true,
             porcentajeLogrado: null,
-            objetivo: { idCampanaEvaluacion: id, estado: true },
+            // Solo de quien sigue activo: los objetivos de un cesado o
+            // suspendido ya no se van a calificar y no deben alarmar.
+            objetivo: {
+              idCampanaEvaluacion: id,
+              estado: true,
+              empleado: { estado: true },
+            },
           },
         }),
       ]);
 
+    // 180°: competencias que ya tienen nota de subordinados pero ninguna del
+    // jefe. Al cerrar, la parte del jefe (70 %) cuenta como 0 y la nota queda
+    // muy baja (subordinados 90 → 27). Se listan para avisar antes.
+    const sinNotaDelJefe =
+      campana.modeloEmpresa === '180'
+        ? await this.competenciasSinNotaDelJefe(id)
+        : [];
+    // Retroalimentación: evaluados sin sesión y los que no están conformes.
+    // Lo ideal es resolverlo antes de cerrar (calibración y sesión).
+    let sinRetroalimentacion = 0;
+    let noConformes = 0;
+    if (campana.estado === 'EN_CURSO') {
+      const [{ filas }, sesiones] = await Promise.all([
+        this.competencias.resultadosDeEmpresa(campana.idEmpresaEmpleadora, id),
+        this.prisma.sesionRetroalimentacion.findMany({
+          where: { idCampanaEvaluacion: id },
+          select: { idEmpleado: true, conformidad: true },
+        }),
+      ]);
+      const conSesion = new Set(sesiones.map((s) => s.idEmpleado));
+      sinRetroalimentacion = filas.filter(
+        (f) => !f.resultado.sinEvaluar && !conSesion.has(f.idEmpleado),
+      ).length;
+      noConformes = sesiones.filter(
+        (s) => s.conformidad === 'NO_CONFORME',
+      ).length;
+    }
     return {
       idCampanaEvaluacion: id,
       nombre: campana.nombre,
@@ -137,7 +179,188 @@ export class CampanaService {
       evaluacionesAbiertas,
       itemsSinCalificar,
       detallesObjetivoSinCalificar: detallesSinCalificar,
+      sinNotaDelJefe,
+      sinRetroalimentacion,
+      noConformes,
     };
+  }
+
+  /**
+   * Lo que se mueve al editar una campaña en curso: sus resultados no se
+   * guardan, se calculan con la configuración vigente, así que cambiar pesos
+   * recalcula a todos (también a los ya calificados). El administrador lo ve
+   * antes de guardar.
+   */
+  async impactoEdicion(id: number) {
+    const campana = await this.obtener(id);
+    const calificada = { estado: true, calificacion: { not: null } };
+    const [
+      trabajadores,
+      evaluadosCompetencias,
+      evaluadosObjetivos,
+      items,
+      detalles,
+    ] = await Promise.all([
+      this.prisma.empleado.count({
+        where: {
+          idEmpresaEmpleadora: campana.idEmpresaEmpleadora,
+          estado: true,
+          situacion: 'ACTIVO',
+        },
+      }),
+      this.prisma.evaluacionCompetencia.findMany({
+        where: {
+          idCampanaEvaluacion: id,
+          estado: true,
+          estadoEvaluacion: { not: 'ANULADA' },
+          itemsEvaluados: { some: calificada },
+        },
+        select: { idEvaluado: true },
+        distinct: ['idEvaluado'],
+      }),
+      this.prisma.objetivo.findMany({
+        where: {
+          idCampanaEvaluacion: id,
+          estado: true,
+          objetivoDetalles: {
+            some: { estado: true, porcentajeLogrado: { not: null } },
+          },
+        },
+        select: { idEmpleado: true },
+        distinct: ['idEmpleado'],
+      }),
+      this.prisma.evaluacionCompetenciaItem.count({
+        where: {
+          ...calificada,
+          evaluacion: {
+            idCampanaEvaluacion: id,
+            estado: true,
+            estadoEvaluacion: { not: 'ANULADA' },
+          },
+        },
+      }),
+      this.prisma.objetivoDetalle.count({
+        where: {
+          estado: true,
+          porcentajeLogrado: { not: null },
+          objetivo: { idCampanaEvaluacion: id, estado: true },
+        },
+      }),
+    ]);
+
+    // Lo que movería un cambio excepcional: notas que la escala Likert no
+    // admite (se vacían si se pasa a Likert) y notas de subordinados (dejan
+    // de contar si se pasa a 90°).
+    const enLaCampana = {
+      idCampanaEvaluacion: id,
+      estado: true,
+      estadoEvaluacion: { not: 'ANULADA' },
+    };
+    const [notasFueraDeLikert, notasDeSubordinados] = await Promise.all([
+      this.prisma.evaluacionCompetenciaItem.count({
+        where: {
+          estado: true,
+          calificacion: { not: null, notIn: OPCIONES_LIKERT },
+          evaluacion: enLaCampana,
+        },
+      }),
+      this.prisma.evaluacionCompetenciaItem.count({
+        where: {
+          ...calificada,
+          evaluacion: { ...enLaCampana, tipoEvaluador: 'SUBORDINADO' },
+        },
+      }),
+    ]);
+
+    const conCalificaciones = new Set([
+      ...evaluadosCompetencias.map((e) => e.idEvaluado),
+      ...evaluadosObjetivos.map((o) => o.idEmpleado),
+    ]).size;
+
+    return {
+      idCampanaEvaluacion: id,
+      estado: campana.estado,
+      trabajadores,
+      conCalificaciones,
+      competenciasCalificadas: items,
+      objetivosCalificados: detalles,
+      notasFueraDeLikert,
+      notasDeSubordinados,
+      // Con notas puestas, modelo y escala solo se cambian como cambio
+      // excepcional (ver `actualizar`).
+      configuracionBloqueada: items + detalles > 0,
+    };
+  }
+
+  private async competenciasSinNotaDelJefe(id: number) {
+    const evaluaciones = await this.prisma.evaluacionCompetencia.findMany({
+      where: {
+        idCampanaEvaluacion: id,
+        estado: true,
+        estadoEvaluacion: { not: 'ANULADA' },
+        tipoEvaluador: { in: ['JEFE', 'SUBORDINADO'] },
+        itemsEvaluados: { some: { estado: true, calificacion: { not: null } } },
+      },
+      select: {
+        idEvaluado: true,
+        idCompetencia: true,
+        tipoEvaluador: true,
+        evaluado: {
+          select: {
+            nombres: true,
+            apellidos: true,
+            codigoEmpleado: true,
+            codigoEmpleadoJefe: true,
+          },
+        },
+        competencia: { select: { titulo: true } },
+      },
+    });
+    // Quien ya tiene sus competencias calibradas no necesita aviso: el
+    // comité fijó su nota.
+    const calibrados = new Set(
+      (
+        await this.prisma.ajusteCalibracion.findMany({
+          where: { idCampanaEvaluacion: id, competencias: { not: null } },
+          select: { idEmpleado: true },
+        })
+      ).map((a) => a.idEmpleado),
+    );
+    const porPar = new Map<
+      string,
+      {
+        trabajador: string;
+        codigo: string;
+        competencia: string;
+        jefe: boolean;
+        sinJefe: boolean;
+      }
+    >();
+    for (const ev of evaluaciones) {
+      if (ev.idEvaluado && calibrados.has(ev.idEvaluado)) continue;
+      const clave = `${ev.idEvaluado}-${ev.idCompetencia}`;
+      const actual = porPar.get(clave) ?? {
+        trabajador:
+          `${ev.evaluado?.nombres ?? ''} ${ev.evaluado?.apellidos ?? ''}`.trim(),
+        codigo: ev.evaluado?.codigoEmpleado ?? '',
+        competencia: ev.competencia.titulo,
+        jefe: false,
+        sinJefe: !ev.evaluado?.codigoEmpleadoJefe,
+      };
+      if (ev.tipoEvaluador === 'JEFE') actual.jefe = true;
+      porPar.set(clave, actual);
+    }
+    // Sin jefe (la cabeza de la empresa) no se avisa: en 180° lo califican
+    // sus subordinados al 100 % (`evaluadoSinJefe`) y no pierde nada.
+    return [...porPar.values()]
+      .filter((p) => !p.jefe && !p.sinJefe)
+      .map(({ trabajador, codigo, competencia, sinJefe }) => ({
+        trabajador,
+        codigo,
+        competencia,
+        sinJefe,
+      }))
+      .sort((a, b) => a.trabajador.localeCompare(b.trabajador));
   }
 
   // ─────────────────────────── escritura ───────────────────────────
@@ -150,6 +373,10 @@ export class CampanaService {
     if (!empresa) throw new NotFoundException('Empresa no encontrada.');
 
     this.validarFechas(dto);
+    this.validarFijacion(
+      dto.fechaVigenciaInicioObjetivo,
+      dto.fechaVigenciaFinObjetivo,
+    );
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -159,7 +386,7 @@ export class CampanaService {
 
         if (actual && !dto.cerrarActual) {
           throw new ConflictException(
-            `La empresa ya tiene la campaña "${actual.nombre}" en curso. Ciérrala primero o ábrela con "cerrar la actual".`,
+            `La empresa ya tiene la campaña "${actual.nombre}" en curso. Ciérrela primero o ábrala con "cerrar la actual".`,
           );
         }
         if (actual) await this.cerrarEn(tx, user, actual.idCampanaEvaluacion);
@@ -181,8 +408,14 @@ export class CampanaService {
           }));
         const base = anterior ?? empresa;
         const config = Object.fromEntries(
-          CAMPOS_CONFIG.map((c) => [c, dto[c] !== undefined ? dto[c] : base[c]]),
-        ) as Pick<Prisma.CampanaEvaluacionUncheckedCreateInput, (typeof CAMPOS_CONFIG)[number]>;
+          CAMPOS_CONFIG.map((c) => [
+            c,
+            dto[c] !== undefined ? dto[c] : base[c],
+          ]),
+        ) as Pick<
+          Prisma.CampanaEvaluacionUncheckedCreateInput,
+          (typeof CAMPOS_CONFIG)[number]
+        >;
         this.validarPesos(config);
 
         const nueva = await tx.campanaEvaluacion.create({
@@ -193,7 +426,9 @@ export class CampanaService {
             periodoHasta: new Date(dto.periodoHasta),
             fechaVigenciaInicio: new Date(dto.fechaVigenciaInicio),
             fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
-            fechaVigenciaInicioObjetivo: aFecha(dto.fechaVigenciaInicioObjetivo),
+            fechaVigenciaInicioObjetivo: aFecha(
+              dto.fechaVigenciaInicioObjetivo,
+            ),
             fechaVigenciaFinObjetivo: aFecha(dto.fechaVigenciaFinObjetivo),
             ...config,
             modeloEmpresa: config.modeloEmpresa ?? '90',
@@ -213,7 +448,11 @@ export class CampanaService {
           );
         }
 
-        return { campana: nueva, campanaCerrada: actual?.nombre ?? null, objetivosCopiados };
+        return {
+          campana: nueva,
+          campanaCerrada: actual?.nombre ?? null,
+          objetivosCopiados,
+        };
       });
     } catch (error) {
       this.logger.error('Error al abrir la campaña', error as Error);
@@ -239,20 +478,71 @@ export class CampanaService {
       }
     }
 
+    // Modelo y escala no se cambian con notas ya puestas: el modelo decide
+    // qué evaluaciones cuentan (de 180° a 90° las de subordinados dejan de
+    // sumar) y la escala cuáles son válidas (de Manual a Likert un 80 queda
+    // fuera). Los pesos sí, porque solo recalculan. La salida para un error
+    // de configuración es el cambio excepcional: solo el dueño, con motivo.
+    let pasaALikert = false;
+    if (campana.estado !== CAMPANA_CERRADA) {
+      const cambiaModelo =
+        dto.modeloEmpresa !== undefined &&
+        dto.modeloEmpresa !== campana.modeloEmpresa;
+      const cambiaEscala =
+        dto.tipoCalificacionCompetencia !== undefined &&
+        dto.tipoCalificacionCompetencia !== campana.tipoCalificacionCompetencia;
+      if (cambiaModelo || cambiaEscala) {
+        const { configuracionBloqueada } = await this.impactoEdicion(id);
+        if (configuracionBloqueada) {
+          const excepcional =
+            user.rol === 'ADMIN' && !!dto.motivoCambioExcepcional?.trim();
+          if (!excepcional) {
+            throw new BadRequestException(
+              `La campaña ya tiene calificaciones: no se puede cambiar ${
+                cambiaModelo && cambiaEscala
+                  ? 'el modelo ni la escala'
+                  : cambiaModelo
+                    ? 'el modelo de evaluación'
+                    : 'la escala de calificación'
+              }. Solo el dueño de TeamWork puede hacerlo como cambio excepcional, indicando el motivo.`,
+            );
+          }
+          pasaALikert =
+            cambiaEscala && dto.tipoCalificacionCompetencia === 'LIKERT';
+        }
+      }
+    }
+
     const resultante = {
       periodoDesde: dto.periodoDesde ?? fechaCorta(campana.periodoDesde),
       periodoHasta: dto.periodoHasta ?? fechaCorta(campana.periodoHasta),
-      fechaVigenciaInicio: dto.fechaVigenciaInicio ?? fechaCorta(campana.fechaVigenciaInicio),
-      fechaVigenciaFin: dto.fechaVigenciaFin ?? fechaCorta(campana.fechaVigenciaFin),
+      fechaVigenciaInicio:
+        dto.fechaVigenciaInicio ?? fechaCorta(campana.fechaVigenciaInicio),
+      fechaVigenciaFin:
+        dto.fechaVigenciaFin ?? fechaCorta(campana.fechaVigenciaFin),
     };
     // En una cerrada las vigencias no se validan contra el periodo: son
     // historia (las migradas no las cumplen y no se pueden cambiar).
     this.validarFechas(resultante, campana.estado !== CAMPANA_CERRADA);
+    // El plazo de fijación resultante: lo que llega, o lo que ya tenía.
+    this.validarFijacion(
+      dto.fechaVigenciaInicioObjetivo !== undefined
+        ? dto.fechaVigenciaInicioObjetivo
+        : campana.fechaVigenciaInicioObjetivo &&
+            fechaCorta(campana.fechaVigenciaInicioObjetivo),
+      dto.fechaVigenciaFinObjetivo !== undefined
+        ? dto.fechaVigenciaFinObjetivo
+        : campana.fechaVigenciaFinObjetivo &&
+            fechaCorta(campana.fechaVigenciaFinObjetivo),
+    );
 
     this.validarPesos({
       ...Object.fromEntries(CAMPOS_CONFIG.map((c) => [c, campana[c]])),
       ...Object.fromEntries(
-        CAMPOS_CONFIG.filter((c) => dto[c] !== undefined).map((c) => [c, dto[c]]),
+        CAMPOS_CONFIG.filter((c) => dto[c] !== undefined).map((c) => [
+          c,
+          dto[c],
+        ]),
       ),
     });
 
@@ -270,8 +560,12 @@ export class CampanaService {
           where: { idCampanaEvaluacion: id },
           data: {
             ...(dto.nombre !== undefined && { nombre: dto.nombre.trim() }),
-            ...(dto.periodoDesde && { periodoDesde: new Date(dto.periodoDesde) }),
-            ...(dto.periodoHasta && { periodoHasta: new Date(dto.periodoHasta) }),
+            ...(dto.periodoDesde && {
+              periodoDesde: new Date(dto.periodoDesde),
+            }),
+            ...(dto.periodoHasta && {
+              periodoHasta: new Date(dto.periodoHasta),
+            }),
             ...(dto.fechaVigenciaInicio && {
               fechaVigenciaInicio: new Date(dto.fechaVigenciaInicio),
             }),
@@ -279,18 +573,75 @@ export class CampanaService {
               fechaVigenciaFin: new Date(dto.fechaVigenciaFin),
             }),
             ...(dto.fechaVigenciaInicioObjetivo !== undefined && {
-              fechaVigenciaInicioObjetivo: aFecha(dto.fechaVigenciaInicioObjetivo),
+              fechaVigenciaInicioObjetivo: aFecha(
+                dto.fechaVigenciaInicioObjetivo,
+              ),
             }),
             ...(dto.fechaVigenciaFinObjetivo !== undefined && {
               fechaVigenciaFinObjetivo: aFecha(dto.fechaVigenciaFinObjetivo),
             }),
             ...Object.fromEntries(
-              CAMPOS_CONFIG.filter((c) => dto[c] !== undefined).map((c) => [c, dto[c]]),
+              CAMPOS_CONFIG.filter((c) => dto[c] !== undefined).map((c) => [
+                c,
+                dto[c],
+              ]),
             ),
           },
         });
 
-        return actualizada;
+        // De Manual a Likert: las notas que Likert no admite se vacían para
+        // volver a calificarlas, y sus evaluaciones se reabren. El resto se
+        // queda. Lo vaciado (ítem, evaluación y nota anterior) se devuelve y
+        // el interceptor lo guarda en la bitácora.
+        let notasVaciadas: {
+          idEvaluacionCompetenciaItem: number;
+          idEvaluacionCompetencia: number;
+          calificacion: number | null;
+        }[] = [];
+        if (pasaALikert) {
+          const fuera = await tx.evaluacionCompetenciaItem.findMany({
+            where: {
+              estado: true,
+              calificacion: { not: null, notIn: OPCIONES_LIKERT },
+              evaluacion: {
+                idCampanaEvaluacion: id,
+                estado: true,
+                estadoEvaluacion: { not: 'ANULADA' },
+              },
+            },
+            select: {
+              idEvaluacionCompetenciaItem: true,
+              idEvaluacionCompetencia: true,
+              calificacion: true,
+            },
+          });
+          if (fuera.length) {
+            await tx.evaluacionCompetenciaItem.updateMany({
+              where: {
+                idEvaluacionCompetenciaItem: {
+                  in: fuera.map((f) => f.idEvaluacionCompetenciaItem),
+                },
+              },
+              data: { calificacion: null },
+            });
+            await tx.evaluacionCompetencia.updateMany({
+              where: {
+                idEvaluacionCompetencia: {
+                  in: [...new Set(fuera.map((f) => f.idEvaluacionCompetencia))],
+                },
+                estadoEvaluacion: 'CERRADA',
+              },
+              data: {
+                estadoEvaluacion: 'PROCESO',
+                actualizadoPorId: user.idUsuario,
+                fechaModificacion: new Date(),
+              },
+            });
+          }
+          notasVaciadas = fuera;
+        }
+
+        return Object.assign(actualizada, { notasVaciadas });
       });
     } catch (error) {
       this.logger.error('Error al actualizar la campaña', error as Error);
@@ -315,7 +666,9 @@ export class CampanaService {
   async reabrir(user: AuthUser, id: number) {
     const campana = await this.obtener(id);
     if (campana.estado !== CAMPANA_CERRADA) {
-      throw new BadRequestException('Solo se puede reabrir una campaña cerrada.');
+      throw new BadRequestException(
+        'Solo se puede reabrir una campaña cerrada.',
+      );
     }
     const enCurso = await this.prisma.campanaEvaluacion.findFirst({
       where: {
@@ -325,7 +678,7 @@ export class CampanaService {
     });
     if (enCurso) {
       throw new ConflictException(
-        `No se puede reabrir: "${enCurso.nombre}" está en curso. Ciérrala primero.`,
+        `No se puede reabrir: "${enCurso.nombre}" está en curso. Ciérrela primero.`,
       );
     }
 
@@ -365,10 +718,11 @@ export class CampanaService {
 
   private async cerrarEn(tx: Tx, user: AuthUser, id: number) {
     const ahora = new Date();
-    const { idEmpresaEmpleadora } = await tx.campanaEvaluacion.findUniqueOrThrow({
-      where: { idCampanaEvaluacion: id },
-      select: { idEmpresaEmpleadora: true },
-    });
+    const { idEmpresaEmpleadora } =
+      await tx.campanaEvaluacion.findUniqueOrThrow({
+        where: { idCampanaEvaluacion: id },
+        select: { idEmpresaEmpleadora: true },
+      });
 
     // Foto de lo que le tocaba a cada uno (ver CampanaAsignacion): los
     // activos y también quien ya no está pero fue evaluado en la campaña.
@@ -468,6 +822,25 @@ export class CampanaService {
     }
   }
 
+  /**
+   * Plazo de fijación de objetivos (opcional): las dos fechas o ninguna, y
+   * el fin no antes del inicio. Con una sola, el front lo tomaba como "sin
+   * límite" y el dato quedaba a medias.
+   */
+  private validarFijacion(inicio?: string | null, fin?: string | null) {
+    if (!inicio && !fin) return;
+    if (!inicio || !fin) {
+      throw new BadRequestException(
+        'Indique el inicio y el fin de la fijación de objetivos, o deje ambos vacíos.',
+      );
+    }
+    if (new Date(fin).getTime() < new Date(inicio).getTime()) {
+      throw new BadRequestException(
+        'El fin de la fijación de objetivos no puede ser anterior a su inicio.',
+      );
+    }
+  }
+
   private async validarSinSuperposicion(
     tx: Tx,
     idEmpresa: number,
@@ -485,7 +858,7 @@ export class CampanaService {
     });
     if (choque) {
       throw new ConflictException(
-        `El periodo se superpone con el de "${choque.nombre}" (${fechaCorta(choque.periodoDesde)} – ${fechaCorta(choque.periodoHasta)}).`,
+        `El periodo se superpone con el de "${choque.nombre}" (${fechaLegible(choque.periodoDesde)} – ${fechaLegible(choque.periodoHasta)}).`,
       );
     }
   }
@@ -508,7 +881,14 @@ export class CampanaService {
         estado: true,
         empleado: { estado: true, idEmpresaEmpleadora: idEmpresa },
       },
-      include: { objetivoDetalles: { where: { estado: true } } },
+      include: {
+        objetivoDetalles: {
+          where: { estado: true },
+          // Siempre en su orden: sin esto, tras un guardado la base los
+          // devolvía en otro y el formulario quitaba el objetivo equivocado.
+          orderBy: { secuencial: 'asc' },
+        },
+      },
     });
 
     for (const o of objetivos) {

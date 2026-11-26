@@ -18,6 +18,7 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  ParseArrayPipe,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -189,7 +190,6 @@ export class GerenciaEmpleadoraController {
 
   // Importar gerencias empleadoras desde Excel
   @Post('import')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreateGerenciaEmpleadoraDto] })
   @ApiOperation({ summary: 'Importar Gerencia empleadora' })
   @ApiResponse({
@@ -199,17 +199,29 @@ export class GerenciaEmpleadoraController {
   async importExcelData(
     @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
-    @Body() data: CreateGerenciaEmpleadoraDto[],
+    // `ParseArrayPipe` valida cada fila con el DTO: con el tipo arreglo,
+    // el `ValidationPipe` no mira los elementos y entraba cualquier cosa.
+    @Body(
+      new ParseArrayPipe({
+        // Todos los errores, cada uno con su fila («[i] …»): sin esto Nest
+        // se detiene en el primero y sin índice, y el front no sabe de qué fila es.
+        stopAtFirstError: false,
+        items: CreateGerenciaEmpleadoraDto,
+        whitelist: true,
+        forbidNonWhitelisted: false,
+      }),
+    )
+    data: CreateGerenciaEmpleadoraDto[],
   ) {
     for (const fila of data)
       verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
-    const { count } = await this.gerenciaEmpleadoraService.importData(
+    const { count, omitidas } = await this.gerenciaEmpleadoraService.importData(
       user,
       data,
     );
     return {
       message: 'Gerencias empleadora creadas exitosamente.',
-      data: { count },
+      data: { count, omitidas },
     };
   }
 

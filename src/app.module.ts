@@ -1,3 +1,7 @@
+import { ActividadModule } from './actividad/actividad.module';
+import { EquipoTeamworkModule } from './equipo-teamwork/equipo-teamwork.module';
+import { PlataformaModule } from './plataforma/plataforma.module';
+import { ConsultaDocumentoModule } from './consulta-documento/consulta-documento.module';
 import { AdministradorEmpresaModule } from './administrador-empresa/administrador-empresa.module';
 import { AutorizacionModule } from './autorizacion/autorizacion.module';
 import { Module } from '@nestjs/common';
@@ -11,6 +15,10 @@ import { AuthModule } from './auth/auth.module';
 import { EmpresaEmpleadoraModule } from './empresa-empleadora/empresa-empleadora.module';
 import { PuestoEmpleadoraModule } from './puesto-empleadora/puesto-empleadora.module';
 import { ObjetivoModule } from './objetivo/objetivo.module';
+import { PlantillaModule } from './plantilla/plantilla.module';
+import { CalibracionModule } from './calibracion/calibracion.module';
+import { RetroalimentacionModule } from './retroalimentacion/retroalimentacion.module';
+import { RegistroProcesoModule } from './registro-proceso/registro-proceso.module';
 import { GerenciaEmpleadoraModule } from './gerencia-empleadora/gerencia-empleadora.module';
 import { UnidadOcupacionalEmpleadoraModule } from './unidad-ocupacional-empleadora/unidad-ocupacional-empleadora.module';
 import { AreaEmpleadoraModule } from './area-empleadora/area-empleadora.module';
@@ -26,6 +34,10 @@ import { CampanaModule } from './campana/campana.module';
   imports: [
     AutorizacionModule,
     AdministradorEmpresaModule,
+    ConsultaDocumentoModule,
+    EquipoTeamworkModule,
+    PlataformaModule,
+    ActividadModule,
     ConfigModule.forRoot({
       isGlobal: true, // Disponible en toda la app
       // Dos archivos, en este orden: el del entorno pisa a la base.
@@ -44,6 +56,16 @@ import { CampanaModule } from './campana/campana.module';
     }),
     LoggerModule.forRoot({
       pinoHttp: {
+        // El token de sesión no va a los logs: quien los lea (consola de
+        // Easypanel, volcados) podría usarlo para entrar como esa persona.
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'res.headers["set-cookie"]',
+          ],
+          censor: '[oculto]',
+        },
         transport: {
           target: 'pino-pretty', // 👀 transforma JSON en formato legible
           options: {
@@ -60,6 +82,10 @@ import { CampanaModule } from './campana/campana.module';
     EmpresaEmpleadoraModule,
     PuestoEmpleadoraModule,
     ObjetivoModule,
+    PlantillaModule,
+    CalibracionModule,
+    RetroalimentacionModule,
+    RegistroProcesoModule,
     GerenciaEmpleadoraModule,
     UnidadOcupacionalEmpleadoraModule,
     AreaEmpleadoraModule,

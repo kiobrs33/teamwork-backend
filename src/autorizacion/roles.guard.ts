@@ -24,6 +24,9 @@ export const Roles = (...roles: Rol[]) => SetMetadata(CLAVE_ROLES, roles);
  * Falla cerrado: una ruta sin `@Roles` responde error en vez de quedar
  * abierta a cualquier autenticado, que es como estaba toda la API.
  */
+/** Escrituras que sí puede hacer una cuenta de solo lectura. */
+const RUTAS_PERMITIDAS_SOLO_LECTURA = ['/auth/contrasena'];
+
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(
@@ -47,7 +50,24 @@ export class RolesGuard implements CanActivate {
     request.alcance = alcance;
 
     if (!permitidos.includes(alcance.rol)) {
-      throw new ForbiddenException('No tienes permiso para esta acción');
+      throw new ForbiddenException(
+        'No tiene permiso para realizar esta acción',
+      );
+    }
+
+    // Solo lectura: se bloquea TODA escritura (falla cerrado: una ruta
+    // nueva nace protegida), salvo cambiar la propia contraseña. Ver y
+    // descargar son GET.
+    const metodo = String(request.method).toUpperCase();
+    const ruta = String(request.route?.path ?? request.path ?? '');
+    if (
+      alcance.soloLectura &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(metodo) &&
+      !RUTAS_PERMITIDAS_SOLO_LECTURA.some((r) => ruta.endsWith(r))
+    ) {
+      throw new ForbiddenException(
+        'Su cuenta es de solo lectura: puede ver y descargar, no modificar.',
+      );
     }
     return true;
   }

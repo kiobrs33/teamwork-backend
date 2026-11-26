@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { Observable, map } from 'rxjs';
+import { enlaceDeEntrega } from '../../config/cloudinary';
 
 const PURGE_KEYS = new Set([
   'estado',
@@ -28,9 +29,13 @@ function purgeFields(data: any): any {
   if (data !== null && typeof data === 'object') {
     const result: Record<string, any> = {};
     for (const key in data) {
-      if (!PURGE_KEYS.has(key)) {
-        result[key] = purgeFields(data[key]);
-      }
+      if (PURGE_KEYS.has(key)) continue;
+      // Los PDF de Cloudinary viajan con un enlace firmado: ver
+      // `enlaceDeEntrega`. Evidencias, hitos y calibración pasan por aquí.
+      result[key] =
+        key === 'urlArchivo' && typeof data[key] === 'string'
+          ? enlaceDeEntrega(data[key])
+          : purgeFields(data[key]);
     }
     return result;
   }

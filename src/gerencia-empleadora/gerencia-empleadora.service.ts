@@ -1,3 +1,4 @@
+import { aplicarCabecera } from 'src/common/excel/estilo-excel';
 import {
   HttpException,
   Injectable,
@@ -15,6 +16,14 @@ import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 import * as ExcelJS from 'exceljs';
 
+import {
+  exigirNombreLibre,
+  exigirSinTrabajadoresParaEliminar,
+  exigirSinTrabajadoresParaMudar,
+  filtrarImportacion,
+  nombreLimpio,
+} from 'src/common/estructura/estructura';
+
 @Injectable()
 export class GerenciaEmpleadoraService {
   private readonly logger = new Logger(GerenciaEmpleadoraService.name);
@@ -22,9 +31,17 @@ export class GerenciaEmpleadoraService {
 
   async create(user: AuthUser, dto: CreateGerenciaEmpleadoraDto) {
     try {
+      const descripcion = nombreLimpio(dto.descripcion);
+      await exigirNombreLibre(
+        this.prisma,
+        'gerencia',
+        Number(dto.idEmpresaEmpleadora),
+        descripcion,
+      );
       const gerencia = await this.prisma.gerenciaEmpleadora.create({
         data: {
           ...dto,
+          descripcion,
           creadoPorId: user.idUsuario,
         },
         include: { empresaEmpleadora: true },
@@ -83,35 +100,46 @@ export class GerenciaEmpleadoraService {
         }),
 
         ...(search && {
-          OR: [
-            {
-              descripcion: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: search,
-                  mode: 'insensitive',
+          // Un número busca por ID o en el nombre, no en el RUC de la empresa
+          // (el de SEAL tiene un 6 y coincidían todas).
+          OR: /^\d+$/.test(String(search).trim())
+            ? [
+                { idGerenciaEmpleadora: Number(String(search).trim()) },
+                { descripcion: { contains: String(search).trim() } },
+              ]
+            : [
+                {
+                  descripcion: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
                 },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                ruc: {
-                  contains: search,
-                  mode: 'insensitive',
+                {
+                  empresaEmpleadora: {
+                    nombreEmpresa: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
                 },
-              },
-            },
-          ],
+                {
+                  empresaEmpleadora: {
+                    ruc: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
         }),
       };
 
-      const include: Prisma.AreaEmpleadoraInclude = {
+      const include: Prisma.GerenciaEmpleadoraInclude = {
         empresaEmpleadora: true,
+        // Trabajadores vigentes (no cesados): cuántos se verían afectados.
+        _count: {
+          select: { empleados: { where: { situacion: { not: 'CESADO' } } } },
+        },
       };
 
       if (Number(limit) === 0) {
@@ -190,10 +218,30 @@ export class GerenciaEmpleadoraService {
         throw new NotFoundException('Gerencia no encontrada');
       }
 
+      // Las reglas se miran sobre cómo queda el registro, no sobre lo que llega.
+      const idEmpresa =
+        dto.idEmpresaEmpleadora !== undefined
+          ? Number(dto.idEmpresaEmpleadora)
+          : gerencia.idEmpresaEmpleadora;
+      if (idEmpresa !== gerencia.idEmpresaEmpleadora)
+        await exigirSinTrabajadoresParaMudar(this.prisma, 'gerencia', id);
+      const descripcion =
+        dto.descripcion !== undefined
+          ? nombreLimpio(dto.descripcion)
+          : gerencia.descripcion;
+      await exigirNombreLibre(
+        this.prisma,
+        'gerencia',
+        idEmpresa,
+        descripcion,
+        id,
+      );
+
       return await this.prisma.gerenciaEmpleadora.update({
         where: { idGerenciaEmpleadora: id },
         data: {
           ...dto,
+          descripcion,
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
         },
@@ -215,6 +263,8 @@ export class GerenciaEmpleadoraService {
         throw new NotFoundException('Gerencia no encontrada');
       }
 
+      await exigirSinTrabajadoresParaEliminar(this.prisma, 'gerencia', id);
+
       return await this.prisma.gerenciaEmpleadora.update({
         where: { idGerenciaEmpleadora: id },
         data: {
@@ -231,17 +281,21 @@ export class GerenciaEmpleadoraService {
 
   async importData(user: AuthUser, data: CreateGerenciaEmpleadoraDto[]) {
     try {
-      const registros = data.map((row) => ({
+      const { nuevas, omitidas } = await filtrarImportacion(
+        this.prisma,
+        'gerencia',
+        data,
+      );
+      const registros = nuevas.map((row) => ({
         descripcion: row.descripcion,
         idEmpresaEmpleadora: row.idEmpresaEmpleadora,
         creadoPorId: user.idUsuario,
       }));
 
-      return await this.prisma.$transaction(async (tx) => {
-        return await tx.gerenciaEmpleadora.createMany({
-          data: registros,
-        });
+      const { count } = await this.prisma.gerenciaEmpleadora.createMany({
+        data: registros,
       });
+      return { count, omitidas };
     } catch (error) {
       console.error('Error al importar datos:', error);
       handlePrismaError(error, 'gerencia empleadora');
@@ -270,6 +324,13 @@ export class GerenciaEmpleadoraService {
       const where: Prisma.GerenciaEmpleadoraWhereInput = {
         estado: true,
 
+        // El controlador ya resolvió la empresa (`empresaDelListado`); sin
+        // esta línea el Excel traía los registros de todas las empresas,
+        // también a RR. HH., aunque el listado en pantalla sí filtraba.
+        ...(query.idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(query.idEmpresaEmpleadora),
+        }),
+
         ...(query.idGerenciaEmpleadora && {
           idGerenciaEmpleadora: Number(query.idGerenciaEmpleadora),
         }),
@@ -296,30 +357,37 @@ export class GerenciaEmpleadoraService {
         }),
 
         ...(query.search && {
-          OR: [
-            {
-              descripcion: {
-                contains: query.search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: query.search,
-                  mode: 'insensitive',
+          // Un número busca por ID o en el nombre, no en el RUC de la empresa
+          // (el de SEAL tiene un 6 y coincidían todas).
+          OR: /^\d+$/.test(String(query.search).trim())
+            ? [
+                { idGerenciaEmpleadora: Number(String(query.search).trim()) },
+                { descripcion: { contains: String(query.search).trim() } },
+              ]
+            : [
+                {
+                  descripcion: {
+                    contains: query.search,
+                    mode: 'insensitive',
+                  },
                 },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                ruc: {
-                  contains: query.search,
-                  mode: 'insensitive',
+                {
+                  empresaEmpleadora: {
+                    nombreEmpresa: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
                 },
-              },
-            },
-          ],
+                {
+                  empresaEmpleadora: {
+                    ruc: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
         }),
       };
 
@@ -327,6 +395,9 @@ export class GerenciaEmpleadoraService {
         where,
         include: {
           empresaEmpleadora: true,
+          _count: {
+            select: { empleados: { where: { situacion: { not: 'CESADO' } } } },
+          },
         },
         orderBy: {
           fechaCreacion: 'desc',
@@ -336,46 +407,45 @@ export class GerenciaEmpleadoraService {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Gerencias');
 
+      // Se exporta desde el espacio de una empresa (el front manda la activa):
+      // «Empresa» repetiría el mismo nombre en cada fila. Solo va si el archivo
+      // mezcla empresas.
+      const variasEmpresas =
+        !query.idEmpresaEmpleadora &&
+        new Set(gerencias.map((x) => x.idEmpresaEmpleadora)).size > 1;
+      const columnasEmpresa = variasEmpresas
+        ? [
+            { header: 'ID empresa', key: 'idEmpresaEmpleadora', width: 14 },
+            { header: 'Empresa', key: 'empresa', width: 50 },
+          ]
+        : [];
+
       worksheet.columns = [
         {
-          header: 'ID Gerencia',
+          header: 'ID gerencia',
           key: 'idGerenciaEmpleadora',
           width: 20,
         },
         {
-          header: 'Descripción',
+          header: 'Nombre',
           key: 'descripcion',
           width: 40,
         },
-        {
-          header: 'ID Empresa',
-          key: 'idEmpresaEmpleadora',
-          width: 20,
-        },
-        {
-          header: 'Empresa',
-          key: 'empresa',
-          width: 50,
-        },
+        { header: 'Trabajadores', key: 'trabajadores', width: 14 },
+        ...columnasEmpresa,
       ];
 
       gerencias.forEach((item) => {
         worksheet.addRow({
           idGerenciaEmpleadora: item.idGerenciaEmpleadora,
           descripcion: item.descripcion,
+          trabajadores: item._count.empleados,
           idEmpresaEmpleadora: item.idEmpresaEmpleadora,
           empresa: item.empresaEmpleadora.nombreEmpresa,
         });
       });
 
-      worksheet.getRow(1).font = {
-        bold: true,
-      };
-
-      worksheet.autoFilter = {
-        from: 'A1',
-        to: 'D1',
-      };
+      aplicarCabecera(worksheet);
 
       const buffer = await workbook.xlsx.writeBuffer();
 

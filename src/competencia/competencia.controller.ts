@@ -10,6 +10,7 @@ import {
 import { Rol } from 'src/empleado/types/empleadoTypes';
 import { enviarExcel } from 'src/common/excel/libro-excel';
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -17,6 +18,7 @@ import {
   Patch,
   Param,
   Delete,
+  ParseArrayPipe,
   ParseIntPipe,
   UseGuards,
   UsePipes,
@@ -36,6 +38,10 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { CompetenciaService } from './competencia.service';
+import { EmpleadoService } from 'src/empleado/empleado.service';
+import { AvanceQueryDto } from 'src/empleado/dto/avance-query.dto';
+import { campanaEnCurso } from 'src/common/resultados/campana';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateCompetenciaDto } from './dto/update-competencia.dto';
 import { CreateCompetenciaNivelesItemsDto } from './dto/create-competencia-nivel-item.dto';
 import { IniciarEvaluacionDto } from './dto/init-evaluation.dto';
@@ -56,6 +62,8 @@ export class CompetenciaController {
   constructor(
     private readonly competenciaService: CompetenciaService,
     private readonly alcances: AlcanceService,
+    private readonly empleados: EmpleadoService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ======================================================
@@ -147,6 +155,28 @@ export class CompetenciaController {
   // ======================================================
   //                GET COMPETENCIA BY ID
   // ======================================================
+  @Get('estadisticas')
+  @ApiOperation({
+    summary:
+      'Por competencia: trabajadores asignados, cuántos tienen nota y el promedio en la campaña en curso',
+  })
+  async estadisticas(
+    @AlcanceActual() alcance: Alcance,
+    @Query('idEmpresaEmpleadora') idEmpresa?: string,
+  ) {
+    const id = empresaDelListado(
+      alcance,
+      idEmpresa ? Number(idEmpresa) : undefined,
+    );
+    if (!id) {
+      throw new BadRequestException('Indique la empresa.');
+    }
+    return {
+      message: 'Estadísticas de las competencias.',
+      data: await this.competenciaService.estadisticasDeCatalogo(id),
+    };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener competencia por ID' })
   @ApiParam({ name: 'id', description: 'ID de la competencia' })
@@ -188,6 +218,40 @@ export class CompetenciaController {
     return {
       message: `Competencia con ID ${id} actualizada correctamente.`,
       data: { competencia },
+    };
+  }
+
+  /** Qué arrastra eliminarla, para confirmarlo en pantalla. No escribe. */
+  /**
+   * Qué pasaría con las evaluaciones en curso si se guarda esta edición. No
+   * escribe: el formulario lo pide antes de `PATCH` y confirma si hay notas
+   * o evaluaciones completas en juego. Es POST porque lleva el cuerpo del
+   * formulario; por eso la permite `RolesGuard` solo a quien puede editar.
+   */
+  @Post(':id/impacto-edicion')
+  @ApiOperation({ summary: 'Qué cambiaría en las evaluaciones en curso' })
+  async impactoEdicion(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateCompetenciaDto,
+  ) {
+    await this.alcances.verificar(alcance, 'competencia', id);
+    return {
+      message: 'Impacto de la edición en las evaluaciones en curso.',
+      data: await this.competenciaService.impactoEdicion(id, dto),
+    };
+  }
+
+  @Get(':id/impacto-eliminacion')
+  @ApiOperation({ summary: 'Qué se anularía al eliminar la competencia' })
+  async impactoEliminacion(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.alcances.verificar(alcance, 'competencia', id);
+    return {
+      message: 'Impacto de eliminar la competencia.',
+      data: await this.competenciaService.impactoEliminacion(id),
     };
   }
 
@@ -246,7 +310,6 @@ export class CompetenciaController {
   //                IMPORTAR MASIVAMENTE
   // ======================================================
   @Post('import')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreateCompetenciaNivelesItemsDto] })
   @ApiOperation({ summary: 'Importar competencias con niveles e items' })
   @ApiResponse({
@@ -256,14 +319,32 @@ export class CompetenciaController {
   async importExcelData(
     @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
-    @Body() data: CreateCompetenciaNivelesItemsDto[],
+    // `ParseArrayPipe` valida cada competencia con el DTO: con el tipo
+    // arreglo, el `ValidationPipe` no mira los elementos (una fila inválida
+    // llegaba a Prisma y respondía un 500).
+    @Body(
+      new ParseArrayPipe({
+        // Todos los errores, cada uno con su fila («[i] …»): sin esto Nest
+        // se detiene en el primero y sin índice, y el front no sabe de qué fila es.
+        stopAtFirstError: false,
+        items: CreateCompetenciaNivelesItemsDto,
+        whitelist: true,
+        forbidNonWhitelisted: false,
+      }),
+    )
+    data: CreateCompetenciaNivelesItemsDto[],
   ) {
     for (const fila of data)
       verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
-    const competencias = await this.competenciaService.importData(user, data);
+    const resultado = await this.competenciaService.importData(user, data);
+    const n = (k: number, uno: string, varios: string) =>
+      k === 1 ? `1 ${uno}` : `${k} ${varios}`;
+    const importadas = n(resultado?.count ?? 0, 'competencia', 'competencias');
     return {
-      message: 'Competencias creadas exitosamente.',
-      data: { competencias },
+      message: resultado?.omitidas
+        ? `Se importaron: ${importadas}. Ya existían y se omitieron: ${n(resultado.omitidas, 'competencia', 'competencias')}.`
+        : `Se importaron: ${importadas}.`,
+      data: resultado,
     };
   }
 
@@ -346,6 +427,7 @@ export class CompetenciaController {
     await this.alcances.verificarEvaluacion(alcance, id, {
       soloEvaluador: true,
     });
+    await this.alcances.verificarVigencia(alcance, 'evaluacion');
     const evaluacion = await this.competenciaService.actualizarEvaluacion(
       user,
       id,
@@ -377,6 +459,7 @@ export class CompetenciaController {
     await this.alcances.verificarEvaluacion(alcance, id, {
       soloEvaluador: true,
     });
+    await this.alcances.verificarVigencia(alcance, 'evaluacion');
     const evaluacion = await this.competenciaService.cerrarEvaluacion(id, user);
 
     return {
@@ -497,6 +580,53 @@ export class CompetenciaController {
       'Content-Length': buffer.byteLength,
     });
 
+    res.end(buffer);
+  }
+
+  /**
+   * El Excel de una campaña: un libro con Resumen, Avance (solo la en
+   * curso), Resultados, Competencias y Objetivos, con los filtros de la
+   * pantalla de Avance. Reemplaza a elegir entre tres reportes sueltos.
+   */
+  @Get('reportes/empresa/:idEmpresaEmpleadora/campana/export-excel')
+  @ApiOperation({ summary: 'Exportar una campaña completa en Excel' })
+  async exportarCampana(
+    @AlcanceActual() alcance: Alcance,
+    @Param('idEmpresaEmpleadora', ParseIntPipe) idEmpresaEmpleadora: number,
+    @Query() filtros: ExportEmpresaQueryDto,
+    @Res() res: Response,
+  ) {
+    await this.alcances.verificar(alcance, 'empresa', idEmpresaEmpleadora);
+    // El avance se mide sobre la campaña en curso: de una cerrada no hay.
+    const enCurso = await campanaEnCurso(this.prisma, idEmpresaEmpleadora);
+    const pedida = filtros.idCampanaEvaluacion
+      ? Number(filtros.idCampanaEvaluacion)
+      : enCurso?.idCampanaEvaluacion;
+    const avance =
+      enCurso && pedida === enCurso.idCampanaEvaluacion
+        ? await this.empleados.avance({
+            idEmpresaEmpleadora,
+            idGerenciaEmpleadora: filtros.idGerenciaEmpleadora,
+            idAreaEmpleadora: filtros.idAreaEmpleadora,
+            idUnidadOcupacionalEmpleadora:
+              filtros.idUnidadOcupacionalEmpleadora,
+            idPuestoEmpleadora: filtros.idPuestoEmpleadora,
+            jefe: filtros.codigoJefe,
+            search: filtros.search,
+          } as AvanceQueryDto)
+        : null;
+    const libro = await this.competenciaService.exportarCampanaExcel(
+      idEmpresaEmpleadora,
+      filtros,
+      avance,
+    );
+    const buffer = await libro.xlsx.writeBuffer();
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="campana.xlsx"',
+      'Content-Length': buffer.byteLength,
+    });
     res.end(buffer);
   }
 

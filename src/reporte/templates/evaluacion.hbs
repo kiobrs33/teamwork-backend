@@ -55,7 +55,7 @@
             </tr>
             <tr>
               <td class="table__cell table__cell--bold">
-                Fecha de Evaluación:
+                Campaña:
               </td>
               <td class="table__cell">{{empresa.periodoEvaluacion}}</td>
             </tr>
@@ -93,6 +93,9 @@
                 class="table__cell table__cell--center table__cell--bold"
               >
                 {{resultadosTexto.evaluacionFinal}}
+                {{#unless sinEvaluar}}
+                <br /><span style="font-weight: normal">{{clasificacionFinal.nivel}}</span>
+                {{/unless}}
               </td>
             </tr>
             <tr>
@@ -110,6 +113,19 @@
         </table>
       </div>
 
+      {{!-- De dónde sale la nota de competencias: depende del modelo y de si
+            tiene jefe o gente a cargo que lo califique. --}}
+      <p style="margin: -8px 4px 12px; font-size: 11px; color: #404040">
+        {{comoSeCalcula}}
+      </p>
+
+      {{#if calibracion}}
+      <p style="margin: 0 4px 12px; font-size: 11px; color: #404040">
+        <strong>Resultado calibrado</strong> por el comité de calibración
+        ({{calibracion.texto}}). Motivo: {{calibracion.motivo}}
+      </p>
+      {{/if}}
+
       {{#unless sinEvaluar}}
       <div class="graphics">
         {{!-- <div class="graphics__item">
@@ -117,11 +133,11 @@
           <canvas id="doughnutChart" class="canvas--graphic"></canvas>
         </div> --}}
         <div class="graphics__item">
-          <h4 class="graphics__title">Resultado Evaluación de GENERAL</h4>
+          <h4 class="graphics__title">Resultado general</h4>
           <canvas id="evaluacionFinalChart" class="canvas--fig1"></canvas>
         </div>
         <div class="graphics__item">
-          <h4 class="graphics__title">Resultados de ED por Competencias</h4>
+          <h4 class="graphics__title">Competencias: quién califica qué</h4>
            <canvas id="radarChart" class="canvas--fig2"></canvas>
         </div>
       </div>
@@ -152,51 +168,59 @@
       {{/if}}
 
 
-      {{#each competenciasDetalle}}
-        <div class="table">
-          <table>
-            <thead>
-              <tr>
-                <th class="table__header">Competencia</th>
-                <th class="table__header">Autoevaluación</th>
-                <th class="table__header">Resultado Alcanzado</th>
-                <th class="table__header">Resultado Esperado</th>
-                <th class="table__header">Superavit / Oportunidad de mejora</th>
-              </tr>
-            </thead>
-            <tbody>
+      {{!-- Una sola tabla: antes cada competencia repetía la cabecera. Las
+            columnas dicen lo que puso cada uno (— = no calificó) y el
+            resultado que sale de ellas. --}}
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th class="table__header" style="width: 26%">Competencia</th>
+              <th class="table__header">Autoevaluación</th>
+              <th class="table__header">Jefe inmediato</th>
+              {{#if es180}}<th class="table__header">Subordinados</th>{{/if}}
+              <th class="table__header">Resultado</th>
+              <th class="table__header">Esperado</th>
+              <th class="table__header">Superávit / Oportunidad de mejora</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each competenciasDetalle}}
               <tr>
                 <td class="table__cell">
                   <strong>{{orden}}</strong><br> {{competencia}}
                   {{!-- El 0 de una competencia que nadie evaluó no significa
                         lo mismo que un 0 puesto por el jefe: se dice. --}}
                   {{#if noEvaluada}}
-                    <br><span style="color:#d97706; font-size:9px; font-weight:bold;">Sin evaluar · cuenta como 0</span>
+                    <br><span style="color:#b45309; font-size:10px; font-weight:bold;">Sin evaluar · cuenta como&nbsp;0</span>
+                  {{/if}}
+                  {{#if faltaJefe}}
+                    <br><span style="color:#b45309; font-size:10px; font-weight:bold;">Falta la nota del jefe · su parte cuenta 0</span>
                   {{/if}}
                 </td>
-                <td class="table__cell table__cell--center table__cell--bold">
-                  {{autoevaluacion}}%
+                <td class="table__cell table__cell--center">
+                  {{autoTexto}}
                   {{!-- La autoevaluación no puntúa; está para detectar esto:
                         el trabajador se pone 100 y el jefe le pone 20. --}}
                   {{#if brecha}}
-                    <br><span style="color:#b91c1c; font-size:9px;">Revisar · {{diferencia}} pts de diferencia</span>
+                    <br><span style="color:#b91c1c; font-size:10px;">Revisar · {{diferencia}} pts</span>
                   {{/if}}
                 </td>
+                <td class="table__cell table__cell--center">{{jefeTexto}}</td>
+                {{#if ../es180}}<td class="table__cell table__cell--center">{{subordinadosTexto}}</td>{{/if}}
                 <td class="table__cell table__cell--center table__cell--bold">
                   {{resultadoFinal}}%
                 </td>
-                <td class="table__cell table__cell--center table__cell--bold">
+                <td class="table__cell table__cell--center">
                   {{competenciaResultadoEsperado}}%
                 </td>
                 <td class="table__cell table__cell--center table__cell--bold">
                   {{#if superavit}}
-                    <span style="color:green;">+{{superavit}}%</span>
+                    <span style="color:#15803d;">+{{superavit}}%</span>
                   {{/if}}
-
                   {{#if oportunidadMejora}}
-                    <span style="color:red;">-{{oportunidadMejora}}%</span>
+                    <span style="color:#b91c1c;">-{{oportunidadMejora}}%</span>
                   {{/if}}
-
                   {{#unless superavit}}
                     {{#unless oportunidadMejora}}
                       0%
@@ -204,10 +228,16 @@
                   {{/unless}}
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
-      {{/each}}
+            {{else}}
+              <tr>
+                <td class="table__cell table__cell--center" colspan="{{#if es180}}7{{else}}6{{/if}}">
+                  Su grupo ocupacional no tiene competencias asignadas en esta campaña.
+                </td>
+              </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
 
       {{!-- <div class="table">
         <table>
@@ -288,9 +318,9 @@
             <thead>
               <tr>
                 <th class="table__header">Objetivo</th>
-                <th class="table__header">Meta Objetivo</th>
-                <th class="table__header">Meta Alcanzada</th>
-                <th class="table__header">Porcentaje Logrado</th>
+                <th class="table__header">Meta</th>
+                <th class="table__header">Logrado</th>
+                <th class="table__header">Cumplimiento</th>
               </tr>
             </thead>
             <tbody>
@@ -309,6 +339,12 @@
                     {{porcentajeLogrado}}
                   </td>
                 </tr>
+              {{else}}
+                <tr>
+                  <td colspan="4" class="table__cell table__cell--center">
+                    No tiene objetivos registrados en esta campaña.
+                  </td>
+                </tr>
               {{/each}}
               <tr>
                   <td colspan="2" class="table__cell table__cell--center">
@@ -325,12 +361,41 @@
           </table>
         </div>
 
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th class="table__header">ED. OBJETIVOS</th>
+                <th class="table__header table__header--bgcolor">
+                  {{clasificacionObjetivos.nivel}}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td
+                  class="table__cell table__cell--bgcolor table__cell--center table__cell--bold"
+                >
+                  {{resultadosTexto.objetivos}}
+                </td>
+                <td class="table__cell table__cell--center">
+                  <span>{{clasificacionObjetivos.mensaje}}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {{!-- Sin nada calificado no se dibuja (el script no corre) y quedaba
+              un recuadro vacío de media página. --}}
+        {{#unless sinEvaluar}}{{#if objetivosDetalle.length}}
         <div class="graphics">
           <div class="graphics__item">
-            <h4 class="graphics__title">Resultado Evaluación de Objetivos</h4>
+            <h4 class="graphics__title">Resultado de objetivos</h4>
             <canvas id="objetivosComparacionChart" width="700" height="400"></canvas>
           </div>
         </div>
+        {{/if}}{{/unless}}
 
         {{!-- <div class="graphics">
           <div class="graphics__item">
@@ -469,7 +534,7 @@
               {{/each}}
 
               {{!-- 🔹 Si no hay datos --}}
-              {{#unless retroalimentaciones.retroalimentacion.length}}
+              {{#unless hayPlan}}
                 <tr>
                   <td class="table__cell">
                     <br><br><br><br><br>
@@ -518,6 +583,9 @@
         </div>
       </div>
 
+      {{!-- Comentarios y firmas van juntos: las firmas quedaban solas en
+            una última página. --}}
+      <div style="break-inside: avoid">
       <div class="container">
         <h2 class="report__title">
           COMENTARIOS FINALES
@@ -534,10 +602,19 @@
             </thead>
             <tbody>
               <tr>
+                {{#if sesion}}
+                <td class="table__cell" style="white-space: pre-line;">
+                  <strong>Sesión de retroalimentación:</strong> {{sesion.fecha}}
+                  <strong>Fortalezas:</strong> {{sesion.fortalezas}}
+                  <strong>Oportunidades de mejora:</strong> {{sesion.oportunidades}}
+                  <strong>Compromisos y plan de acción:</strong> {{sesion.compromisos}}
+                </td>
+                {{else}}
                 <td class="table__cell">
                   <br><br><br><br><br>
                   <br><br><br><br><br>
                 </td>
+                {{/if}}
               </tr>
             </tbody>
           </table>
@@ -554,10 +631,17 @@
             </thead>
             <tbody>
               <tr>
+                {{#if sesion}}
+                <td class="table__cell" style="white-space: pre-line;">
+                  <strong>Respuesta:</strong> {{sesion.respuesta}}
+                  {{#if sesion.comentario}}<strong>Comentario:</strong> {{sesion.comentario}}{{/if}}
+                </td>
+                {{else}}
                 <td class="table__cell">
                   <br><br><br><br><br>
                   <br><br><br><br><br>
                 </td>
+                {{/if}}
               </tr>
             </tbody>
           </table>
@@ -576,10 +660,13 @@
           <h3 class="signatures__subtitle">FIRMA EVALUADO</h3>
         </div>
       </div>
+      </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    {{!-- Versiones fijas: sin versión, un cambio mayor de Chart.js podía
+          romper los informes de un día para otro. --}}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     {{#unless sinEvaluar}}
     <script>
       const chartData = {{{json chartData}}};
@@ -645,7 +732,10 @@
         120,
         true,
       );
-      new Chart(document.getElementById('objetivosComparacionChart'), {
+      // Sin objetivos no hay lienzo: sin esta guarda, Chart.js fallaba y
+      // tampoco se dibujaban el radar ni el anillo.
+      const lienzoObjetivos = document.getElementById('objetivosComparacionChart');
+      if (lienzoObjetivos) new Chart(lienzoObjetivos, {
         type: 'bar',
 
         data: objetivosChart,
@@ -808,7 +898,7 @@
 
               pointLabels: {
                 font: {
-                  size: 8,
+                  size: 9,
                   weight: 'bold',
                 },
                 color: '#333',
@@ -873,6 +963,9 @@ new Chart(document.getElementById('evaluacionFinalChart'), {
 
   options: {
     responsive: false,
+    // Sin esto el PDF se imprimía a mitad de la animación y el anillo de
+    // un 52 % salía como un trozo de un 10 %.
+    animation: false,
     cutout: '90%',
 
     plugins: {

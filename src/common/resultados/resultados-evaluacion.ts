@@ -175,7 +175,29 @@ export interface ConfiguracionEmpresa {
   porcentajeEvaluacionJefeCompetencia?: number | null;
   porcentajeEvaluacionSubordinadoCompetencia?: number | null;
   competenciaResultadoEsperado?: number | null;
+  /**
+   * Del evaluado, no de la empresa: no tiene jefe (la cabeza de la empresa).
+   * En 180° su nota de competencias es la de sus subordinados al 100 %, igual
+   * que quien no tiene gente a cargo queda con la del jefe al 100 %. Antes
+   * contaba «jefe 70 % + subordinados 30 %» con la parte del jefe en 0, y un
+   * gerente general no podía pasar de 30. Ver `evaluadoSinJefe`.
+   */
+  evaluadoSinJefe?: boolean;
 }
+
+/**
+ * ¿El evaluado no tiene jefe en esta campaña? En curso, se mira la
+ * estructura de hoy; en una cerrada, la foto que guardó cada evaluación al
+ * iniciarse (`codigoJefeEvaluado`), porque el jefe pudo cambiar después.
+ */
+export const evaluadoSinJefe = (datos: {
+  cerrada: boolean;
+  codigoJefeActual: string | null | undefined;
+  fotosJefe: (string | null | undefined)[];
+}): boolean =>
+  datos.cerrada && datos.fotosJefe.length
+    ? datos.fotosJefe.every((c) => !c)
+    : !datos.codigoJefeActual;
 
 /**
  * Los pesos de la empresa en tanto por uno.
@@ -242,9 +264,13 @@ export const calcularResultados = (
 
   const tieneSubordinados = notas.evaluacionesSubordinados.length > 0;
 
+  // En 180°: sin subordinados que califiquen, solo el jefe; sin jefe (la
+  // cabeza de la empresa), solo los subordinados.
   const competencias =
     empresa.modeloEmpresa === '180' && tieneSubordinados
-      ? jefe * peso.jefe + subordinados * peso.subordinado
+      ? empresa.evaluadoSinJefe
+        ? subordinados
+        : jefe * peso.jefe + subordinados * peso.subordinado
       : jefe;
 
   const objetivos = promedio(notas.objetivos);
@@ -311,7 +337,10 @@ export const resultadoDeCompetenciasAsignadas = (
   );
 
   return {
-    resultado: redondear(promedio(porCompetencia.map((r) => r ?? 0)), decimales),
+    resultado: redondear(
+      promedio(porCompetencia.map((r) => r ?? 0)),
+      decimales,
+    ),
     /** Cuántas le tocan. 0 = su unidad todavía no tiene ninguna asignada. */
     asignadas: competenciasAsignadas.length,
     /** Tiene competencias asignadas pero nadie ha evaluado ninguna. */
@@ -382,8 +411,18 @@ export const hayBrecha = (
  * Los cortes son los del informe individual; estaban solo ahí y son parte de
  * la misma regla de negocio que el cálculo.
  */
-export const clasificarDesempeno = (resultado: number) => {
-  if (resultado >= 105) {
+/**
+ * Nivel de desempeño de la nota de competencias (bandas de la guía de
+ * FONAFE). Con la escala **LIKERT** el máximo posible es 100 (todos los
+ * comportamientos en el paso más alto), así que ahí "Sobresaliente" es 100:
+ * con el umbral de 105 era inalcanzable. En MANUAL (hasta 110) sigue en 105.
+ */
+export const clasificarDesempeno = (
+  resultado: number,
+  escala?: string | null,
+) => {
+  const umbralSobresaliente = escala === 'LIKERT' ? 100 : 105;
+  if (resultado >= umbralSobresaliente) {
     return {
       nivel: 'Sobresaliente',
       mensaje: 'Siempre demuestra evidencias de todos los comportamientos.',
@@ -414,6 +453,108 @@ export const clasificarDesempeno = (resultado: number) => {
   return {
     nivel: 'Necesita Mejora',
     mensaje: 'Nunca evidencia los comportamientos.',
+  };
+};
+
+/**
+ * Bandas de la guía FONAFE para objetivos y para el resultado final
+ * (Sobresaliente ≥105 · Altamente efectivo 95–104 · Efectivo 75–94 ·
+ * Parcialmente efectivo 50–74 · Necesita mejora 0–49). El cumplimiento de
+ * objetivos puede pasar de 100, así que aquí el umbral es siempre 105.
+ */
+const nivelPorBanda = (resultado: number) =>
+  resultado >= 105
+    ? 'Sobresaliente'
+    : resultado >= 95
+      ? 'Altamente Efectivo'
+      : resultado >= 75
+        ? 'Efectivo'
+        : resultado >= 50
+          ? 'Parcialmente Efectivo'
+          : 'Necesita Mejora';
+
+/** Textos de la escala de objetivos de la guía (p. 22). */
+const MENSAJE_OBJETIVOS: Record<string, string> = {
+  Sobresaliente:
+    'Supera de manera consistente los objetivos establecidos, con resultados excepcionales.',
+  'Altamente Efectivo': 'Logra el cumplimiento de todos sus objetivos.',
+  Efectivo: 'Cumple la mayoría de sus objetivos tal como fueron planteados.',
+  'Parcialmente Efectivo':
+    'Cumple parcialmente sus objetivos: algunas metas no se alcanzan o quedan incompletas.',
+  'Necesita Mejora': 'No cumple la mayoría de los objetivos establecidos.',
+};
+
+export const clasificarObjetivos = (resultado: number) => {
+  const nivel = nivelPorBanda(resultado);
+  return { nivel, mensaje: MENSAJE_OBJETIVOS[nivel] };
+};
+
+const RANGO: Record<string, string> = {
+  Sobresaliente: 'De 105 % a más',
+  'Altamente Efectivo': 'De 95 % a 104 %',
+  Efectivo: 'De 75 % a 94 %',
+  'Parcialmente Efectivo': 'De 50 % a 74 %',
+  'Necesita Mejora': 'De 0 % a 49 %',
+};
+
+/** Nivel del resultado final (competencias + objetivos, ya ponderados). */
+export const clasificarResultadoFinal = (resultado: number) => {
+  const nivel = nivelPorBanda(resultado);
+  return {
+    nivel,
+    mensaje: `${RANGO[nivel]}. El nivel esperado es Efectivo o superior.`,
+  };
+};
+
+/** Ajuste de calibración de un trabajador (ver `AjusteCalibracion`). */
+export interface AjusteDeCalibracion {
+  competencias: number | null;
+  objetivos: number | null;
+  competenciasOriginal: number | null;
+  objetivosOriginal: number | null;
+  motivo: string;
+}
+
+/**
+ * Aplica el ajuste de calibración a unos resultados ya calculados: el comité
+ * reemplaza el resultado de competencias y/o de objetivos, y el final se
+ * recalcula con los pesos de la campaña. Es la ÚNICA forma de aplicarlo: la
+ * usan el PDF, el historial, el Excel de resultados y la calibración, para que
+ * todos den la misma cifra.
+ */
+export const aplicarCalibracion = <
+  R extends {
+    resultadoCompetencias: number;
+    promedioObjetivos: number;
+    resultadoFinal: number;
+    competenciasSinEvaluar: boolean;
+    objetivosSinEvaluar: boolean;
+    sinEvaluar: boolean;
+  },
+>(
+  resultados: R,
+  ajuste: AjusteDeCalibracion | null | undefined,
+  empresa: ConfiguracionEmpresa,
+): R => {
+  if (!ajuste) return resultados;
+  const peso = pesosDeEmpresa(empresa);
+  const competencias = ajuste.competencias ?? resultados.resultadoCompetencias;
+  const objetivos = ajuste.objetivos ?? resultados.promedioObjetivos;
+  const competenciasSinEvaluar =
+    ajuste.competencias === null && resultados.competenciasSinEvaluar;
+  const objetivosSinEvaluar =
+    ajuste.objetivos === null && resultados.objetivosSinEvaluar;
+  return {
+    ...resultados,
+    resultadoCompetencias: redondear(competencias, 2),
+    promedioObjetivos: redondear(objetivos, 2),
+    resultadoFinal: redondear(
+      competencias * peso.competencias + objetivos * peso.objetivos,
+      2,
+    ),
+    competenciasSinEvaluar,
+    objetivosSinEvaluar,
+    sinEvaluar: competenciasSinEvaluar && objetivosSinEvaluar,
   };
 };
 

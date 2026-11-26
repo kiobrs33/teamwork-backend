@@ -1,3 +1,4 @@
+import { aplicarCabecera } from 'src/common/excel/estilo-excel';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   CAMPANA_CERRADA,
@@ -8,6 +9,7 @@ import {
 } from 'src/common/resultados/campana';
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -41,10 +43,87 @@ import {
   TIPO_POR_ORIGEN,
   redondear,
   resultadoDeCompetenciasAsignadas,
+  resultadoDeCompetencia,
   resultadoDeObjetivo,
+  clasificarDesempeno,
+  clasificarResultadoFinal,
+  promedio,
+  aplicarCalibracion,
+  pesosDeEmpresa,
+  evaluadoSinJefe,
   type ConfiguracionEmpresa,
   type NotasDeEvaluado,
 } from 'src/common/resultados/resultados-evaluacion';
+
+/** Lo que llega de una competencia, con los textos recortados. */
+type CompetenciaEntrada = {
+  codigo?: string;
+  titulo?: string;
+  nombre?: string;
+  niveles?: {
+    nivel: number;
+    items: { enunciado: string; idCompetenciaNivelItem?: number }[];
+  }[];
+};
+
+/**
+ * Recorta los textos: el `ValidationPipe` global no transforma, así que el
+ * `@Transform` del DTO solo sirve para validar. Sin esto " A01" y "A01"
+ * serían dos códigos.
+ */
+const normalizarCompetencia = <T extends CompetenciaEntrada>(dto: T): T => ({
+  ...dto,
+  ...(dto.codigo !== undefined && { codigo: String(dto.codigo).trim() }),
+  ...(dto.titulo !== undefined && { titulo: String(dto.titulo).trim() }),
+  ...(dto.nombre !== undefined && { nombre: String(dto.nombre).trim() }),
+  ...(dto.niveles && {
+    niveles: dto.niveles.map((n) => ({
+      ...n,
+      items: n.items.map((i) => ({
+        ...i,
+        enunciado: String(i.enunciado ?? '').trim(),
+      })),
+    })),
+  }),
+});
+
+/** Un número de nivel no se repite dentro de la competencia. */
+const exigirNivelesUnicos = (niveles: { nivel: number }[] = []) => {
+  const numeros = niveles.map((n) => Number(n.nivel));
+  if (new Set(numeros).size !== numeros.length) {
+    throw new BadRequestException('Hay niveles repetidos.');
+  }
+};
+
+/** Lo que usa el Excel de la campaña de `EmpleadoService.avance`. */
+export interface AvanceParaExcel {
+  resumen: {
+    trabajadores: number;
+    porEstado: Record<string, number>;
+    cumplimiento: number | null;
+    items: {
+      compTotal: number;
+      compJefe: number;
+      compAuto: number;
+      objTotal: number;
+      objHechas: number;
+    };
+  };
+  trabajadores: {
+    codigoEmpleado: string;
+    documento?: string | null;
+    nombres: string;
+    apellidos: string;
+    gerencia: string | null;
+    area: string | null;
+    unidad: string | null;
+    puesto: string | null;
+    jefe: string | null;
+    competencias: { total: number; hechasJefe: number; hechasAuto: number };
+    objetivos: { total: number; hechas: number };
+    estadoAvance: string;
+  }[];
+}
 
 @Injectable()
 export class CompetenciaService {
@@ -54,14 +133,17 @@ export class CompetenciaService {
 
   /**
    * Catálogo de competencias en Excel, con los mismos filtros que el listado.
-   * La hoja "Competencias" tiene las columnas del importador (una fila por
-   * enunciado), así que el archivo vuelve a entrar tal cual por
+   * Las hojas "Competencias" y "Comportamientos" son las de la plantilla de
+   * importación, así que el archivo vuelve a entrar tal cual por
    * `POST /competencia/import`. "Asignaciones" dice qué nivel pide cada unidad
    * ocupacional, que no se veía en ningún reporte.
    */
   async exportCatalogoExcel(query: CompetenciaQueryDto) {
     try {
-      const { data: competencias } = await this.findAll({ ...query, limit: 0 });
+      const { data: competencias } = await this.findAll(
+        { ...query, limit: 0 },
+        { completo: true },
+      );
       const ids = competencias.map((c) => c.idCompetencia);
 
       const asignaciones = ids.length
@@ -78,7 +160,9 @@ export class CompetenciaService {
                   idUnidadOcupacionalEmpleadora: true,
                   descripcion: true,
                   empresaEmpleadora: { select: { nombreEmpresa: true } },
-                  _count: { select: { empleados: { where: { estado: true } } } },
+                  _count: {
+                    select: { empleados: { where: { estado: true } } },
+                  },
                 },
               },
             },
@@ -89,14 +173,26 @@ export class CompetenciaService {
           })
         : [];
 
-      const filas = competencias.flatMap((c: any) =>
+      // Se exporta desde el espacio de una empresa (el front manda la
+      // activa): una columna «Empresa» repetiría el mismo nombre en cada
+      // fila. Solo aparece si el archivo mezcla varias empresas.
+      const variasEmpresas =
+        !query.idEmpresaEmpleadora &&
+        new Set(
+          competencias.map(
+            (c: { idEmpresaEmpleadora: number }) => c.idEmpresaEmpleadora,
+          ),
+        ).size > 1;
+      const columnaEmpresa = variasEmpresas
+        ? [{ header: 'Empresa', key: 'empresa', width: 28 }]
+        : [];
+
+      // Mismo formato que la plantilla de importación (dos hojas unidas por
+      // el código), así el archivo vuelve a entrar tal cual.
+      const comportamientos = competencias.flatMap((c: any) =>
         c.niveles.flatMap((n: any) =>
           n.items.map((i: any) => ({
             codigo: c.codigo,
-            titulo: c.titulo,
-            nombre: c.nombre,
-            idEmpresaEmpleadora: c.idEmpresaEmpleadora,
-            empresa: c.empresaEmpleadora?.nombreEmpresa,
             nivel: n.nivel,
             secuencial: i.secuencial,
             enunciado: i.enunciado,
@@ -108,31 +204,71 @@ export class CompetenciaService {
         {
           nombre: 'Competencias',
           columnas: [
-            { header: 'codigo', key: 'codigo', tipo: 'texto', width: 14 },
-            { header: 'titulo', key: 'titulo', width: 28 },
-            { header: 'nombre', key: 'nombre', width: 36 },
-            { header: 'idEmpresaEmpleadora', key: 'idEmpresaEmpleadora' },
-            { header: 'nivel', key: 'nivel', width: 8 },
-            { header: 'enunciado', key: 'enunciado', width: 60 },
-            { header: 'Empresa', key: 'empresa', width: 28 },
+            {
+              header: 'Código',
+              key: 'codigo',
+              tipo: 'texto',
+              width: 14,
+              breve: 'Único en la empresa',
+            },
+            {
+              header: 'Título',
+              key: 'titulo',
+              width: 34,
+              breve: 'Hasta 150 caracteres',
+            },
+            {
+              header: 'Definición',
+              key: 'nombre',
+              width: 60,
+              breve: 'Qué es la competencia',
+            },
+            ...columnaEmpresa,
+          ],
+          filas: competencias.map((c: any) => ({
+            codigo: c.codigo,
+            titulo: c.titulo,
+            nombre: c.nombre,
+            empresa: c.empresaEmpleadora?.nombreEmpresa,
+          })),
+        },
+        {
+          nombre: 'Comportamientos',
+          columnas: [
+            {
+              header: 'Código',
+              key: 'codigo',
+              tipo: 'texto',
+              width: 14,
+              breve: 'El de la hoja «Competencias»',
+            },
+            { header: 'Nivel', key: 'nivel', width: 10, breve: 'De 1 a 10' },
+            {
+              header: 'Comportamiento',
+              key: 'enunciado',
+              width: 70,
+              breve: 'Uno por fila',
+            },
             { header: 'Orden', key: 'secuencial', width: 8 },
           ],
-          filas,
+          filas: comportamientos,
         },
         {
           nombre: 'Asignaciones',
           columnas: [
-            { header: 'Empresa', key: 'empresa', width: 28 },
-            { header: 'ID unidad', key: 'idUnidad' },
-            { header: 'Unidad ocupacional', key: 'unidad', width: 30 },
-            { header: 'Trabajadores en la unidad', key: 'trabajadores' },
+            ...columnaEmpresa,
+            { header: 'ID grupo ocupacional', key: 'idUnidad' },
+            { header: 'Grupo ocupacional', key: 'unidad', width: 30 },
+            { header: 'Trabajadores en el grupo', key: 'trabajadores' },
             { header: 'Código competencia', key: 'codigo', tipo: 'texto' },
             { header: 'Competencia', key: 'competencia', width: 28 },
             { header: 'Nivel requerido', key: 'nivel' },
           ],
           filas: asignaciones.map((a) => ({
-            empresa: a.unidadOcupacionalEmpleadora.empresaEmpleadora.nombreEmpresa,
-            idUnidad: a.unidadOcupacionalEmpleadora.idUnidadOcupacionalEmpleadora,
+            empresa:
+              a.unidadOcupacionalEmpleadora.empresaEmpleadora.nombreEmpresa,
+            idUnidad:
+              a.unidadOcupacionalEmpleadora.idUnidadOcupacionalEmpleadora,
             unidad: a.unidadOcupacionalEmpleadora.descripcion,
             trabajadores: a.unidadOcupacionalEmpleadora._count.empleados,
             codigo: a.competencia.codigo,
@@ -146,17 +282,314 @@ export class CompetenciaService {
     }
   }
 
-  async findAll({
-    page,
-    limit,
-    search,
-    idCompetencia,
-    codigo,
-    titulo,
-    nombreEmpresaEmpleadora,
-    idEmpresaEmpleadora,
-    ruc,
-  }: CompetenciaQueryDto) {
+  /**
+   * El código identifica la competencia en la empresa (importación,
+   * reportes, hoja de asignaciones): no se repite. Compara sin mayúsculas.
+   */
+  private async exigirCodigoLibre(
+    tx: Prisma.TransactionClient | PrismaService,
+    idEmpresa: number,
+    codigo: string,
+    excluirId?: number,
+  ) {
+    const otra = await tx.competencia.findFirst({
+      where: {
+        estado: true,
+        idEmpresaEmpleadora: idEmpresa,
+        codigo: { equals: codigo, mode: 'insensitive' },
+        ...(excluirId && { idCompetencia: { not: excluirId } }),
+      },
+      select: { titulo: true },
+    });
+    if (otra) {
+      throw new ConflictException(
+        `El código ${codigo} ya lo usa la competencia «${otra.titulo}» en esta empresa.`,
+      );
+    }
+  }
+
+  /**
+   * Qué arrastra eliminar una competencia (no escribe): grupos ocupacionales
+   * que la tienen asignada, cuántos trabajadores la tienen en su evaluación y
+   * cuántas evaluaciones abiertas y notas se anularían.
+   */
+  /**
+   * Qué pasaría con las evaluaciones EN CURSO si se guarda esta edición (no
+   * escribe). Empareja los comportamientos con la misma regla que `update`
+   * (por id; sin id, por texto idéntico) y, por cada nivel, cuenta:
+   * evaluaciones abiertas, las completas que volverían a quedar pendientes
+   * (se agrega un comportamiento) y las calificaciones que dejarían de contar
+   * (se quita un comportamiento ya calificado). Los niveles que se quitan
+   * estando asignados a un grupo se informan aparte: `update` los rechaza.
+   * Antes se editaba en plena campaña sin saber nada de esto.
+   */
+  async impactoEdicion(id: number, entrada: UpdateCompetenciaDto) {
+    const dto = normalizarCompetencia(entrada);
+    const nivelesActuales = await this.prisma.competenciaNivel.findMany({
+      where: { idCompetencia: id, estado: true },
+      include: {
+        items: {
+          where: { estado: true },
+          select: { idCompetenciaNivelItem: true, enunciado: true },
+        },
+      },
+    });
+    const enviados = dto.niveles ?? [];
+    const numerosEnviados = new Set(enviados.map((n) => Number(n.nivel)));
+
+    const nivelesBloqueados: { nivel: number; grupos: string[] }[] = [];
+    for (const n of nivelesActuales.filter(
+      (x) => !numerosEnviados.has(x.nivel),
+    )) {
+      const asignados =
+        await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+          where: {
+            idCompetenciaNivel: n.idCompetenciaNivel,
+            unidadOcupacionalEmpleadora: { estado: true },
+          },
+          select: {
+            unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+          },
+        });
+      if (asignados.length)
+        nivelesBloqueados.push({
+          nivel: n.nivel,
+          grupos: asignados.map(
+            (a) => a.unidadOcupacionalEmpleadora.descripcion,
+          ),
+        });
+    }
+
+    const porNivel: {
+      nivel: number;
+      agregados: number;
+      quitados: number;
+      reescritos: number;
+      evaluacionesEnCurso: number;
+      completasQueSeReabren: number;
+      calificacionesQueDejanDeContar: number;
+    }[] = [];
+
+    for (const nivelDto of enviados) {
+      const actual = nivelesActuales.find(
+        (n) => n.nivel === Number(nivelDto.nivel),
+      );
+      if (!actual) continue; // nivel nuevo: nadie lo evalúa todavía
+      const disponibles = new Map(
+        actual.items.map((i) => [i.idCompetenciaNivelItem, i]),
+      );
+      const conservados = new Set<number>();
+      let agregados = 0;
+      let reescritos = 0;
+      for (const item of nivelDto.items) {
+        const idEnviado = item.idCompetenciaNivelItem
+          ? Number(item.idCompetenciaNivelItem)
+          : undefined;
+        const par = idEnviado
+          ? disponibles.get(idEnviado)
+          : actual.items.find(
+              (i) =>
+                !conservados.has(i.idCompetenciaNivelItem) &&
+                i.enunciado === item.enunciado,
+            );
+        if (!par) {
+          agregados += 1;
+          continue;
+        }
+        conservados.add(par.idCompetenciaNivelItem);
+        if (par.enunciado !== item.enunciado) reescritos += 1;
+      }
+      const idsQuitados = actual.items
+        .map((i) => i.idCompetenciaNivelItem)
+        .filter((i) => !conservados.has(i));
+      if (!agregados && !idsQuitados.length && !reescritos) continue;
+
+      const abiertas = await this.prisma.evaluacionCompetencia.findMany({
+        where: {
+          idCompetenciaNivel: actual.idCompetenciaNivel,
+          estado: true,
+          estadoEvaluacion: 'PROCESO',
+        },
+        select: {
+          itemsEvaluados: {
+            where: { estado: true },
+            select: { idCompetenciaNivelItem: true, calificacion: true },
+          },
+        },
+      });
+      const vigentes = new Set(
+        actual.items.map((i) => i.idCompetenciaNivelItem),
+      );
+      const quitados = new Set(idsQuitados);
+      let completas = 0;
+      let notas = 0;
+      for (const ev of abiertas) {
+        const calificados = new Set(
+          ev.itemsEvaluados
+            .filter((i) => i.calificacion !== null)
+            .map((i) => i.idCompetenciaNivelItem),
+        );
+        const completa =
+          vigentes.size > 0 && [...vigentes].every((i) => calificados.has(i));
+        if (completa && agregados > 0) completas += 1;
+        notas += [...calificados].filter((i) => quitados.has(i)).length;
+      }
+      porNivel.push({
+        nivel: actual.nivel,
+        agregados,
+        quitados: idsQuitados.length,
+        reescritos,
+        evaluacionesEnCurso: abiertas.length,
+        completasQueSeReabren: completas,
+        calificacionesQueDejanDeContar: notas,
+      });
+    }
+
+    const total = (k: keyof (typeof porNivel)[number]) =>
+      porNivel.reduce((t, n) => t + Number(n[k]), 0);
+    const completasQueSeReabren = total('completasQueSeReabren');
+    const calificacionesQueDejanDeContar = total(
+      'calificacionesQueDejanDeContar',
+    );
+    return {
+      porNivel,
+      nivelesBloqueados,
+      evaluacionesEnCurso: total('evaluacionesEnCurso'),
+      completasQueSeReabren,
+      calificacionesQueDejanDeContar,
+      // Preguntar solo si alguien pierde algo: notas que dejan de contar o
+      // evaluaciones terminadas que vuelven a quedar pendientes.
+      requiereConfirmacion:
+        completasQueSeReabren > 0 || calificacionesQueDejanDeContar > 0,
+    };
+  }
+
+  async impactoEliminacion(id: number) {
+    const asignaciones =
+      await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+        where: {
+          idCompetencia: id,
+          unidadOcupacionalEmpleadora: { estado: true },
+        },
+        select: {
+          unidadOcupacionalEmpleadora: {
+            select: {
+              descripcion: true,
+              _count: { select: { empleados: { where: { estado: true } } } },
+            },
+          },
+        },
+      });
+    const abiertas = await this.prisma.evaluacionCompetencia.findMany({
+      where: { idCompetencia: id, estado: true, estadoEvaluacion: 'PROCESO' },
+      select: {
+        _count: {
+          select: {
+            itemsEvaluados: {
+              where: { estado: true, calificacion: { not: null } },
+            },
+          },
+        },
+      },
+    });
+    return {
+      grupos: asignaciones.map(
+        (a) => a.unidadOcupacionalEmpleadora.descripcion,
+      ),
+      trabajadores: asignaciones.reduce(
+        (t, a) => t + a.unidadOcupacionalEmpleadora._count.empleados,
+        0,
+      ),
+      evaluacionesAbiertas: abiertas.length,
+      notasPuestas: abiertas.reduce((t, e) => t + e._count.itemsEvaluados, 0),
+    };
+  }
+
+  /**
+   * Estadísticas de cada competencia de una empresa en la campaña en curso,
+   * para la tabla del catálogo: a cuántos trabajadores les toca (activos o
+   * suspendidos de los grupos donde está asignada), cuántos ya tienen nota y
+   * el promedio. La nota es la oficial (`resultadoDeCompetencia`, la misma
+   * del informe y la calibración), así que el promedio cuadra con los
+   * reportes.
+   */
+  async estadisticasDeCatalogo(idEmpresaEmpleadora: number) {
+    const [asignaciones, porUnidad, resultados] = await Promise.all([
+      this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+        where: {
+          unidadOcupacionalEmpleadora: { estado: true, idEmpresaEmpleadora },
+          competencia: { estado: true, idEmpresaEmpleadora },
+        },
+        select: { idCompetencia: true, idUnidadOcupacionalEmpleadora: true },
+      }),
+      this.prisma.empleado.groupBy({
+        by: ['idUnidadOcupacionalEmpleadora'],
+        where: {
+          idEmpresaEmpleadora,
+          estado: true,
+          situacion: { not: 'CESADO' },
+        },
+        _count: { _all: true },
+      }),
+      this.construirResultadosEmpresa(idEmpresaEmpleadora),
+    ]);
+    const trabajadoresDeUnidad = new Map(
+      porUnidad.map((u) => [u.idUnidadOcupacionalEmpleadora, u._count._all]),
+    );
+    const trabajadores = new Map<number, number>();
+    for (const a of asignaciones) {
+      trabajadores.set(
+        a.idCompetencia,
+        (trabajadores.get(a.idCompetencia) ?? 0) +
+          (trabajadoresDeUnidad.get(a.idUnidadOcupacionalEmpleadora) ?? 0),
+      );
+    }
+    const escala = resultados.empresa?.tipoCalificacionCompetencia;
+    const ids = new Set([
+      ...trabajadores.keys(),
+      ...resultados.notasPorCompetencia.keys(),
+    ]);
+    return {
+      campana: resultados.campana
+        ? { nombre: resultados.campana.nombre }
+        : null,
+      competencias: [...ids].map((idCompetencia) => {
+        const notas = resultados.notasPorCompetencia.get(idCompetencia) ?? [];
+        const media = notas.length ? redondear(promedio(notas), 1) : null;
+        return {
+          idCompetencia,
+          trabajadores: trabajadores.get(idCompetencia) ?? 0,
+          conNota: notas.length,
+          promedio: media,
+          nivel:
+            media === null ? null : clasificarDesempeno(media, escala).nivel,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Listado de competencias. Para la tabla (`completo` falso) no trae los
+   * enunciados —solo se contaban—: trae los niveles, `totalComportamientos` y
+   * `grupos` (los grupos ocupacionales donde está asignada). La exportación
+   * pide `completo` para escribir cada enunciado.
+   */
+  async findAll(
+    {
+      page,
+      limit,
+      search,
+      idCompetencia,
+      codigo,
+      titulo,
+      nombreEmpresaEmpleadora,
+      idEmpresaEmpleadora,
+      ruc,
+      sortBy,
+      sortOrder,
+    }: CompetenciaQueryDto,
+    { completo = false }: { completo?: boolean } = {},
+  ) {
     try {
       // Los filtros de empresa se arman juntos: si se escribieran como dos
       // spreads de `empresaEmpleadora`, el segundo pisaría al primero.
@@ -218,21 +651,56 @@ export class CompetenciaService {
         niveles: {
           where: { estado: true },
           orderBy: { nivel: 'asc' },
-          include: {
-            items: {
-              where: { estado: true },
-              orderBy: { secuencial: 'asc' },
+          include: completo
+            ? {
+                items: {
+                  where: { estado: true },
+                  orderBy: { secuencial: 'asc' },
+                },
+              }
+            : { _count: { select: { items: { where: { estado: true } } } } },
+        },
+        ...(!completo && {
+          unidadOcupacionalCompetenciaNivels: {
+            where: { unidadOcupacionalEmpleadora: { estado: true } },
+            select: {
+              unidadOcupacionalEmpleadora: { select: { descripcion: true } },
             },
           },
-        },
+        }),
       };
+      const orderBy: Prisma.CompetenciaOrderByWithRelationInput[] = sortBy
+        ? [
+            { [sortBy]: sortOrder === 'desc' ? 'desc' : 'asc' },
+            { idCompetencia: 'asc' },
+          ]
+        : [{ fechaCreacion: 'desc' }];
+      // Para la tabla: conteos y grupos en vez de los enunciados.
+      const resumir = (lista: any[]) =>
+        completo
+          ? lista
+          : lista.map(
+              ({ niveles, unidadOcupacionalCompetenciaNivels, ...c }) => ({
+                ...c,
+                niveles: niveles.map((n: any) => ({
+                  idCompetenciaNivel: n.idCompetenciaNivel,
+                  nivel: n.nivel,
+                  comportamientos: n._count.items,
+                })),
+                totalComportamientos: niveles.reduce(
+                  (t: number, n: any) => t + n._count.items,
+                  0,
+                ),
+                grupos: (unidadOcupacionalCompetenciaNivels ?? [])
+                  .map((a: any) => a.unidadOcupacionalEmpleadora.descripcion)
+                  .sort((a: string, b: string) => a.localeCompare(b)),
+              }),
+            );
 
       if (Number(limit) === 0) {
-        const data = await this.prisma.competencia.findMany({
-          where,
-          include,
-          orderBy: { fechaCreacion: 'desc' },
-        });
+        const data = resumir(
+          await this.prisma.competencia.findMany({ where, include, orderBy }),
+        );
 
         return {
           data,
@@ -249,16 +717,17 @@ export class CompetenciaService {
       const safePage = Math.max(Number(page) || 1, 1);
       const skip = (safePage - 1) * safeLimit;
 
-      const [total, data] = await Promise.all([
+      const [total, filas] = await Promise.all([
         this.prisma.competencia.count({ where }),
         this.prisma.competencia.findMany({
           where,
           skip,
           take: safeLimit,
           include,
-          orderBy: { fechaCreacion: 'desc' },
+          orderBy,
         }),
       ]);
+      const data = resumir(filas);
 
       return {
         data,
@@ -282,9 +751,18 @@ export class CompetenciaService {
     try {
       const competencia = await this.prisma.competencia.findFirst({
         where: { idCompetencia: id, estado: true },
+        // Solo lo vigente: con los ítems retirados, el formulario de edición
+        // los mostraba y al guardar volvían a entrar como nuevos.
         include: {
           niveles: {
-            include: { items: true },
+            where: { estado: true },
+            orderBy: { nivel: 'asc' },
+            include: {
+              items: {
+                where: { estado: true },
+                orderBy: { secuencial: 'asc' },
+              },
+            },
           },
         },
       });
@@ -304,12 +782,22 @@ export class CompetenciaService {
   // ======================================================
   //                      UPDATE
   // ======================================================
-  async update(id: number, user: AuthUser, dto: UpdateCompetenciaDto) {
+  async update(id: number, user: AuthUser, entrada: UpdateCompetenciaDto) {
+    const dto = normalizarCompetencia(entrada);
     const competencia = await this.prisma.competencia.findUnique({
       where: { idCompetencia: id, estado: true },
     });
 
     if (!competencia) throw new NotFoundException('Competencia no encontrada');
+
+    if (dto.codigo !== undefined || dto.idEmpresaEmpleadora !== undefined) {
+      await this.exigirCodigoLibre(
+        this.prisma,
+        Number(dto.idEmpresaEmpleadora ?? competencia.idEmpresaEmpleadora),
+        dto.codigo ?? competencia.codigo,
+        id,
+      );
+    }
 
     if (!dto.niveles || dto.niveles.length === 0) {
       throw new BadRequestException('niveles no puede estar vacío');
@@ -356,18 +844,20 @@ export class CompetenciaService {
           (n) => n.estado && !nivelesEnviados.has(n.nivel),
         );
         if (nivelesQueSeRetiran.length) {
-          const asignados = await tx.unidadOcupacionalCompetenciaNivel.findMany({
-            where: {
-              idCompetenciaNivel: {
-                in: nivelesQueSeRetiran.map((n) => n.idCompetenciaNivel),
+          const asignados = await tx.unidadOcupacionalCompetenciaNivel.findMany(
+            {
+              where: {
+                idCompetenciaNivel: {
+                  in: nivelesQueSeRetiran.map((n) => n.idCompetenciaNivel),
+                },
+                unidadOcupacionalEmpleadora: { estado: true },
               },
-              unidadOcupacionalEmpleadora: { estado: true },
+              select: {
+                competenciaNivel: { select: { nivel: true } },
+                unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+              },
             },
-            select: {
-              competenciaNivel: { select: { nivel: true } },
-              unidadOcupacionalEmpleadora: { select: { descripcion: true } },
-            },
-          });
+          );
           if (asignados.length) {
             const detalle = asignados
               .map(
@@ -376,7 +866,7 @@ export class CompetenciaService {
               )
               .join(', ');
             throw new BadRequestException(
-              `No se puede quitar un nivel asignado a unidades ocupacionales (${detalle}). Reasigna esas unidades a otro nivel primero.`,
+              `No se puede quitar un nivel asignado a grupos ocupacionales (${detalle}). Reasigne esos grupos a otro nivel primero.`,
             );
           }
         }
@@ -419,14 +909,17 @@ export class CompetenciaService {
           // enunciado que nadie calificó.
           // Sin id (clientes de la API que no lo mandan) solo se reconoce el
           // ítem si el texto es idéntico; si no, es un ítem nuevo.
-          const emparejar = (itemDto: { idCompetenciaNivelItem?: number; enunciado: string }) => {
+          const emparejar = (itemDto: {
+            idCompetenciaNivelItem?: number;
+            enunciado: string;
+          }) => {
             const idEnviado = itemDto.idCompetenciaNivelItem
               ? Number(itemDto.idCompetenciaNivelItem)
               : undefined;
             if (idEnviado) {
               if (conservados.has(idEnviado)) {
                 throw new BadRequestException(
-                  `El ítem ${idEnviado} del nivel ${nivelDto.nivel} está repetido.`,
+                  `El comportamiento ${idEnviado} del nivel ${nivelDto.nivel} está repetido.`,
                 );
               }
               return disponibles.get(idEnviado);
@@ -670,8 +1163,15 @@ export class CompetenciaService {
   // ======================================================
   async createConDetalles(
     user: AuthUser,
-    dto: CreateCompetenciaNivelesItemsDto,
+    entrada: CreateCompetenciaNivelesItemsDto,
   ) {
+    const dto = normalizarCompetencia(entrada);
+    exigirNivelesUnicos(dto.niveles);
+    await this.exigirCodigoLibre(
+      this.prisma,
+      Number(dto.idEmpresaEmpleadora),
+      dto.codigo,
+    );
     try {
       return await this.prisma.$transaction(async (tx) => {
         const nueva = await tx.competencia.create({
@@ -714,12 +1214,65 @@ export class CompetenciaService {
   // ======================================================
   //       IMPORTAR MUCHAS COMPETENCIAS COMPLETAS
   // ======================================================
-  async importData(user: AuthUser, data: CreateCompetenciaNivelesItemsDto[]) {
+  /**
+   * Importa competencias completas (ya agrupadas por código en el front).
+   * Todo o nada: una con niveles repetidos o un código repetido en el archivo
+   * frena la carga con el número de cada una (`[i] …`). Las que ya existen
+   * en la empresa (mismo código) **se omiten**, como en la estructura: así el
+   * Excel de «Exportar» se puede volver a subir sin duplicar el catálogo.
+   */
+  async importData(
+    user: AuthUser,
+    entrada: CreateCompetenciaNivelesItemsDto[],
+  ) {
+    const data = entrada.map((c) => normalizarCompetencia(c));
+    const problemas: string[] = [];
+    const vistos = new Map<string, number>();
+    data.forEach((c, i) => {
+      const numeros = c.niveles.map((n) => Number(n.nivel));
+      if (new Set(numeros).size !== numeros.length)
+        problemas.push(`[${i}] La competencia ${c.codigo} repite un nivel.`);
+      const clave = `${c.idEmpresaEmpleadora}|${c.codigo.toLowerCase()}`;
+      if (vistos.has(clave))
+        problemas.push(
+          `[${i}] El código ${c.codigo} se repite en el archivo con otro título.`,
+        );
+      else vistos.set(clave, i);
+    });
+    if (problemas.length) {
+      throw new BadRequestException({
+        message: 'Revise las competencias del archivo.',
+        errors: problemas,
+      });
+    }
+
+    const existentes = await this.prisma.competencia.findMany({
+      where: {
+        estado: true,
+        idEmpresaEmpleadora: {
+          in: [...new Set(data.map((c) => Number(c.idEmpresaEmpleadora)))],
+        },
+      },
+      select: { codigo: true, idEmpresaEmpleadora: true },
+    });
+    const yaEstan = new Set(
+      existentes.map(
+        (e) => `${e.idEmpresaEmpleadora}|${e.codigo.trim().toLowerCase()}`,
+      ),
+    );
+    // Las filas de ejemplo de la plantilla («… (Ejemplo)») no se importan.
+    const nuevas = data.filter(
+      (c) =>
+        !/\(\s*ejemplo\s*\)\s*$/i.test(c.titulo ?? '') &&
+        !yaEstan.has(`${c.idEmpresaEmpleadora}|${c.codigo.toLowerCase()}`),
+    );
+
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        return await Promise.all(
-          data.map((row) =>
-            tx.competencia.create({
+      const creadas = await this.prisma.$transaction(async (tx) => {
+        const resultado: unknown[] = [];
+        for (const row of nuevas) {
+          resultado.push(
+            await tx.competencia.create({
               data: {
                 nombre: row.nombre,
                 titulo: row.titulo,
@@ -742,15 +1295,18 @@ export class CompetenciaService {
                   })),
                 },
               },
-              include: {
-                niveles: { include: { items: true } },
-              },
+              select: { idCompetencia: true, codigo: true },
             }),
-          ),
-        );
+          );
+        }
+        return resultado;
       });
+      return {
+        count: creadas.length,
+        omitidas: data.length - nuevas.length,
+      };
     } catch (error) {
-      console.error('Error al importar datos:', error);
+      this.logger.error('Error al importar competencias:', error);
       handlePrismaError(error, 'competencia');
     }
   }
@@ -1053,6 +1609,23 @@ export class CompetenciaService {
       // mañana cambia su jefe o su unidad, esta evaluación sigue contando
       // como lo que fue.
       const foto = await this.fotoDeEvaluacion(idEvaluado, idEvaluador);
+      // No se abre una evaluación que no va a contar. "OTRO" (un compañero o
+      // alguien sin vínculo) no puntúa en ningún modelo, y la de un
+      // subordinado solo existe en 180°. Antes se podían crear igual —por
+      // URL o desde administración— y quien las llenaba trabajaba en balde.
+      if (foto.tipoEvaluador === TIPO_POR_ORIGEN.otro) {
+        throw new BadRequestException(
+          'Solo puede evaluarse a sí mismo, a un subordinado o a su jefe inmediato.',
+        );
+      }
+      if (
+        foto.tipoEvaluador === TIPO_POR_ORIGEN.subordinado &&
+        campana.modeloEmpresa !== '180'
+      ) {
+        throw new BadRequestException(
+          'En el modelo de 90° los subordinados no evalúan a su jefe.',
+        );
+      }
 
       evaluacion = await this.prisma.evaluacionCompetencia.create({
         data: {
@@ -1196,7 +1769,7 @@ export class CompetenciaService {
 
       if (propios !== idsEnviados.size) {
         throw new BadRequestException(
-          'Alguno de los ítems enviados no pertenece a esta evaluación.',
+          'Alguno de los comportamientos enviados no pertenece a esta evaluación.',
         );
       }
     }
@@ -1481,7 +2054,6 @@ export class CompetenciaService {
     return calcularResultados(empresa, emp);
   }
 
-
   /**
    * Filtro sobre el empleado que comparten los tres reportes Excel.
    *
@@ -1511,6 +2083,9 @@ export class CompetenciaService {
       ...(filtros.idPuestoEmpleadora && {
         idPuestoEmpleadora: Number(filtros.idPuestoEmpleadora),
       }),
+      ...(filtros.codigoJefe?.trim() && {
+        codigoEmpleadoJefe: filtros.codigoJefe.trim(),
+      }),
       ...(search && {
         OR: [
           { nombres: { contains: search, mode: 'insensitive' } },
@@ -1521,10 +2096,233 @@ export class CompetenciaService {
     };
   }
 
+  /**
+   * El Excel de una campaña, un libro con una hoja por tema: «Resumen»
+   * (la campaña y sus cifras), «Avance» (solo la en curso: qué le falta a
+   * cada trabajador), «Resultados», «Competencias» y «Objetivos». Las tres
+   * últimas son las mismas de los reportes sueltos, con los mismos filtros.
+   * `avance` lo arma `EmpleadoService.avance` con los filtros de la pantalla.
+   */
+  async exportarCampanaExcel(
+    idEmpresaEmpleadora: number,
+    filtros: ExportEmpresaQueryDto,
+    avance: AvanceParaExcel | null,
+  ) {
+    const libro = new ExcelJS.Workbook();
+    libro.creator = 'TeamWork';
+    // Las hojas salen en el orden en que se crean: el resumen primero.
+    const hojaResumen = libro.addWorksheet('Resumen');
+    const hojaAvance = avance ? libro.addWorksheet('Avance') : null;
+    const { filas, campana, empresa } = await this.construirResultadosEmpresa(
+      idEmpresaEmpleadora,
+      filtros,
+      libro,
+    );
+    await this.exportarCompetenciasPorEmpresaExcel(
+      idEmpresaEmpleadora,
+      filtros,
+      libro,
+    );
+    await this.exportarObjetivosPorEmpresaExcel(
+      idEmpresaEmpleadora,
+      filtros,
+      libro,
+    );
+
+    // ── Resumen: dos columnas, dato y valor, en bloques con subtítulo.
+    hojaResumen.columns = [
+      { header: 'Dato', key: 'dato', width: 38 },
+      { header: 'Valor', key: 'valor', width: 52 },
+    ];
+    const fecha = (d?: Date | null) =>
+      d ? new Date(d).toLocaleDateString('es-PE', { timeZone: 'UTC' }) : '—';
+    const bloque = (titulo: string, datos: [string, string | number][]) => {
+      const t = hojaResumen.addRow({ dato: titulo });
+      t.font = { bold: true, size: 12 };
+      t.getCell(1).border = {
+        bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+      };
+      for (const [dato, valor] of datos) hojaResumen.addRow({ dato, valor });
+      hojaResumen.addRow({});
+    };
+    const c = campana as (typeof campana & Record<string, unknown>) | null;
+    bloque('Campaña', [
+      ['Empresa', empresa.nombreEmpresa],
+      ['Campaña', c?.nombre ?? '—'],
+      ['Estado', c?.estado === CAMPANA_CERRADA ? 'Cerrada' : 'En curso'],
+      [
+        'Periodo evaluado',
+        `${fecha(c?.periodoDesde as Date)} – ${fecha(c?.periodoHasta as Date)}`,
+      ],
+      [
+        'Calificación',
+        `${fecha(empresa.fechaVigenciaInicio)} – ${fecha(empresa.fechaVigenciaFin)}`,
+      ],
+      ['Modelo', `${empresa.modeloEmpresa}°`],
+      ['Peso de competencias', `${empresa.porcentajeCompetecias ?? 80} %`],
+      ['Peso de objetivos', `${empresa.porcentajeObjetivos ?? 20} %`],
+      [
+        'Generado el',
+        new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
+      ],
+    ]);
+    const filtrosTexto = [
+      filtros.idGerenciaEmpleadora && 'gerencia',
+      filtros.idAreaEmpleadora && 'área',
+      filtros.idUnidadOcupacionalEmpleadora && 'grupo ocupacional',
+      filtros.idPuestoEmpleadora && 'puesto',
+      filtros.codigoJefe && 'equipo de un jefe',
+      filtros.search && `búsqueda «${filtros.search}»`,
+    ].filter(Boolean);
+    if (filtrosTexto.length)
+      bloque('Filtros aplicados', [['Recortado por', filtrosTexto.join(', ')]]);
+    if (avance) {
+      const r = avance.resumen;
+      const pct = (n: number | null) => (n === null ? '—' : `${n} %`);
+      bloque('Avance', [
+        ['Trabajadores', r.trabajadores],
+        ['Completos', r.porEstado.COMPLETO],
+        ['En curso', r.porEstado.EN_CURSO],
+        ['Sin iniciar', r.porEstado.SIN_INICIAR],
+        ['Sin asignación', r.porEstado.SIN_ASIGNACION],
+        ['Cumplimiento (lo que puntúa)', pct(r.cumplimiento)],
+        [
+          'Competencias calificadas por el jefe',
+          `${r.items.compJefe} de ${r.items.compTotal}`,
+        ],
+        [
+          'Objetivos calificados',
+          `${r.items.objHechas} de ${r.items.objTotal}`,
+        ],
+        [
+          'Autoevaluación (no puntúa)',
+          `${r.items.compAuto} de ${r.items.compTotal}`,
+        ],
+      ]);
+    }
+    const evaluados = filas.filter((f) => !f.resultado.sinEvaluar);
+    const porNivel = new Map<string, number>();
+    for (const f of evaluados) {
+      const n = clasificarResultadoFinal(f.resultado.final).nivel;
+      porNivel.set(n, (porNivel.get(n) ?? 0) + 1);
+    }
+    bloque('Resultados finales', [
+      ['Evaluados', evaluados.length],
+      ['Sin evaluar', filas.length - evaluados.length],
+      ['Calibrados', filas.filter((f) => f.ajuste).length],
+      ...[
+        'Sobresaliente',
+        'Altamente Efectivo',
+        'Efectivo',
+        'Parcialmente Efectivo',
+        'Necesita Mejora',
+      ].map((n): [string, string] => {
+        const k = porNivel.get(n) ?? 0;
+        return [
+          n,
+          `${k}${evaluados.length ? ` (${Math.round((k / evaluados.length) * 1000) / 10} %)` : ''}`,
+        ];
+      }),
+    ]);
+    // Sin autofiltro: es una ficha, no una tabla.
+    aplicarCabecera(hojaResumen, [], { autofiltro: false });
+
+    // ── Avance: una fila por trabajador, con lo que le falta.
+    if (hojaAvance && avance) {
+      const ESTADO: Record<string, string> = {
+        COMPLETO: 'Completo',
+        EN_CURSO: 'En curso',
+        SIN_INICIAR: 'Sin iniciar',
+        SIN_ASIGNACION: 'Sin asignación',
+      };
+      hojaAvance.columns = [
+        { header: 'Código', key: 'codigo', width: 12 },
+        { header: 'Documento', key: 'documento', width: 13 },
+        { header: 'Trabajador', key: 'nombre', width: 34 },
+        { header: 'Gerencia', key: 'gerencia', width: 28 },
+        { header: 'Área', key: 'area', width: 28 },
+        { header: 'Grupo ocupacional', key: 'grupo', width: 22 },
+        { header: 'Puesto', key: 'puesto', width: 28 },
+        { header: 'Jefe', key: 'jefe', width: 32 },
+        { header: 'Competencias asignadas', key: 'compTotal', width: 14 },
+        { header: 'Calificadas por el jefe', key: 'compJefe', width: 14 },
+        { header: 'Autoevaluadas', key: 'compAuto', width: 14 },
+        { header: 'Objetivos', key: 'objTotal', width: 13 },
+        { header: 'Objetivos calificados', key: 'objHechas', width: 13 },
+        { header: 'Estado', key: 'estado', width: 15 },
+      ];
+      for (const t of avance.trabajadores) {
+        const fila = hojaAvance.addRow({
+          codigo: t.codigoEmpleado,
+          documento: t.documento ?? '',
+          nombre: `${t.nombres} ${t.apellidos}`.trim(),
+          gerencia: t.gerencia ?? '',
+          area: t.area ?? '',
+          grupo: t.unidad ?? '',
+          puesto: t.puesto ?? '',
+          jefe: t.jefe ?? 'Sin jefe',
+          compTotal: t.competencias.total,
+          compJefe: t.competencias.hechasJefe,
+          compAuto: t.competencias.hechasAuto,
+          objTotal: t.objetivos.total,
+          objHechas: t.objetivos.hechas,
+          estado: ESTADO[t.estadoAvance] ?? t.estadoAvance,
+        });
+        // Texto: como número pierden los ceros a la izquierda.
+        fila.getCell('codigo').numFmt = '@';
+        fila.getCell('documento').numFmt = '@';
+      }
+      aplicarCabecera(hojaAvance, [
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'Las de su grupo',
+        'Puntúan',
+        'No puntúa',
+        'Puntúan',
+        undefined,
+      ]);
+    }
+
+    return libro;
+  }
+
   // TODO: Resultados COMPETENCIAS + OBJETIVOS
+  /** Excel de resultados de la empresa (con la calibración aplicada). */
   async exportarResultadosEmpresaExcel(
     idEmpresaEmpleadora: number,
     filtros: ExportEmpresaQueryDto = {},
+  ) {
+    return (await this.construirResultadosEmpresa(idEmpresaEmpleadora, filtros))
+      .workbook;
+  }
+
+  /**
+   * Resultados de cada trabajador de la campaña, el MISMO cálculo que el
+   * Excel: lo usa la calibración para que su pantalla, el Excel y el PDF den
+   * la misma cifra.
+   */
+  async resultadosDeEmpresa(
+    idEmpresaEmpleadora: number,
+    idCampanaEvaluacion?: number,
+  ) {
+    const { filas, campana, empresa } = await this.construirResultadosEmpresa(
+      idEmpresaEmpleadora,
+      { idCampanaEvaluacion } as ExportEmpresaQueryDto,
+    );
+    return { filas, campana, empresa };
+  }
+
+  private async construirResultadosEmpresa(
+    idEmpresaEmpleadora: number,
+    filtros: ExportEmpresaQueryDto = {},
+    /** Libro al que agregar la hoja (el Excel de la campaña); si no, uno nuevo. */
+    libro?: ExcelJS.Workbook,
   ) {
     const empresaBase = await this.prisma.empresaEmpleadora.findFirst({
       where: {
@@ -1604,6 +2402,7 @@ export class CompetenciaService {
         },
         objetivoDetalles: {
           where: { estado: true },
+          orderBy: { secuencial: 'asc' },
           select: {
             porcentajeLogrado: true,
             pesoEspecifico: true,
@@ -1629,6 +2428,9 @@ export class CompetenciaService {
       }
 
       const emp = empleados.get(ev.evaluado.idEmpleado);
+      // Foto del jefe al iniciar cada evaluación: en una campaña cerrada
+      // dice si no tenía jefe (`evaluadoSinJefe`).
+      (emp.fotosJefe ??= []).push(ev.codigoJefeEvaluado);
 
       // `null` es sin evaluar: una evaluación abierta pero sin ninguna nota
       // puesta no entra al promedio.
@@ -1695,53 +2497,47 @@ export class CompetenciaService {
     // ===============================
     // PESOS
     // ===============================
-    const jefePeso = (empresa.porcentajeEvaluacionJefeCompetencia ?? 0) / 100;
-    const subordinadoPeso =
-      (empresa.porcentajeEvaluacionSubordinadoCompetencia ?? 0) / 100;
-    const competenciaPeso = (empresa.porcentajeCompetecias ?? 0) / 100;
-    const objetivoPeso = (empresa.porcentajeObjetivos ?? 0) / 100;
+    // Los mismos pesos (y valores por defecto) que el cálculo de la nota:
+    // con `?? 0` una campaña sin pesos escritos titulaba "Resultado
+    // Competencias 0 %" sobre columnas calculadas al 80 %.
+    const pesos = pesosDeEmpresa(empresa);
+    const jefePeso = pesos.jefe;
+    const subordinadoPeso = pesos.subordinado;
+    const competenciaPeso = pesos.competencias;
+    const objetivoPeso = pesos.objetivos;
 
     // ===============================
     // CREAR EXCEL
     // ===============================
-    const workbook = new ExcelJS.Workbook();
+    const workbook = libro ?? new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Resultados');
-
+    const es180 = empresa.modeloEmpresa === '180';
+    const pct = (n: number) => `${Math.round(n * 100)} %`;
+    // El peso va en la línea gris, no en el título. En 90° el reparto
+    // jefe/subordinado no se aplica: la nota del jefe vale el 100 %.
     sheet.columns = [
       { header: 'Código', key: 'codigo', width: 15 },
-      { header: 'Empleado', key: 'empleado', width: 35 },
-      { header: 'Autoevaluación', key: 'auto', width: 20 },
-      // En 90° el reparto jefe/subordinado no se aplica: la nota del jefe vale
-      // el 100 %. Imprimir "Evaluacion Jefe 60 %" ahí era una cifra falsa en
-      // un reporte que alguien usa para decidir.
-      {
-        header:
-          empresa.modeloEmpresa === '180'
-            ? `Competencia Evaluacion Jefe ${jefePeso * 100} %`
-            : 'Competencia Evaluacion Jefe 100 %',
-        key: 'jefe',
-        width: 35,
-      },
-      {
-        header:
-          empresa.modeloEmpresa === '180'
-            ? `Competencia Evaluacion Subordinados ${subordinadoPeso * 100} %`
-            : 'Competencia Evaluacion Subordinados (no aplica en 90°)',
-        key: 'subordinados',
-        width: 40,
-      },
-      {
-        header: `Resultado Competencias ${competenciaPeso * 100} %`,
-        key: 'competencias',
-        width: 35,
-      },
-      {
-        header: `Resultado Objetivos ${objetivoPeso * 100} %`,
-        key: 'objetivos',
-        width: 20,
-      },
-      { header: 'Resultado Final', key: 'final', width: 20 },
+      { header: 'Trabajador', key: 'empleado', width: 35 },
+      { header: 'Autoevaluación', key: 'auto', width: 18 },
+      { header: 'Evaluación del jefe', key: 'jefe', width: 22 },
+      { header: 'Evaluación de subordinados', key: 'subordinados', width: 26 },
+      { header: 'Resultado de competencias', key: 'competencias', width: 26 },
+      { header: 'Resultado de objetivos', key: 'objetivos', width: 24 },
+      { header: 'Resultado final', key: 'final', width: 18 },
       { header: 'Observación', key: 'observacion', width: 45 },
+    ];
+    const brevesResultados = [
+      undefined,
+      undefined,
+      'Referencia: no puntúa',
+      es180 ? `Pesa ${pct(jefePeso)} de competencias` : '100 % de competencias',
+      es180
+        ? `Pesa ${pct(subordinadoPeso)} de competencias`
+        : 'No aplica en 90°',
+      `Pesa ${pct(competenciaPeso)} del final`,
+      `Pesa ${pct(objetivoPeso)} del final`,
+      'Nivel esperado: 75 o más',
+      undefined,
     ];
 
     // ===============================
@@ -1758,8 +2554,8 @@ export class CompetenciaService {
       ),
     ];
 
-    const asignadas = await this.prisma.unidadOcupacionalCompetenciaNivel.findMany(
-      {
+    const asignadas =
+      await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
         where: {
           idUnidadOcupacionalEmpleadora: { in: unidades },
           competencia: { estado: true },
@@ -1769,8 +2565,7 @@ export class CompetenciaService {
           idUnidadOcupacionalEmpleadora: true,
           idCompetencia: true,
         },
-      },
-    );
+      });
 
     const competenciasPorUnidad = new Map<number, number[]>();
 
@@ -1785,14 +2580,18 @@ export class CompetenciaService {
     // guardada al cerrarla (CampanaAsignacion): su unidad pudo cambiar
     // después. Sin foto (cerradas antes de existir), lo que se le evaluó.
     const evaluadasPorEmpleado = new Map<number, Set<number>>();
-    const foto = campanaCerrada && campana
-      ? await this.prisma.campanaAsignacion.findMany({
-          where: { idCampanaEvaluacion: campana.idCampanaEvaluacion },
-          select: { idEmpleado: true, idCompetencia: true },
-        })
-      : [];
+    const foto =
+      campanaCerrada && campana
+        ? await this.prisma.campanaAsignacion.findMany({
+            where: { idCampanaEvaluacion: campana.idCampanaEvaluacion },
+            select: { idEmpleado: true, idCompetencia: true },
+          })
+        : [];
     const origenCerrada = foto.length
-      ? foto.map((f) => ({ idEvaluado: f.idEmpleado, idCompetencia: f.idCompetencia }))
+      ? foto.map((f) => ({
+          idEvaluado: f.idEmpleado,
+          idCompetencia: f.idCompetencia,
+        }))
       : evaluaciones;
     for (const ev of origenCerrada) {
       if (!ev.idEvaluado) continue;
@@ -1801,13 +2600,61 @@ export class CompetenciaService {
       evaluadasPorEmpleado.set(ev.idEvaluado, set);
     }
 
+    // Ajustes de calibración de la campaña: mandan sobre el cálculo.
+    const ajustes = new Map(
+      campana
+        ? (
+            await this.prisma.ajusteCalibracion.findMany({
+              where: { idCampanaEvaluacion: campana.idCampanaEvaluacion },
+            })
+          ).map((a) => [a.idEmpleado, a])
+        : [],
+    );
+    const filas: {
+      idEmpleado: number;
+      codigo: string;
+      nombre: string;
+      /** Lo que da el cálculo, sin calibrar. */
+      calculado: {
+        competencias: number;
+        objetivos: number;
+        final: number;
+        competenciasSinEvaluar: boolean;
+        objetivosSinEvaluar: boolean;
+      };
+      /** Lo que vale (calibrado si hay ajuste). */
+      resultado: {
+        competencias: number;
+        objetivos: number;
+        final: number;
+        sinEvaluar: boolean;
+      };
+      ajuste: (typeof ajustes extends Map<number, infer A> ? A : never) | null;
+    }[] = [];
+    // Nota de cada competencia por trabajador (solo las asignadas y con
+    // nota), con la fórmula oficial: alimenta las estadísticas del catálogo.
+    const notasPorCompetencia = new Map<number, number[]>();
+
     for (const emp of empleados.values()) {
-      const base = this.calcularResultadosEmpleadoDesdeAgrupado(empresa, emp);
+      // La cabeza de la empresa (sin jefe): en 180° la califican solo sus
+      // subordinados. Igual que el PDF individual.
+      const empresaDelEvaluado: ConfiguracionEmpresa = {
+        ...empresa,
+        evaluadoSinJefe: evaluadoSinJefe({
+          cerrada: campanaCerrada,
+          codigoJefeActual: emp.empleado.codigoEmpleadoJefe,
+          fotosJefe: emp.fotosJefe ?? [],
+        }),
+      };
+      const base = this.calcularResultadosEmpleadoDesdeAgrupado(
+        empresaDelEvaluado,
+        emp,
+      );
 
       // Mismo criterio que el PDF individual: se promedia sobre las asignadas,
       // contando 0 las que nadie evaluó.
       const deAsignadas = resultadoDeCompetenciasAsignadas(
-        empresa,
+        empresaDelEvaluado,
         campanaCerrada
           ? [...(evaluadasPorEmpleado.get(emp.empleado.idEmpleado) ?? [])]
           : (competenciasPorUnidad.get(
@@ -1816,12 +2663,28 @@ export class CompetenciaService {
         emp.porCompetencia,
       );
 
+      for (const idCompetencia of campanaCerrada
+        ? [...(evaluadasPorEmpleado.get(emp.empleado.idEmpleado) ?? [])]
+        : (competenciasPorUnidad.get(
+            emp.empleado.idUnidadOcupacionalEmpleadora,
+          ) ?? [])) {
+        const nota = resultadoDeCompetencia(
+          empresaDelEvaluado,
+          emp.porCompetencia.get(idCompetencia),
+        );
+        if (nota === null) continue;
+        const lista = notasPorCompetencia.get(idCompetencia) ?? [];
+        lista.push(nota);
+        notasPorCompetencia.set(idCompetencia, lista);
+      }
+
       const r = {
         ...base,
         resultadoCompetencias: deAsignadas.resultado,
         competenciasSinEvaluar: deAsignadas.sinEvaluar,
         resultadoFinal: redondear(
-          deAsignadas.resultado * (empresa.porcentajeCompetecias ?? 80) / 100 +
+          (deAsignadas.resultado * (empresa.porcentajeCompetecias ?? 80)) /
+            100 +
             base.promedioObjetivos *
               ((empresa.porcentajeObjetivos ?? 20) / 100),
           2,
@@ -1829,6 +2692,29 @@ export class CompetenciaService {
       };
 
       r.sinEvaluar = r.competenciasSinEvaluar && r.objetivosSinEvaluar;
+
+      const calculado = {
+        competencias: r.resultadoCompetencias,
+        objetivos: r.promedioObjetivos,
+        final: r.resultadoFinal,
+        competenciasSinEvaluar: r.competenciasSinEvaluar,
+        objetivosSinEvaluar: r.objetivosSinEvaluar,
+      };
+      const ajuste = ajustes.get(emp.empleado.idEmpleado) ?? null;
+      Object.assign(r, aplicarCalibracion(r, ajuste, empresa));
+      filas.push({
+        idEmpleado: emp.empleado.idEmpleado,
+        codigo: emp.empleado.codigoEmpleado,
+        nombre: `${emp.empleado.nombres} ${emp.empleado.apellidos}`.trim(),
+        calculado,
+        resultado: {
+          competencias: r.resultadoCompetencias,
+          objetivos: r.promedioObjetivos,
+          final: r.resultadoFinal,
+          sinEvaluar: r.sinEvaluar,
+        },
+        ajuste,
+      });
 
       // Celda vacía, no 0, cuando no hay nada evaluado. En una hoja de cálculo
       // el vacío es "sin dato" y el 0 es un cero: escribir 0 hacía que alguien
@@ -1845,21 +2731,42 @@ export class CompetenciaService {
       const observaciones: string[] = [];
 
       if (deAsignadas.asignadas === 0) {
-        observaciones.push('Su unidad no tiene competencias asignadas');
+        observaciones.push(
+          'Su grupo ocupacional no tiene competencias asignadas',
+        );
       } else if (deAsignadas.ningunaEvaluada) {
         observaciones.push(
           `${deAsignadas.asignadas} competencias sin evaluar, cuentan como 0`,
         );
       }
 
+      const soloSubordinados =
+        empresa.modeloEmpresa === '180' &&
+        empresaDelEvaluado.evaluadoSinJefe &&
+        r.promedioSubordinados !== undefined &&
+        emp.evaluacionesSubordinados.length > 0;
+      if (soloSubordinados)
+        observaciones.push(
+          'Sin jefe inmediato: competencias = subordinados al 100 %',
+        );
       if (r.objetivosSinEvaluar) observaciones.push('Objetivos sin evaluar');
+      if (ajuste) observaciones.push(`Calibrado: ${ajuste.motivo}`);
 
       sheet.addRow({
         codigo: emp.empleado.codigoEmpleado,
         empleado: `${emp.empleado.nombres} ${emp.empleado.apellidos}`,
         auto: oVacio(r.promedioAuto, r.competenciasSinEvaluar),
-        jefe: oVacio(r.promedioJefe, r.competenciasSinEvaluar),
-        subordinados: oVacio(r.promedioSubordinados, r.competenciasSinEvaluar),
+        // Sin jefe no hay nota del jefe: vacío, no un 0.
+        jefe: oVacio(
+          r.promedioJefe,
+          r.competenciasSinEvaluar || !!empresaDelEvaluado.evaluadoSinJefe,
+        ),
+        // En 90° la columna dice "no aplica": una nota de subordinados que
+        // exista (evaluaciones al jefe hechas igual) no puntúa y no se enseña.
+        subordinados: oVacio(
+          r.promedioSubordinados,
+          r.competenciasSinEvaluar || empresa.modeloEmpresa !== '180',
+        ),
         // Mismo criterio que el PDF: el 0 de una competencia sin evaluar se
         // enseña —la observación explica por qué— y solo se deja en blanco a
         // quien no tiene absolutamente nada evaluado.
@@ -1870,7 +2777,8 @@ export class CompetenciaService {
       });
     }
 
-    return workbook;
+    aplicarCabecera(sheet, brevesResultados);
+    return { workbook, filas, campana, empresa, notasPorCompetencia };
   }
 
   // Competencias
@@ -1878,6 +2786,7 @@ export class CompetenciaService {
   async exportarCompetenciasPorEmpresaExcel(
     idEmpresaEmpleadora: number,
     filtros: ExportEmpresaQueryDto = {},
+    libro?: ExcelJS.Workbook,
   ) {
     const empresa = await this.prisma.empresaEmpleadora.findFirst({
       where: { idEmpresaEmpleadora, estado: true },
@@ -1940,7 +2849,7 @@ export class CompetenciaService {
       ],
     });
 
-    const workbook = new ExcelJS.Workbook();
+    const workbook = libro ?? new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Competencias');
 
     sheet.columns = [
@@ -1952,11 +2861,11 @@ export class CompetenciaService {
       { header: 'Evaluador', key: 'evaluador', width: 30 },
       { header: 'Área', key: 'area', width: 25 },
       { header: 'Puesto', key: 'puesto', width: 25 },
-      { header: 'Unidad', key: 'unidad', width: 25 },
+      { header: 'Grupo ocupacional', key: 'unidad', width: 25 },
       { header: 'Gerencia', key: 'gerencia', width: 25 },
       { header: 'Competencia', key: 'competencia', width: 30 },
       { header: 'Nivel', key: 'nivel', width: 10 },
-      { header: 'Ítem Evaluado', key: 'item', width: 50 },
+      { header: 'Comportamiento evaluado', key: 'item', width: 50 },
       { header: 'Calificación', key: 'calificacion', width: 15 },
     ];
 
@@ -2016,12 +2925,14 @@ export class CompetenciaService {
       }
     }
 
+    aplicarCabecera(sheet);
     return workbook;
   }
 
   async exportarObjetivosPorEmpresaExcel(
     idEmpresaEmpleadora: number,
     filtros: ExportEmpresaQueryDto = {},
+    libro?: ExcelJS.Workbook,
   ) {
     const campana = await resolverCampana(
       this.prisma,
@@ -2070,6 +2981,8 @@ export class CompetenciaService {
     const jefes = await this.prisma.empleado.findMany({
       where: {
         codigoEmpleado: { in: codigosJefe },
+        // El código es único por empresa.
+        idEmpresaEmpleadora,
       },
       select: {
         codigoEmpleado: true,
@@ -2088,19 +3001,24 @@ export class CompetenciaService {
     /* ===============================
      4. Excel
      =============================== */
-    const workbook = new ExcelJS.Workbook();
+    const workbook = libro ?? new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Objetivos');
 
     sheet.columns = [
       { header: 'Empresa', key: 'empresa', width: 30 },
       { header: 'Código Empleado', key: 'codigoEmpleado', width: 20 },
       { header: 'Empleado', key: 'empleado', width: 35 },
-      { header: 'Documento', key: 'documento', width: 15, style: { numFmt: '@' } },
+      {
+        header: 'Documento',
+        key: 'documento',
+        width: 15,
+        style: { numFmt: '@' },
+      },
       { header: 'Código Jefe', key: 'codigoJefe', width: 20 },
       { header: 'Evaluador', key: 'evaluador', width: 35 },
       { header: 'Área', key: 'area', width: 25 },
       { header: 'Puesto', key: 'puesto', width: 25 },
-      { header: 'Unidad', key: 'unidad', width: 25 },
+      { header: 'Grupo ocupacional', key: 'unidad', width: 25 },
       { header: 'Gerencia', key: 'gerencia', width: 25 },
       { header: 'Objetivo', key: 'objetivo', width: 40 },
       { header: 'Iniciativa', key: 'iniciativa', width: 36 },
@@ -2108,9 +3026,9 @@ export class CompetenciaService {
       { header: 'Unidad de medida', key: 'unidadMedida', width: 16 },
       { header: 'Peso', key: 'peso', width: 10 },
       { header: 'Meta', key: 'meta', width: 12 },
-      { header: 'Meta Alcanzada', key: 'metaAlcanzada', width: 15 },
-      { header: '% Logrado', key: 'porcentaje', width: 12 },
-      { header: 'Fecha Culminación', key: 'fecha', width: 18 },
+      { header: 'Logrado', key: 'metaAlcanzada', width: 15 },
+      { header: 'Cumplimiento (%)', key: 'porcentaje', width: 14 },
+      { header: 'Fecha límite', key: 'fecha', width: 18 },
     ];
 
     objetivos.forEach((obj) => {
@@ -2143,6 +3061,7 @@ export class CompetenciaService {
       });
     });
 
+    aplicarCabecera(sheet);
     return workbook;
   }
 }

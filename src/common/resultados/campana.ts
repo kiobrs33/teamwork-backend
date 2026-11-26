@@ -47,7 +47,9 @@ export async function resolverCampana(
     where: { idCampanaEvaluacion: id, idEmpresaEmpleadora },
   });
   if (!campana) {
-    throw new NotFoundException('La campaña no existe o no es de esta empresa.');
+    throw new NotFoundException(
+      'La campaña no existe o no es de esta empresa.',
+    );
   }
   return campana;
 }

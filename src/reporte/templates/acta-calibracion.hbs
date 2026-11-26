@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Acta de calibración</title>
+<style>
+  /* Márgenes y pie («Página N de M») los pone el renderizador. */
+  @page { size: A4; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif; font-size: 9.5px; color: #1f1f1f;
+    line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .gris { color: #595959; }
+  .tenue { color: #8c8c8c; }
+
+  /* Encabezado */
+  .cabecera { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 2px solid #1f1f1f; }
+  .cabecera img { max-height: 40px; max-width: 150px; object-fit: contain; }
+  .cabecera .empresa { text-align: right; font-size: 9px; }
+  .cabecera .empresa strong { display: block; font-size: 11px; color: #1f1f1f; }
+  h1 { font-size: 19px; letter-spacing: -0.01em; margin-top: 16px; }
+  .campana { font-size: 11px; margin-top: 2px; }
+
+  /* Datos de la sesión */
+  .datos { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; border: 1px solid #d9d9d9; border-radius: 4px; }
+  .datos > div { padding: 7px 10px; }
+  .datos > div + div { border-left: 1px solid #d9d9d9; }
+  .datos dt { font-size: 8px; color: #595959; text-transform: uppercase; letter-spacing: 0.04em; }
+  .datos dd { font-size: 12px; font-weight: bold; margin-top: 1px; }
+  .datos dd small { font-size: 8.5px; font-weight: normal; color: #595959; }
+
+  .intro { margin-top: 14px; max-width: 165mm; }
+
+  /* Secciones */
+  section { margin-top: 22px; }
+  h2 { font-size: 11.5px; padding-bottom: 5px; margin-bottom: 8px; border-bottom: 1px solid #d9d9d9; display: flex; align-items: baseline; gap: 8px; }
+  h2 .n { color: #8c8c8c; font-weight: normal; }
+  h2 .extra { margin-left: auto; font-size: 8.5px; font-weight: normal; color: #595959; }
+  .vacio { color: #595959; padding: 10px 12px; background: #fafafa; border: 1px dashed #d9d9d9; border-radius: 4px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
+  th { font-size: 8px; text-transform: uppercase; letter-spacing: 0.04em; color: #595959; font-weight: bold; text-align: left; padding: 5px 8px; background: #fafafa; border-bottom: 1px solid #d9d9d9; }
+  td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+
+  /* Distribución */
+  .punto { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+  .barra { height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden; margin-top: 3px; }
+  .barra span { display: block; height: 100%; border-radius: 4px; }
+  tfoot td { font-weight: bold; border-bottom: none; border-top: 1px solid #d9d9d9; }
+
+  /* Ajustes: cada trabajador es un bloque con su justificación debajo. */
+  .ajuste { border: 1px solid #d9d9d9; border-radius: 4px; margin-bottom: 8px; page-break-inside: avoid; break-inside: avoid; }
+  .ajuste header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+  .ajuste header strong { font-size: 10.5px; }
+  .ajuste table { table-layout: fixed; }
+  .ajuste table td, .ajuste table th { border-bottom: none; }
+  .ajuste table th { background: none; padding-bottom: 0; }
+  .ajuste .antes { color: #8c8c8c; text-decoration: line-through; margin-right: 4px; }
+  .ajuste .flecha { color: #8c8c8c; margin-right: 4px; }
+  .ajuste .despues { font-weight: bold; }
+  .ajuste .motivo { padding: 6px 10px 9px; border-top: 1px solid #f0f0f0; }
+  .ajuste .motivo b { font-size: 8px; text-transform: uppercase; letter-spacing: 0.04em; color: #595959; display: block; margin-bottom: 1px; }
+
+  /* Firmas */
+  .firmas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px 48px; margin-top: 44px; page-break-inside: avoid; break-inside: avoid; }
+  .firma { border-top: 1px solid #1f1f1f; padding-top: 5px; text-align: center; }
+  .firma strong { display: block; font-size: 9.5px; }
+  .firma span { font-size: 8.5px; color: #595959; }
+  .fechafirma { margin-top: 28px; }
+  .nota { margin-top: 18px; font-size: 8px; color: #8c8c8c; }
+</style>
+</head>
+<body>
+  <div class="cabecera">
+    {{#if logo}}<img src="{{logo}}" alt="">{{else}}<span></span>{{/if}}
+    <div class="empresa"><strong>{{empresa}}</strong>Evaluación de desempeño</div>
+  </div>
+
+  <h1>Acta de calibración de resultados</h1>
+  <p class="campana gris">{{campana}}</p>
+
+  <dl class="datos">
+    <div><dt>Fecha</dt><dd>{{fecha}}</dd></div>
+    <div><dt>Evaluados</dt><dd class="num" style="text-align:left">{{evaluados}}{{#if sinEvaluar}} <small>· {{sinEvaluar}} sin evaluar</small>{{/if}}</dd></div>
+    <div><dt>Resultados ajustados</dt><dd style="text-align:left">{{totalAjustes}}</dd></div>
+    <div><dt>Competencias / objetivos</dt><dd>{{pesoCompetencias}} % / {{pesoObjetivos}} %</dd></div>
+  </dl>
+
+  <p class="intro">
+    El comité de calibración revisó los resultados de la evaluación de desempeño, con el fin de que
+    las calificaciones sean consistentes y justas entre evaluadores. Resultado de la sesión:
+    <strong>{{textoAjustes}}</strong>.{{#if hayAjustes}} El detalle y la justificación de cada ajuste están en la sección 3.{{/if}}
+  </p>
+
+  <section>
+    <h2><span class="n">1</span> Integrantes del comité</h2>
+    {{#if hayComite}}
+    <table>
+      <thead><tr><th class="num" style="width:28px">N.º</th><th>Nombre</th><th>Cargo</th></tr></thead>
+      <tbody>
+      {{#each comite}}<tr><td class="num tenue">{{n}}</td><td><strong>{{nombre}}</strong></td><td class="gris">{{#if cargo}}{{cargo}}{{else}}—{{/if}}</td></tr>{{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="vacio">No se registraron los integrantes del comité: firman en la sección 4.</p>
+    {{/if}}
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> Distribución de resultados finales <span class="extra">Resultado final, ya con los ajustes</span></h2>
+    <table>
+      <thead><tr><th>Nivel</th><th>Rango</th><th style="width:42%">Proporción</th><th class="num">Trabajadores</th><th class="num">%</th></tr></thead>
+      <tbody>
+      {{#each distribucion}}
+        <tr>
+          <td><span class="punto" style="background:{{color}}"></span><strong>{{nivel}}</strong></td>
+          <td class="gris num" style="text-align:left">{{rango}}</td>
+          <td><div class="barra"><span style="width:{{porcentaje}}%;background:{{color}}"></span></div></td>
+          <td class="num">{{cuantos}}</td>
+          <td class="num">{{porcentaje}} %</td>
+        </tr>
+      {{/each}}
+      </tbody>
+      <tfoot><tr><td colspan="3">Total evaluados</td><td class="num">{{evaluados}}</td><td class="num">100 %</td></tr></tfoot>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> Resultados ajustados {{#if hayAjustes}}<span class="extra">Tachado: lo calculado · en negrita: lo ajustado</span>{{/if}}</h2>
+    {{#if hayAjustes}}
+      {{#each ajustados}}
+      <div class="ajuste">
+        <header>
+          <div><span class="tenue">{{n}}.</span> <strong>{{nombre}}</strong></div>
+          <div class="gris">Cód. {{codigo}} · {{area}} · Jefe: {{jefe}}</div>
+        </header>
+        <table>
+          <thead><tr><th style="width:20%">Competencias</th><th style="width:20%">Objetivos</th><th style="width:22%">Resultado final</th><th>Nivel</th></tr></thead>
+          <tbody><tr>
+            <td class="num" style="text-align:left">{{#if competencias.cambia}}<span class="antes">{{competencias.antes}}</span><span class="flecha">→</span><span class="despues">{{competencias.despues}}</span>{{else}}<span class="gris">Sin cambio</span>{{/if}}</td>
+            <td class="num" style="text-align:left">{{#if objetivos.cambia}}<span class="antes">{{objetivos.antes}}</span><span class="flecha">→</span><span class="despues">{{objetivos.despues}}</span>{{else}}<span class="gris">Sin cambio</span>{{/if}}</td>
+            <td class="num" style="text-align:left"><span class="antes">{{finalAntes}}</span><span class="flecha">→</span><span class="despues">{{finalDespues}}</span></td>
+            <td>{{#if cambiaNivel}}<span class="antes">{{nivelAntes}}</span><span class="flecha">→</span>{{/if}}<span class="punto" style="background:{{color}}"></span><span class="despues">{{nivel}}</span></td>
+          </tr></tbody>
+        </table>
+        <div class="motivo"><b>Justificación</b>{{motivo}}{{#if por}} <span class="tenue">· Registró: {{por}}</span>{{/if}}</div>
+      </div>
+      {{/each}}
+    {{else}}
+    <p class="vacio">El comité revisó los resultados y no ajustó ninguno.</p>
+    {{/if}}
+  </section>
+
+  <section style="page-break-inside: avoid; break-inside: avoid;">
+    <h2><span class="n">4</span> Conformidad</h2>
+    <p>Los integrantes del comité firman en señal de conformidad con los resultados y los ajustes registrados en esta acta.</p>
+    <div class="firmas">
+      {{#each firmas}}
+      <div class="firma">
+        {{#if nombre}}
+        <strong>{{nombre}}</strong>
+        <span>{{#if cargo}}{{cargo}}{{else}}Integrante del comité{{/if}}</span>
+        {{else}}
+        <strong>{{cargo}}</strong>
+        <span>Nombre y firma</span>
+        {{/if}}
+      </div>
+      {{/each}}
+    </div>
+    <p class="fechafirma gris">Lugar y fecha: ______________________________________</p>
+    <p class="nota">Generado en TeamWork el {{fecha}}. Los resultados ajustados se aplican en el reporte individual, el historial y el Excel de resultados de la campaña.</p>
+  </section>
+</body>
+</html>

@@ -58,6 +58,12 @@ export function validarEntorno(config: Record<string, unknown>) {
     );
   }
 
+  if (vacia('APISPERU_TOKEN')) {
+    logger.warn(
+      'Sin APISPERU_TOKEN: la búsqueda por DNI y RUC de los formularios queda desactivada.',
+    );
+  }
+
   const puerto = String(config.PORT ?? '').trim() || PORT_POR_DEFECTO;
 
   if (!/^\d+$/.test(puerto)) {

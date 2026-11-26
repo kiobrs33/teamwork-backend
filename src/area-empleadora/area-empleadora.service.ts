@@ -1,3 +1,4 @@
+import { aplicarCabecera } from 'src/common/excel/estilo-excel';
 import {
   Injectable,
   InternalServerErrorException,
@@ -13,6 +14,14 @@ import { AreaQueryDto } from './dto/area-query.dto';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 import * as ExcelJS from 'exceljs';
+import {
+  exigirNombreLibre,
+  exigirSinTrabajadoresParaEliminar,
+  exigirSinTrabajadoresParaMudar,
+  filtrarImportacion,
+  nombreLimpio,
+} from 'src/common/estructura/estructura';
+
 @Injectable()
 export class AreaEmpleadoraService {
   private readonly logger = new Logger(AreaEmpleadoraService.name);
@@ -20,9 +29,17 @@ export class AreaEmpleadoraService {
 
   async create(user: AuthUser, dto: CreateAreaEmpleadoraDto) {
     try {
+      const descripcion = nombreLimpio(dto.descripcion);
+      await exigirNombreLibre(
+        this.prisma,
+        'area',
+        Number(dto.idEmpresaEmpleadora),
+        descripcion,
+      );
       const area = await this.prisma.areaEmpleadora.create({
         data: {
           ...dto,
+          descripcion,
           creadoPorId: user.idUsuario,
         },
         include: { empresaEmpleadora: true },
@@ -81,35 +98,46 @@ export class AreaEmpleadoraService {
         }),
 
         ...(search && {
-          OR: [
-            {
-              descripcion: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: search,
-                  mode: 'insensitive',
+          // Un número busca por ID o en el nombre, no en el RUC de la empresa
+          // (el de SEAL tiene un 6 y coincidían todas).
+          OR: /^\d+$/.test(String(search).trim())
+            ? [
+                { idAreaEmpleadora: Number(String(search).trim()) },
+                { descripcion: { contains: String(search).trim() } },
+              ]
+            : [
+                {
+                  descripcion: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
                 },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                ruc: {
-                  contains: search,
-                  mode: 'insensitive',
+                {
+                  empresaEmpleadora: {
+                    nombreEmpresa: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
                 },
-              },
-            },
-          ],
+                {
+                  empresaEmpleadora: {
+                    ruc: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
         }),
       };
 
       const include: Prisma.AreaEmpleadoraInclude = {
         empresaEmpleadora: true,
+        // Trabajadores vigentes (no cesados): cuántos se verían afectados.
+        _count: {
+          select: { empleados: { where: { situacion: { not: 'CESADO' } } } },
+        },
       };
 
       if (Number(limit) === 0) {
@@ -188,10 +216,24 @@ export class AreaEmpleadoraService {
         throw new NotFoundException('Área no encontrada');
       }
 
+      // Las reglas se miran sobre cómo queda el registro, no sobre lo que llega.
+      const idEmpresa =
+        dto.idEmpresaEmpleadora !== undefined
+          ? Number(dto.idEmpresaEmpleadora)
+          : area.idEmpresaEmpleadora;
+      if (idEmpresa !== area.idEmpresaEmpleadora)
+        await exigirSinTrabajadoresParaMudar(this.prisma, 'area', id);
+      const descripcion =
+        dto.descripcion !== undefined
+          ? nombreLimpio(dto.descripcion)
+          : area.descripcion;
+      await exigirNombreLibre(this.prisma, 'area', idEmpresa, descripcion, id);
+
       const updatedArea = await this.prisma.areaEmpleadora.update({
         where: { idAreaEmpleadora: id },
         data: {
           ...dto,
+          descripcion,
           fechaModificacion: new Date(),
           actualizadoPorId: user.idUsuario,
         },
@@ -214,6 +256,8 @@ export class AreaEmpleadoraService {
         throw new NotFoundException('Área no encontrada');
       }
 
+      await exigirSinTrabajadoresParaEliminar(this.prisma, 'area', id);
+
       const deletedArea = await this.prisma.areaEmpleadora.update({
         where: { idAreaEmpleadora: id },
         data: {
@@ -231,17 +275,21 @@ export class AreaEmpleadoraService {
 
   async importData(user: AuthUser, data: CreateAreaEmpleadoraDto[]) {
     try {
-      const registros = data.map((row) => ({
+      const { nuevas, omitidas } = await filtrarImportacion(
+        this.prisma,
+        'area',
+        data,
+      );
+      const registros = nuevas.map((row) => ({
         descripcion: row.descripcion,
         idEmpresaEmpleadora: row.idEmpresaEmpleadora,
         creadoPorId: user.idUsuario,
       }));
 
-      return await this.prisma.$transaction(async (tx) => {
-        return await tx.areaEmpleadora.createMany({
-          data: registros,
-        });
+      const { count } = await this.prisma.areaEmpleadora.createMany({
+        data: registros,
       });
+      return { count, omitidas };
     } catch (error) {
       console.error('Error al importar datos:', error);
       handlePrismaError(error, 'area empleadora');
@@ -270,6 +318,13 @@ export class AreaEmpleadoraService {
       const where: Prisma.AreaEmpleadoraWhereInput = {
         estado: true,
 
+        // El controlador ya resolvió la empresa (`empresaDelListado`); sin
+        // esta línea el Excel traía los registros de todas las empresas,
+        // también a RR. HH., aunque el listado en pantalla sí filtraba.
+        ...(query.idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(query.idEmpresaEmpleadora),
+        }),
+
         ...(query.idAreaEmpleadora && {
           idAreaEmpleadora: Number(query.idAreaEmpleadora),
         }),
@@ -296,30 +351,37 @@ export class AreaEmpleadoraService {
         }),
 
         ...(query.search && {
-          OR: [
-            {
-              descripcion: {
-                contains: query.search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: query.search,
-                  mode: 'insensitive',
+          // Un número busca por ID o en el nombre, no en el RUC de la empresa
+          // (el de SEAL tiene un 6 y coincidían todas).
+          OR: /^\d+$/.test(String(query.search).trim())
+            ? [
+                { idAreaEmpleadora: Number(String(query.search).trim()) },
+                { descripcion: { contains: String(query.search).trim() } },
+              ]
+            : [
+                {
+                  descripcion: {
+                    contains: query.search,
+                    mode: 'insensitive',
+                  },
                 },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                ruc: {
-                  contains: query.search,
-                  mode: 'insensitive',
+                {
+                  empresaEmpleadora: {
+                    nombreEmpresa: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
                 },
-              },
-            },
-          ],
+                {
+                  empresaEmpleadora: {
+                    ruc: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
         }),
       };
 
@@ -327,6 +389,9 @@ export class AreaEmpleadoraService {
         where,
         include: {
           empresaEmpleadora: true,
+          _count: {
+            select: { empleados: { where: { situacion: { not: 'CESADO' } } } },
+          },
         },
         orderBy: {
           fechaCreacion: 'desc',
@@ -334,48 +399,47 @@ export class AreaEmpleadoraService {
       });
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Áreas Empleadoras');
+      const worksheet = workbook.addWorksheet('Áreas');
+
+      // Se exporta desde el espacio de una empresa (el front manda la activa):
+      // «Empresa» repetiría el mismo nombre en cada fila. Solo va si el archivo
+      // mezcla empresas.
+      const variasEmpresas =
+        !query.idEmpresaEmpleadora &&
+        new Set(areas.map((x) => x.idEmpresaEmpleadora)).size > 1;
+      const columnasEmpresa = variasEmpresas
+        ? [
+            { header: 'ID empresa', key: 'idEmpresaEmpleadora', width: 14 },
+            { header: 'Empresa', key: 'empresa', width: 50 },
+          ]
+        : [];
 
       worksheet.columns = [
         {
-          header: 'ID Área',
+          header: 'ID área',
           key: 'idAreaEmpleadora',
           width: 20,
         },
         {
-          header: 'Descripción',
+          header: 'Nombre',
           key: 'descripcion',
           width: 40,
         },
-        {
-          header: 'ID Empresa',
-          key: 'idEmpresaEmpleadora',
-          width: 20,
-        },
-        {
-          header: 'Empresa',
-          key: 'empresa',
-          width: 50,
-        },
+        { header: 'Trabajadores', key: 'trabajadores', width: 14 },
+        ...columnasEmpresa,
       ];
 
       areas.forEach((item) => {
         worksheet.addRow({
           idAreaEmpleadora: item.idAreaEmpleadora,
           descripcion: item.descripcion,
+          trabajadores: item._count.empleados,
           idEmpresaEmpleadora: item.idEmpresaEmpleadora,
           empresa: item.empresaEmpleadora.nombreEmpresa,
         });
       });
 
-      worksheet.getRow(1).font = {
-        bold: true,
-      };
-
-      worksheet.autoFilter = {
-        from: 'A1',
-        to: 'D1',
-      };
+      aplicarCabecera(worksheet);
 
       const buffer = await workbook.xlsx.writeBuffer();
 

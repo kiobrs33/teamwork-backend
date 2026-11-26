@@ -19,11 +19,15 @@ import {
   ParseIntPipe,
   UseGuards,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { EmpleadoService } from './empleado.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 import { EliminarEmpleadosDto } from './dto/eliminar-empleados.dto';
+import { CambiarSituacionDto } from './dto/cambiar-situacion.dto';
 
 import {
   ApiBearerAuth,
@@ -32,6 +36,7 @@ import {
   ApiResponse,
   ApiTags,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
@@ -41,6 +46,37 @@ import { AvanceQueryDto } from './dto/avance-query.dto';
 
 import { Response } from 'express';
 import { Res } from '@nestjs/common';
+
+/**
+ * Valida cada fila de la importación con las reglas del alta individual.
+ *
+ * Con el tipo `CreateEmpleadoDto[]` el ValidationPipe global no valida los
+ * elementos del arreglo (solo ve un Array), así que las filas entraban sin
+ * pasar por ninguna regla. Se hace a mano para juntar **todos** los problemas
+ * y anteponer el índice de la fila ("[3] …"): el front lo traduce a la fila
+ * del Excel.
+ */
+const validarFilas = async (crudo: unknown): Promise<CreateEmpleadoDto[]> => {
+  if (!Array.isArray(crudo) || crudo.length === 0) {
+    throw new BadRequestException('El archivo no trae filas para importar.');
+  }
+  const filas = crudo.map((f) => plainToInstance(CreateEmpleadoDto, f));
+  const errores = await Promise.all(
+    filas.map((f) => validate(f, { whitelist: true })),
+  );
+  const problemas = errores.flatMap((errs, i) =>
+    errs.flatMap((e) =>
+      Object.values(e.constraints ?? {}).map((m) => `[${i}] ${m}`),
+    ),
+  );
+  if (problemas.length) {
+    throw new BadRequestException({
+      message: `No se importó nada: hay ${problemas.length} problema(s) en el archivo.`,
+      errors: problemas,
+    });
+  }
+  return filas;
+};
 
 @ApiTags('Empleados')
 @ApiBearerAuth()
@@ -65,10 +101,11 @@ export class EmpleadoController {
   ) {
     await this.alcances.verificar(alcance, 'empresa', body.idEmpresaEmpleadora);
     this.alcances.verificarRolAsignable(alcance, body.rol);
-    const empleado = await this.empleadoService.create(user, body);
+    const { empleado, acceso } = await this.empleadoService.create(user, body);
     return {
       message: 'Empleado creado exitosamente.',
-      data: { empleado },
+      // `acceso` (usuario y contraseña inicial) se entrega solo ahora.
+      data: { empleado, acceso },
     };
   }
 
@@ -87,8 +124,9 @@ export class EmpleadoController {
   async createMany(
     @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
-    @Body() body: CreateEmpleadoDto[],
+    @Body() crudo: unknown[],
   ) {
+    const body = await validarFilas(crudo);
     for (const fila of body) {
       verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
       this.alcances.verificarRolAsignable(alcance, fila.rol);
@@ -100,6 +138,7 @@ export class EmpleadoController {
       data: {
         empleados: resp.empleados,
         totalInsertados: resp.totalInsertados,
+        accesos: resp.accesos,
       },
     };
   }
@@ -126,6 +165,35 @@ export class EmpleadoController {
     return {
       message: 'Lista de empleados.',
       data: { empleados: resp.data, meta: resp.meta },
+    };
+  }
+
+  // Panel del jefe: solo su equipo directo, por su propia cuenta.
+  @Get('avance/mi-equipo')
+  @Roles(Rol.JEFE)
+  @ApiOperation({
+    summary:
+      'Panel del jefe: avance de la evaluación de su equipo directo y su autoevaluación',
+  })
+  async avanceDeMiEquipo(@User() user: AuthUser) {
+    return {
+      message: 'Avance de su equipo.',
+      data: await this.empleadoService.avanceDeMiEquipo(user.idUsuario),
+    };
+  }
+
+  // Resumen del trabajador (también el jefe, para lo suyo): su propia
+  // evaluación en la campaña en curso, sin notas.
+  @Get('avance/mio')
+  @Roles(Rol.JEFE, Rol.EMPLEADO)
+  @ApiOperation({
+    summary:
+      'Resumen del trabajador: lo que le falta hacer en su evaluación (sin notas)',
+  })
+  async avanceMio(@User() user: AuthUser) {
+    return {
+      message: 'Su evaluación.',
+      data: await this.empleadoService.avanceMio(user.idUsuario),
     };
   }
 
@@ -230,6 +298,34 @@ export class EmpleadoController {
     };
   }
 
+  /**
+   * Suspender, cesar o reactivar a uno o varios trabajadores (todo o nada).
+   * Va antes de las rutas con `:id`.
+   */
+  @Patch('situacion')
+  @ApiOperation({ summary: 'Cambiar la situación laboral de trabajadores' })
+  @ApiBody({ type: CambiarSituacionDto })
+  async cambiarSituacion(
+    @AlcanceActual() alcance: Alcance,
+    @User() user: AuthUser,
+    @Body() body: CambiarSituacionDto,
+  ) {
+    await this.alcances.verificarVarios(alcance, 'empleado', body.ids);
+    const resp = await this.empleadoService.cambiarSituacion(user, body);
+    const n = resp?.ids.length ?? 0;
+    const verbo =
+      body.situacion === 'ACTIVO'
+        ? 'reactivado'
+        : body.situacion === 'SUSPENDIDO'
+          ? 'suspendido'
+          : 'cesado';
+    return {
+      message:
+        n === 1 ? `Trabajador ${verbo}.` : `${n} trabajadores ${verbo}s.`,
+      data: resp,
+    };
+  }
+
   // ACTUALIZAR EMPLEADO
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar empleado' })
@@ -256,6 +352,25 @@ export class EmpleadoController {
   }
 
   // ESTADO DETALLADO DE LA EVALUACIÓN
+  @Get(':id/impacto-grupo')
+  @Roles(...ADMINISTRADORES)
+  @ApiOperation({
+    summary: 'Qué cambia en la campaña en curso si pasa a otro grupo',
+    description:
+      'Competencias que deja de tener (y si ya tienen notas), nuevas y con otro nivel. No escribe.',
+  })
+  @ApiParam({ name: 'id', description: 'ID del empleado' })
+  @ApiQuery({ name: 'idUnidad', description: 'Grupo ocupacional nuevo' })
+  async impactoGrupo(
+    @AlcanceActual() alcance: Alcance,
+    @Param('id', ParseIntPipe) id: number,
+    @Query('idUnidad', ParseIntPipe) idUnidad: number,
+  ) {
+    await this.alcances.verificar(alcance, 'empleado', id);
+    const data = await this.empleadoService.impactoCambioGrupo(id, idUnidad);
+    return { message: 'Impacto del cambio de grupo.', data };
+  }
+
   @Get(':id/estado-evaluacion')
   @ApiOperation({
     summary: 'Detalle del avance de evaluación de un trabajador',
@@ -407,6 +522,53 @@ export class EmpleadoController {
     return {
       message: 'Jefe y competencias obtenidos correctamente.',
       data: { jefeConCompetencias },
+    };
+  }
+
+  // Dos tramos a propósito: un solo tramo lo atraparía `@Get(':id')`.
+  @Get('importacion/plantilla')
+  @ApiOperation({
+    summary: 'Plantilla de importación de trabajadores de una empresa',
+  })
+  async plantillaImportacion(
+    @AlcanceActual() alcance: Alcance,
+    @Query('idEmpresaEmpleadora') idEmpresa: string,
+    @Res() res: Response,
+  ) {
+    const id = Number(empresaDelListado(alcance, idEmpresa));
+    if (!Number.isInteger(id) || id <= 0)
+      throw new BadRequestException('Indique la empresa.');
+    const buffer = await this.empleadoService.plantillaImportacion(id);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=plantilla-trabajadores.xlsx',
+    );
+    res.send(buffer);
+  }
+
+  // Lo justo para la revisión de la importación: quién ya está registrado
+  // (por documento y por código), en cualquier situación.
+  @Get('importacion/registrados')
+  @ApiOperation({
+    summary:
+      'Trabajadores ya registrados en una empresa, para la revisión de la importación',
+  })
+  async registradosParaImportar(
+    @AlcanceActual() alcance: Alcance,
+    @Query('idEmpresaEmpleadora') idEmpresa: string,
+  ) {
+    const id = Number(empresaDelListado(alcance, idEmpresa));
+    if (!Number.isInteger(id) || id <= 0)
+      throw new BadRequestException('Indique la empresa.');
+    return {
+      message: 'Trabajadores registrados.',
+      data: {
+        registrados: await this.empleadoService.registradosParaImportar(id),
+      },
     };
   }
 

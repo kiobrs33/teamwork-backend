@@ -1,5 +1,4 @@
 import { Roles, RolesGuard } from 'src/autorizacion/roles.guard';
-import { Rol } from 'src/empleado/types/empleadoTypes';
 import {
   Controller,
   Get,
@@ -25,6 +24,7 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { User } from 'src/auth/auth.decorator';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 
+import { Rol } from 'src/empleado/types/empleadoTypes';
 @ApiTags('Empleos')
 @ApiBearerAuth()
 @Controller('empleo')
@@ -32,9 +32,10 @@ export class EmpleoController {
   constructor(private readonly empleoService: EmpleoService) {}
 
   @Post()
-  // Las ofertas son de TeamWork (bolsa de trabajo pública): solo el
-  // superadministrador las publica, edita o retira. Leerlas es público.
+  // Las ofertas son de TeamWork (bolsa de trabajo pública): solo TeamWork
+  // (dueño y equipo) las publica, edita o retira. Leerlas es público.
   @UseGuards(JwtAuthGuard, RolesGuard)
+  // Solo el superadministrador gestiona las ofertas (decisión nov. 2026).
   @Roles(Rol.ADMIN)
   @ApiOperation({ summary: 'Crear un nuevo empleo' })
   async create(@User() user: AuthUser, @Body() dto: CreateEmpleoDto) {
@@ -70,6 +71,7 @@ export class EmpleoController {
   // Las ofertas son de TeamWork (bolsa de trabajo pública): solo el
   // superadministrador las publica, edita o retira. Leerlas es público.
   @UseGuards(JwtAuthGuard, RolesGuard)
+  // Solo el superadministrador gestiona las ofertas (decisión nov. 2026).
   @Roles(Rol.ADMIN)
   @ApiOperation({ summary: 'Actualizar un empleo' })
   async update(
@@ -88,6 +90,7 @@ export class EmpleoController {
   // Las ofertas son de TeamWork (bolsa de trabajo pública): solo el
   // superadministrador las publica, edita o retira. Leerlas es público.
   @UseGuards(JwtAuthGuard, RolesGuard)
+  // Solo el superadministrador gestiona las ofertas (decisión nov. 2026).
   @Roles(Rol.ADMIN)
   @ApiOperation({ summary: 'Eliminar un empleo (soft delete)' })
   async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {

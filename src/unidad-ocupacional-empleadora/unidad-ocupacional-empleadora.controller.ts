@@ -17,6 +17,7 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  ParseArrayPipe,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -43,6 +44,7 @@ import { AsignarCompetenciasDto } from './dto/create-unidad-competencia.dto';
 import { UnidadOcupacionalQueryDto } from './dto/unidad-ocupacional-query.dto';
 
 import { Response } from 'express';
+import { PdfRendererService } from 'src/reporte/pdf/pdf-renderer.service';
 import { Res } from '@nestjs/common';
 
 @ApiTags('Unidad Ocupacional Empleadora')
@@ -54,13 +56,14 @@ export class UnidadOcupacionalEmpleadoraController {
   constructor(
     private readonly unidadOcupacionalEmpleadoraService: UnidadOcupacionalEmpleadoraService,
     private readonly alcances: AlcanceService,
+    private readonly pdf: PdfRendererService,
   ) {}
 
   @Post()
   @ApiOperation({ summary: 'Crear una nueva unidad ocupacional empleadora' })
   @ApiResponse({
     status: 201,
-    description: 'Unidad ocupacional empleadora creada exitosamente.',
+    description: 'Grupo ocupacional creado.',
   })
   async create(
     @AlcanceActual() alcance: Alcance,
@@ -73,7 +76,7 @@ export class UnidadOcupacionalEmpleadoraController {
       dto,
     );
     return {
-      message: 'Unidad ocupacional empleadora creada exitosamente.',
+      message: 'Grupo ocupacional creado.',
       data: { unidad },
     };
   }
@@ -84,7 +87,7 @@ export class UnidadOcupacionalEmpleadoraController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de unidades ocupacionales empleadoras.',
+    description: 'Lista de grupos ocupacionales.',
   })
   @Roles(...TODOS)
   async findAll(
@@ -103,7 +106,7 @@ export class UnidadOcupacionalEmpleadoraController {
 
     const resp = await this.unidadOcupacionalEmpleadoraService.findAll(query);
     return {
-      message: 'Lista de unidades ocupacionales empleadoras.',
+      message: 'Lista de grupos ocupacionales.',
       data: { unidades: resp.data, meta: resp.meta },
     };
   }
@@ -114,7 +117,7 @@ export class UnidadOcupacionalEmpleadoraController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de unidades ocupacionales empleadoras por Empresa.',
+    description: 'Lista de grupos ocupacionales de la empresa.',
   })
   @Roles(...TODOS)
   async findAllByCompany(
@@ -125,7 +128,7 @@ export class UnidadOcupacionalEmpleadoraController {
     const unidades =
       await this.unidadOcupacionalEmpleadoraService.findAllByCompany(id);
     return {
-      message: 'Lista de unidades ocupacionales empleadoras por Empresa.',
+      message: 'Lista de grupos ocupacionales de la empresa.',
       data: { unidades },
     };
   }
@@ -170,7 +173,7 @@ export class UnidadOcupacionalEmpleadoraController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Unidad ocupacional empleadora encontrada.',
+    description: 'Grupo ocupacional encontrado.',
   })
   @Roles(...TODOS)
   async findOne(
@@ -180,7 +183,7 @@ export class UnidadOcupacionalEmpleadoraController {
     await this.alcances.verificar(alcance, 'unidad', id);
     const unidad = await this.unidadOcupacionalEmpleadoraService.findOne(id);
     return {
-      message: 'Unidad ocupacional empleadora encontrada.',
+      message: 'Grupo ocupacional encontrado.',
       data: { unidad },
     };
   }
@@ -211,7 +214,7 @@ export class UnidadOcupacionalEmpleadoraController {
       dto,
     );
     return {
-      message: `Unidad ocupacional empleadora con ID ${id} actualizada correctamente.`,
+      message: `Grupo ocupacional con ID ${id} actualizado.`,
       data: { unidad },
     };
   }
@@ -239,7 +242,7 @@ export class UnidadOcupacionalEmpleadoraController {
       id,
     );
     return {
-      message: `Unidad ocupacional empleadora con ID ${id} eliminada correctamente.`,
+      message: `Grupo ocupacional con ID ${id} eliminado.`,
       data: { unidad },
     };
   }
@@ -268,7 +271,6 @@ export class UnidadOcupacionalEmpleadoraController {
   // }
 
   @Post('import')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreateUnidadOcupacionalEmpleadoraDto] })
   @ApiOperation({ summary: 'Importar unidad ocupacional empleadora' })
   @ApiResponse({
@@ -279,17 +281,27 @@ export class UnidadOcupacionalEmpleadoraController {
   async importExcelData(
     @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
-    @Body() data: CreateUnidadOcupacionalEmpleadoraDto[],
+    // `ParseArrayPipe` valida cada fila con el DTO: con el tipo arreglo,
+    // el `ValidationPipe` no mira los elementos y entraba cualquier cosa.
+    @Body(
+      new ParseArrayPipe({
+        // Todos los errores, cada uno con su fila («[i] …»): sin esto Nest
+        // se detiene en el primero y sin índice, y el front no sabe de qué fila es.
+        stopAtFirstError: false,
+        items: CreateUnidadOcupacionalEmpleadoraDto,
+        whitelist: true,
+        forbidNonWhitelisted: false,
+      }),
+    )
+    data: CreateUnidadOcupacionalEmpleadoraDto[],
   ) {
     for (const fila of data)
       verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
-    const { count } = await this.unidadOcupacionalEmpleadoraService.importData(
-      user,
-      data,
-    );
+    const { count, omitidas } =
+      await this.unidadOcupacionalEmpleadoraService.importData(user, data);
     return {
-      message: 'Unidades Ocupacionales empleadora creadas exitosamente.',
-      data: { count },
+      message: 'Grupos ocupacionales importados.',
+      data: { count, omitidas },
     };
   }
 
@@ -324,6 +336,52 @@ export class UnidadOcupacionalEmpleadoraController {
       );
 
     return { message: 'Impacto calculado.', data: impacto };
+  }
+
+  // La misma consulta que `asignar/impacto`, con nombres y en PDF: se
+  // descarga desde la confirmación para avisar a quienes deben volver a
+  // calificar. No escribe.
+  @Post('asignar/impacto/pdf')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiBody({ type: AsignarCompetenciasDto })
+  @ApiOperation({
+    summary:
+      'PDF con las evaluaciones que se anularían y quién debe recalificar',
+  })
+  async impactoAsignacionPdf(
+    @AlcanceActual() alcance: Alcance,
+    @Body() dto: AsignarCompetenciasDto,
+    @Res() res: Response,
+  ) {
+    await this.alcances.verificarVarios(
+      alcance,
+      'unidad',
+      dto.unidades.map((u) => u.idUnidadOcupacionalEmpleadora),
+    );
+    await this.alcances.verificarVarios(
+      alcance,
+      'competencia',
+      dto.unidades.flatMap((u) => u.competencias.map((c) => c.idCompetencia)),
+    );
+    const detalle =
+      await this.unidadOcupacionalEmpleadoraService.detalleImpactoAsignacion(
+        dto.unidades,
+      );
+    const fecha = new Date().toLocaleString('es-PE', {
+      timeZone: 'America/Lima',
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+    const pdf = await this.pdf.render('impacto-asignacion', {
+      ...detalle,
+      fecha,
+    });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition':
+        'attachment; filename=cambios-asignacion-competencias.pdf',
+    });
+    res.end(pdf);
   }
 
   @Post('asignar')
@@ -388,7 +446,7 @@ export class UnidadOcupacionalEmpleadoraController {
 
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename=unidades-ocupacionales-empleadoras.xlsx`,
+      `attachment; filename=grupos-ocupacionales.xlsx`,
     );
 
     res.send(buffer);

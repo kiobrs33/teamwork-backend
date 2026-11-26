@@ -17,6 +17,7 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  ParseArrayPipe,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -186,7 +187,6 @@ export class AreaEmpleadoraController {
 
   // Importar áreas empleadoras desde Excel
   @Post('import')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiBody({ type: [CreateAreaEmpleadoraDto] })
   @ApiOperation({ summary: 'Importar Area empleadora' })
   @ApiResponse({
@@ -196,14 +196,29 @@ export class AreaEmpleadoraController {
   async importExcelData(
     @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
-    @Body() data: CreateAreaEmpleadoraDto[],
+    // `ParseArrayPipe` valida cada fila con el DTO: con el tipo arreglo,
+    // el `ValidationPipe` no mira los elementos y entraba cualquier cosa.
+    @Body(
+      new ParseArrayPipe({
+        // Todos los errores, cada uno con su fila («[i] …»): sin esto Nest
+        // se detiene en el primero y sin índice, y el front no sabe de qué fila es.
+        stopAtFirstError: false,
+        items: CreateAreaEmpleadoraDto,
+        whitelist: true,
+        forbidNonWhitelisted: false,
+      }),
+    )
+    data: CreateAreaEmpleadoraDto[],
   ) {
     for (const fila of data)
       verificarEmpresa(alcance, Number(fila.idEmpresaEmpleadora), 'Empresa');
-    const { count } = await this.areaEmpleadoraService.importData(user, data);
+    const { count, omitidas } = await this.areaEmpleadoraService.importData(
+      user,
+      data,
+    );
     return {
       message: 'Areas empleadora creadas exitosamente.',
-      data: { count },
+      data: { count, omitidas },
     };
   }
 

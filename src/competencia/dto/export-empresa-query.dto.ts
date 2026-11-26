@@ -42,6 +42,13 @@ export class ExportEmpresaQueryDto {
   search?: string;
 
   @ApiPropertyOptional({
+    description: 'Solo el equipo directo de este jefe (su código de empleado)',
+  })
+  @IsOptional()
+  @IsString()
+  codigoJefe?: string;
+
+  @ApiPropertyOptional({
     example: 5,
     description:
       'Campaña a exportar (id). Si no se envía se usa la campaña en curso ' +

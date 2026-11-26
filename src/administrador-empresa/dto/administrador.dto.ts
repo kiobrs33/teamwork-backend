@@ -29,6 +29,12 @@ export class CrearAdministradorDto {
   @IsString()
   @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
   contrasena: string;
+
+  /** Nivel de acceso: `true` = Solo lectura, `false` = Edición (por defecto). */
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  soloLectura?: boolean;
 }
 
 export class ActualizarAdministradorDto {
@@ -51,4 +57,10 @@ export class ActualizarAdministradorDto {
   @IsOptional()
   @IsBoolean()
   activo?: boolean;
+
+  /** Nivel de acceso: `true` = Solo lectura, `false` = Edición (por defecto). */
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  soloLectura?: boolean;
 }

@@ -17,6 +17,9 @@ import {
   calcularResultados,
   clasificarDesempeno,
   DESEMPENO_SIN_EVALUAR,
+  clasificarObjetivos,
+  aplicarCalibracion,
+  clasificarResultadoFinal,
   notaDeEvaluacion,
   notasVacias,
   origenDeEvaluacion,
@@ -26,6 +29,7 @@ import {
   resultadoDeCompetenciasAsignadas,
   resultadoDeObjetivo,
   SIN_EVALUAR_TEXTO,
+  evaluadoSinJefe,
   type NotasDeEvaluado,
 } from 'src/common/resultados/resultados-evaluacion';
 
@@ -58,6 +62,32 @@ export class ReporteService {
     idCampana?: number | null,
   ) {
     if (user.rol === Rol.ADMIN) return;
+
+    // Equipo de TeamWork: los informes de trabajadores de sus empresas.
+    if (user.rol === Rol.EQUIPO) {
+      const [usuario, trabajador] = await Promise.all([
+        this.prisma.usuario.findUnique({
+          where: { idUsuario: Number(user.idUsuario) },
+          select: {
+            todasLasEmpresas: true,
+            empresasAsignadas: { select: { idEmpresaEmpleadora: true } },
+          },
+        }),
+        this.prisma.empleado.findUnique({
+          where: { idEmpleado },
+          select: { idEmpresaEmpleadora: true },
+        }),
+      ]);
+      if (!trabajador) throw new NotFoundException('Empleado no encontrado');
+      if (usuario?.todasLasEmpresas) return;
+      const suyas = new Set(
+        usuario?.empresasAsignadas.map((a) => a.idEmpresaEmpleadora) ?? [],
+      );
+      if (!suyas.has(trabajador.idEmpresaEmpleadora)) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
+      return;
+    }
 
     // Administrador de empresa: los informes de cualquier trabajador de su
     // empresa, de cualquier campaña; de otra empresa, como si no existiera.
@@ -130,7 +160,7 @@ export class ReporteService {
     });
     if (!yo)
       throw new NotFoundException(
-        'Tu usuario no tiene un trabajador asociado.',
+        'Su usuario no tiene un trabajador asociado.',
       );
     return yo.idEmpleado;
   }
@@ -204,7 +234,9 @@ export class ReporteService {
           resultadoFinal: d.resultadosTexto.evaluacionFinal,
           resultadoCompetencias: d.resultadosTexto.competencias,
           resultadoObjetivos: d.resultadosTexto.objetivos,
-          clasificacion: d.clasificacionCompetencias,
+          // "Desempeño" va junto al resultado final: es el nivel del
+          // resultado final, no solo el de competencias.
+          clasificacion: d.clasificacionFinal,
           competencias: d.competenciasDetalle.length,
           objetivos: d.objetivosDetalle.length,
         };
@@ -268,6 +300,8 @@ export class ReporteService {
         tipoCalificacionCompetencia: campana.tipoCalificacionCompetencia,
         competenciaResultadoEsperado: campana.competenciaResultadoEsperado,
       }),
+      // Se decide al leer las evaluaciones (más abajo).
+      evaluadoSinJefe: false,
     };
     const peso = pesosDeEmpresa(empresa);
 
@@ -371,6 +405,14 @@ export class ReporteService {
               orderBy: { idCompetencia: 'asc' },
             });
 
+    // La cabeza de la empresa (sin jefe): en 180° la califican solo sus
+    // subordinados, al 100 %.
+    empresa.evaluadoSinJefe = evaluadoSinJefe({
+      cerrada,
+      codigoJefeActual: empleado.codigoEmpleadoJefe,
+      fotosJefe: evaluaciones.map((ev) => ev.codigoJefeEvaluado),
+    });
+
     // Las notas vigentes, indexadas por competencia.
     const notasPorCompetencia = new Map<number, NotasDeEvaluado>();
     const notasGlobales: NotasDeEvaluado = notasVacias();
@@ -423,6 +465,7 @@ export class ReporteService {
       include: {
         objetivoDetalles: {
           where: { estado: true },
+          orderBy: { secuencial: 'asc' },
           select: {
             descripcion: true,
             metaObjetivo: true,
@@ -445,6 +488,38 @@ export class ReporteService {
 
     const objetivosDetalle: any[] = [];
     const retroalimentaciones: any[] = [];
+
+    // La sesión de retroalimentación de esta campaña (lo conversado y la
+    // respuesta del trabajador): llena «Comentarios finales». Sin sesión,
+    // esos recuadros quedan en blanco para llenarlos a mano.
+    const sesionDb = campana
+      ? await this.prisma.sesionRetroalimentacion.findUnique({
+          where: {
+            idCampanaEvaluacion_idEmpleado: {
+              idCampanaEvaluacion: campana.idCampanaEvaluacion,
+              idEmpleado,
+            },
+          },
+        })
+      : null;
+    const RESPUESTA: Record<string, string> = {
+      PENDIENTE: 'Todavía no responde',
+      CONFORME: 'Conforme',
+      NO_CONFORME: 'No conforme',
+    };
+    const sesion = sesionDb && {
+      fecha: sesionDb.fechaSesion
+        .toISOString()
+        .slice(0, 10)
+        .split('-')
+        .reverse()
+        .join('/'),
+      fortalezas: sesionDb.fortalezas,
+      oportunidades: sesionDb.oportunidades,
+      compromisos: sesionDb.compromisos,
+      respuesta: RESPUESTA[sesionDb.conformidad] ?? sesionDb.conformidad,
+      comentario: sesionDb.comentarioTrabajador,
+    };
 
     let contadorObj = 1;
 
@@ -531,10 +606,31 @@ export class ReporteService {
       const notaAuto = notas.autoEvaluaciones.length ? r.promedioAuto : null;
       const brecha = hayBrecha(notaAuto, notaJefe);
 
+      const notaSubordinados = notas.evaluacionesSubordinados.length
+        ? r.promedioSubordinados
+        : null;
+      const conPorcentaje = (n: number | null) => (n === null ? '—' : `${n}%`);
+
       return {
         orden: `Competencia ${indice + 1}`,
         competencia: asignada.competencia.titulo,
         nivel: asignada.competenciaNivel.nivel,
+        // Lo que puso cada uno, para que se vea de dónde sale el resultado
+        // («—»: no calificó).
+        // 180° con jefe: los subordinados calificaron y el jefe no; su parte
+        // cuenta 0 y la fila lo dice (si no, el 30 % no se entiende).
+        faltaJefe:
+          !noEvaluada &&
+          notaJefe === null &&
+          notaSubordinados !== null &&
+          !empresa.evaluadoSinJefe,
+        // Para el radar: `null` = nadie calificó (sin punto en el 0).
+        notaJefe,
+        notaAuto,
+        notaSubordinados,
+        autoTexto: conPorcentaje(notaAuto),
+        jefeTexto: conPorcentaje(notaJefe),
+        subordinadosTexto: conPorcentaje(notaSubordinados),
 
         autoevaluacion: notaAuto ?? 0,
         evaluacionJefe: notaJefe ?? 0,
@@ -581,9 +677,41 @@ export class ReporteService {
     resultados.sinEvaluar =
       resultados.competenciasSinEvaluar && resultados.objetivosSinEvaluar;
 
+    // Calibración: si el comité ajustó a este trabajador en esta campaña,
+    // manda el ajuste (misma regla que el Excel y la pantalla de calibración).
+    const ajuste = campana
+      ? await this.prisma.ajusteCalibracion.findUnique({
+          where: {
+            idCampanaEvaluacion_idEmpleado: {
+              idCampanaEvaluacion: campana.idCampanaEvaluacion,
+              idEmpleado: empleado.idEmpleado,
+            },
+          },
+        })
+      : null;
+    Object.assign(resultados, aplicarCalibracion(resultados, ajuste, empresa));
+
+    // Con autoevaluación pero sin notas de quien califica, «no se ha
+    // registrado ninguna evaluación» no era cierto.
     const desempeno = resultados.competenciasSinEvaluar
+      ? resultados.sinEvaluar
+        ? DESEMPENO_SIN_EVALUAR
+        : {
+            nivel: SIN_EVALUAR_TEXTO,
+            mensaje:
+              'Todavía no tiene calificaciones de competencias en esta campaña: mientras tanto cuentan como 0.',
+          }
+      : clasificarDesempeno(
+          resultados.resultadoCompetencias,
+          empresa.tipoCalificacionCompetencia,
+        );
+    // La guía clasifica también la nota de objetivos y el puntaje global.
+    const desempenoObjetivos = resultados.objetivosSinEvaluar
       ? DESEMPENO_SIN_EVALUAR
-      : clasificarDesempeno(resultados.resultadoCompetencias);
+      : clasificarObjetivos(resultados.promedioObjetivos);
+    const desempenoFinal = resultados.sinEvaluar
+      ? DESEMPENO_SIN_EVALUAR
+      : clasificarResultadoFinal(resultados.resultadoFinal);
 
     const porcentajeCompetencias = Math.min(
       resultados.resultadoCompetencias,
@@ -599,41 +727,57 @@ export class ReporteService {
     // la del líder (la que puntúa), la del propio trabajador (referencia) y,
     // solo en 180°, la de quienes dependen de él. Pintando el resultado
     // combinado no se veía el contraste, que es justo para lo que sirve.
+    // Las puntas llevan el nombre de la competencia (partido en renglones):
+    // «Competencia 1…6» obligaba a ir a la tabla para saber cuál era cuál.
+    const enRenglones = (texto: string, largo = 16) =>
+      texto.split(/\s+/).reduce<string[]>((lineas, palabra) => {
+        const ultima = lineas[lineas.length - 1];
+        if (ultima && `${ultima} ${palabra}`.length <= largo)
+          lineas[lineas.length - 1] = `${ultima} ${palabra}`;
+        else lineas.push(palabra);
+        return lineas;
+      }, []);
+    // Una mirada sin ninguna nota no se dibuja (un jefe que no existe no es
+    // un jefe que puso 0), y una competencia sin nota de alguien no lleva
+    // punto en el centro.
+    const miradas = [
+      {
+        label: 'Jefe inmediato',
+        data: competenciasDetalle.map((c) => c.notaJefe),
+        color: '#2f80ed',
+        fondo: 'rgba(47,128,237,0.25)',
+      },
+      {
+        label: 'Autoevaluación',
+        data: competenciasDetalle.map((c) => c.notaAuto),
+        color: '#f2994a',
+        fondo: 'rgba(242,153,74,0.25)',
+      },
+      ...(empresa.modeloEmpresa === '180'
+        ? [
+            {
+              label: 'Subordinados',
+              data: competenciasDetalle.map((c) => c.notaSubordinados),
+              color: '#27ae60',
+              fondo: 'rgba(39,174,96,0.20)',
+            },
+          ]
+        : []),
+    ];
     const competenciasRadarChart = {
-      labels: competenciasDetalle.map((c) => c.orden),
-      datasets: [
-        {
-          label: 'Líder inmediato',
-          data: competenciasDetalle.map((c) => c.evaluacionJefe),
-          borderColor: '#2f80ed',
-          backgroundColor: 'rgba(47,128,237,0.25)',
-          pointBackgroundColor: '#2f80ed',
+      labels: competenciasDetalle.map((c) => enRenglones(c.competencia)),
+      datasets: miradas
+        .filter((m) => m.data.some((v) => v !== null))
+        .map((m) => ({
+          label: m.label,
+          data: m.data,
+          borderColor: m.color,
+          backgroundColor: m.fondo,
+          pointBackgroundColor: m.color,
           pointBorderColor: '#ffffff',
           borderWidth: 2,
-        },
-        {
-          label: 'Autoevaluación',
-          data: competenciasDetalle.map((c) => c.autoevaluacion),
-          borderColor: '#f2994a',
-          backgroundColor: 'rgba(242,153,74,0.25)',
-          pointBackgroundColor: '#f2994a',
-          pointBorderColor: '#ffffff',
-          borderWidth: 2,
-        },
-        ...(empresa.modeloEmpresa === '180'
-          ? [
-              {
-                label: 'Subordinados',
-                data: competenciasDetalle.map((c) => c.evaluacionSubordinados),
-                borderColor: '#27ae60',
-                backgroundColor: 'rgba(39,174,96,0.20)',
-                pointBackgroundColor: '#27ae60',
-                pointBorderColor: '#ffffff',
-                borderWidth: 2,
-              },
-            ]
-          : []),
-      ],
+          spanGaps: true,
+        })),
     };
 
     const objetivosChart = {
@@ -743,7 +887,37 @@ export class ReporteService {
       cabecera.grupo = unidad?.descripcion ?? cabecera.grupo;
     }
 
+    // Cómo se llega a la nota de competencias, en una frase: depende del
+    // modelo y de si tiene jefe o gente a cargo que lo califique.
+    const conSubordinados = notasGlobales.evaluacionesSubordinados.length > 0;
+    const es180 = empresa.modeloEmpresa === '180';
+    const tieneACargo =
+      es180 &&
+      !conSubordinados &&
+      (await this.prisma.empleado.count({
+        where: {
+          codigoEmpleadoJefe: empleado.codigoEmpleado,
+          idEmpresaEmpleadora: empleado.idEmpresaEmpleadora,
+          estado: true,
+        },
+      })) > 0;
+    const comoSeCalcula = !es180
+      ? empresa.evaluadoSinJefe
+        ? 'Modelo 90°. No tiene jefe inmediato: su resultado de competencias se define en la calibración.'
+        : 'Modelo 90°: las competencias las califica su jefe inmediato (100 %). La autoevaluación no suma.'
+      : empresa.evaluadoSinJefe
+        ? conSubordinados
+          ? 'Modelo 180°. No tiene jefe inmediato: las competencias las califican sus subordinados (100 %). La autoevaluación no suma.'
+          : 'Modelo 180°. No tiene jefe inmediato: su resultado de competencias se define en la calibración.'
+        : conSubordinados
+          ? `Modelo 180°: competencias = jefe inmediato ${peso.jefe * 100} % + subordinados ${peso.subordinado * 100} %. La autoevaluación no suma.`
+          : tieneACargo
+            ? `Modelo 180°: jefe inmediato ${peso.jefe * 100} % + subordinados ${peso.subordinado * 100} %; mientras nadie a su cargo califique, cuenta solo su jefe (100 %). La autoevaluación no suma.`
+            : 'Modelo 180°: no tiene personas a cargo, así que las competencias las califica solo su jefe inmediato (100 %). La autoevaluación no suma.';
+
     const data = {
+      comoSeCalcula,
+      es180,
       campana: {
         nombre: campana?.nombre ?? null,
         cerrada,
@@ -795,6 +969,28 @@ export class ReporteService {
       },
 
       clasificacionCompetencias: desempeno,
+      calibracion: ajuste
+        ? {
+            // La plantilla solo tiene #if/#each: el texto va armado.
+            texto: [
+              ajuste.competencias !== null
+                ? `competencias ${ajuste.competenciasOriginal ?? '—'} → ${ajuste.competencias}`
+                : null,
+              ajuste.objetivos !== null
+                ? `objetivos ${ajuste.objetivosOriginal ?? '—'} → ${ajuste.objetivos}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            motivo: ajuste.motivo,
+            competenciasOriginal: ajuste.competenciasOriginal,
+            objetivosOriginal: ajuste.objetivosOriginal,
+            competencias: ajuste.competencias,
+            objetivos: ajuste.objetivos,
+          }
+        : null,
+      clasificacionObjetivos: desempenoObjetivos,
+      clasificacionFinal: desempenoFinal,
 
       competenciasDetalle,
       fortalezas,
@@ -807,6 +1003,10 @@ export class ReporteService {
 
       objetivosDetalle,
       retroalimentaciones,
+      // Antes la plantilla miraba `retroalimentaciones.retroalimentacion`,
+      // que no existe, y agregaba filas en blanco aunque hubiera plan.
+      hayPlan: retroalimentaciones.some((r) => r.retroalimentacion.length > 0),
+      sesion,
       objetivosChart,
 
       chartData: {

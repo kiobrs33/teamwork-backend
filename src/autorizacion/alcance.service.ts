@@ -7,7 +7,16 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Rol } from 'src/empleado/types/empleadoTypes';
-import { Alcance, verificarEmpresa } from './alcance';
+
+/** Administra (TeamWork o RR. HH.): ve cualquier par de su(s) empresa(s). */
+const esAdministrador = (a: { rol: Rol }) =>
+  a.rol === Rol.ADMIN || a.rol === Rol.EQUIPO || a.rol === Rol.ADMIN_EMPRESA;
+import {
+  Alcance,
+  empresasDelAlcance,
+  noEncontrado,
+  verificarEmpresa,
+} from './alcance';
 
 /** Entidades cuya empresa se puede comprobar por id. */
 export type EntidadConEmpresa =
@@ -29,7 +38,7 @@ const NOMBRES: Record<EntidadConEmpresa, string> = {
   area: 'Área',
   gerencia: 'Gerencia',
   puesto: 'Puesto',
-  unidad: 'Unidad ocupacional',
+  unidad: 'Grupo ocupacional',
   competencia: 'Competencia',
   empleado: 'Empleado',
   campana: 'Campaña',
@@ -50,13 +59,19 @@ export class AlcanceService {
       select: {
         rol: true,
         estado: true,
+        soloLectura: true,
         idEmpresaEmpleadora: true,
+        // Empresa archivada: su gente queda fuera aunque el token siga vigente.
+        empresaEmpleadora: { select: { estado: true } },
+        todasLasEmpresas: true,
+        empresasAsignadas: { select: { idEmpresaEmpleadora: true } },
         empleado: {
           select: {
             idEmpleado: true,
             codigoEmpleado: true,
             idEmpresaEmpleadora: true,
             estado: true,
+            empresaEmpleadora: { select: { estado: true } },
           },
         },
       },
@@ -68,11 +83,45 @@ export class AlcanceService {
       throw new UnauthorizedException('Sesión no válida');
     }
 
+    const empresaArchivada =
+      usuario.empresaEmpleadora?.estado === false ||
+      usuario.empleado?.empresaEmpleadora?.estado === false;
+    if (
+      empresaArchivada &&
+      usuario.rol !== Rol.ADMIN &&
+      usuario.rol !== Rol.EQUIPO
+    ) {
+      throw new UnauthorizedException('Sesión no válida');
+    }
+
     const rol = usuario.rol as Rol;
-    const base = { idUsuario: Number(user.idUsuario), rol };
+    const base = {
+      idUsuario: Number(user.idUsuario),
+      rol,
+      // Solo las cuentas de gestión tienen niveles; el dueño, jefes y
+      // empleados no.
+      soloLectura:
+        (rol === Rol.EQUIPO || rol === Rol.ADMIN_EMPRESA) &&
+        usuario.soloLectura,
+    };
 
     if (rol === Rol.ADMIN) {
       return { ...base, todasLasEmpresas: true, idEmpresa: null };
+    }
+
+    // Equipo de TeamWork: todas las empresas o solo las asignadas.
+    if (rol === Rol.EQUIPO) {
+      if (usuario.todasLasEmpresas) {
+        return { ...base, todasLasEmpresas: true, idEmpresa: null };
+      }
+      return {
+        ...base,
+        todasLasEmpresas: false,
+        idEmpresa: null,
+        empresasPermitidas: usuario.empresasAsignadas.map(
+          (a) => a.idEmpresaEmpleadora,
+        ),
+      };
     }
 
     if (rol === Rol.ADMIN_EMPRESA) {
@@ -83,7 +132,12 @@ export class AlcanceService {
       };
     }
 
-    const empleado = usuario.empleado?.estado ? usuario.empleado : null;
+    // Jefe o empleado cuyo trabajador está dado de baja: fuera, aunque el
+    // token siga vigente (igual que un usuario desactivado).
+    if (usuario.empleado && !usuario.empleado.estado) {
+      throw new UnauthorizedException('Sesión no válida');
+    }
+    const empleado = usuario.empleado ?? null;
     return {
       ...base,
       todasLasEmpresas: false,
@@ -229,7 +283,7 @@ export class AlcanceService {
   ): Promise<void> {
     const idEmpresa = await this.empresaDe(entidad, id);
     if (idEmpresa === null) {
-      throw new NotFoundException(`${NOMBRES[entidad]} no encontrado`);
+      throw new NotFoundException(noEncontrado(NOMBRES[entidad]));
     }
     verificarEmpresa(alcance, idEmpresa, NOMBRES[entidad]);
   }
@@ -250,7 +304,7 @@ export class AlcanceService {
    */
   async verificarUsuario(alcance: Alcance, idUsuario: number): Promise<void> {
     if (alcance.todasLasEmpresas) return;
-    if (alcance.rol === Rol.ADMIN_EMPRESA) {
+    if (alcance.rol === Rol.ADMIN_EMPRESA || alcance.rol === Rol.EQUIPO) {
       const u = await this.prisma.usuario.findUnique({
         where: { idUsuario: Number(idUsuario) },
         select: {
@@ -279,7 +333,7 @@ export class AlcanceService {
     idEmpleado: number,
   ): Promise<void> {
     const id = Number(idEmpleado);
-    if (alcance.rol === Rol.ADMIN || alcance.rol === Rol.ADMIN_EMPRESA) {
+    if (esAdministrador(alcance)) {
       await this.verificar(alcance, 'empleado', id);
       return;
     }
@@ -289,6 +343,8 @@ export class AlcanceService {
         where: {
           idEmpleado: id,
           codigoEmpleadoJefe: alcance.codigoEmpleado,
+          // El código es único por empresa: sus subordinados, de la suya.
+          ...(alcance.idEmpresa && { idEmpresaEmpleadora: alcance.idEmpresa }),
           estado: true,
         },
         select: { idEmpleado: true },
@@ -308,7 +364,8 @@ export class AlcanceService {
     if (rol === undefined || rol === null) return;
     if (rol === Rol.JEFE || rol === Rol.EMPLEADO) return;
     if (rol === Rol.ADMIN && alcance.rol === Rol.ADMIN) return;
-    throw new ForbiddenException(`No puedes asignar el rol ${rol}`);
+    // EQUIPO y ADMIN_EMPRESA no se dan desde Trabajadores: tienen su pantalla.
+    throw new ForbiddenException(`No tiene permiso para asignar el rol ${rol}`);
   }
 
   /**
@@ -322,13 +379,13 @@ export class AlcanceService {
     idEvaluado: number,
     idEvaluador: number,
   ): Promise<void> {
-    if (alcance.rol === Rol.ADMIN || alcance.rol === Rol.ADMIN_EMPRESA) {
+    if (esAdministrador(alcance)) {
       await this.verificar(alcance, 'empleado', idEvaluado);
       await this.verificar(alcance, 'empleado', idEvaluador);
       return;
     }
     if (Number(idEvaluador) !== alcance.idEmpleado) {
-      throw new ForbiddenException('Solo puedes evaluar como tú mismo');
+      throw new ForbiddenException('Solo puede evaluar en nombre propio');
     }
     if (Number(idEvaluado) === alcance.idEmpleado) return;
 
@@ -367,7 +424,7 @@ export class AlcanceService {
     idEvaluacion: number,
     { soloEvaluador }: { soloEvaluador: boolean },
   ): Promise<void> {
-    if (alcance.rol === Rol.ADMIN || alcance.rol === Rol.ADMIN_EMPRESA) {
+    if (esAdministrador(alcance)) {
       await this.verificar(alcance, 'evaluacionCompetencia', idEvaluacion);
       return;
     }
@@ -392,7 +449,7 @@ export class AlcanceService {
     alcance: Alcance,
     idEmpleado: number,
   ): Promise<void> {
-    if (alcance.rol === Rol.ADMIN || alcance.rol === Rol.ADMIN_EMPRESA) {
+    if (esAdministrador(alcance)) {
       await this.verificar(alcance, 'empleado', idEmpleado);
       return;
     }
@@ -401,6 +458,8 @@ export class AlcanceService {
         where: {
           idEmpleado: Number(idEmpleado),
           codigoEmpleadoJefe: alcance.codigoEmpleado,
+          // El código es único por empresa: sus subordinados, de la suya.
+          ...(alcance.idEmpresa && { idEmpresaEmpleadora: alcance.idEmpresa }),
           estado: true,
         },
         select: { idEmpleado: true },
@@ -408,6 +467,56 @@ export class AlcanceService {
       if (sub) return;
     }
     throw new NotFoundException('Empleado no encontrado');
+  }
+
+  /**
+   * Jefes y empleados solo califican dentro del periodo de la campaña en
+   * curso (`fechaVigenciaInicio/Fin`) y el jefe solo define objetivos dentro
+   * de su plazo de fijación (`…Objetivo`, si la campaña lo tiene). Antes lo
+   * controlaba solo la pantalla (`EvaluationGuard`): con un token válido se
+   * calificaba fuera de plazo. Los administradores quedan fuera de la regla
+   * (corrigen datos). Se compara **por día en hora de Lima**, con los dos
+   * extremos incluidos: las fechas se guardan a medianoche UTC, y comparadas
+   * con la hora el último día se cerraba a las 7 p. m. del anterior.
+   */
+  async verificarVigencia(
+    alcance: Alcance,
+    tipo: 'evaluacion' | 'objetivos',
+  ): Promise<void> {
+    if (esAdministrador(alcance) || !alcance.idEmpresa) return;
+    const campana = await this.prisma.campanaEvaluacion.findFirst({
+      where: { idEmpresaEmpleadora: alcance.idEmpresa, estado: 'EN_CURSO' },
+      select: {
+        fechaVigenciaInicio: true,
+        fechaVigenciaFin: true,
+        fechaVigenciaInicioObjetivo: true,
+        fechaVigenciaFinObjetivo: true,
+      },
+    });
+    if (!campana) {
+      throw new ForbiddenException(
+        'No hay una campaña de evaluación en curso.',
+      );
+    }
+    const [inicio, fin] =
+      tipo === 'evaluacion'
+        ? [campana.fechaVigenciaInicio, campana.fechaVigenciaFin]
+        : [
+            campana.fechaVigenciaInicioObjetivo,
+            campana.fechaVigenciaFinObjetivo,
+          ];
+    // Sin plazo de fijación de objetivos no hay nada que comprobar.
+    if (!inicio || !fin) return;
+    const dia = (d: Date) => d.toISOString().slice(0, 10);
+    const hoyLima = dia(new Date(Date.now() - 5 * 60 * 60 * 1000));
+    const formato = (d: Date) => dia(d).split('-').reverse().join('/');
+    if (hoyLima < dia(inicio) || hoyLima > dia(fin)) {
+      throw new ForbiddenException(
+        tipo === 'evaluacion'
+          ? `Fuera del periodo de evaluación (del ${formato(inicio)} al ${formato(fin)}).`
+          : `Fuera del plazo para definir objetivos (del ${formato(inicio)} al ${formato(fin)}).`,
+      );
+    }
   }
 
   /** Un objetivo ya creado, con la misma regla que `verificarDueñoDeObjetivos`. */
@@ -421,13 +530,22 @@ export class AlcanceService {
   }
 
   /** Cargas masivas que identifican al trabajador por su código. */
-  async verificarCodigos(alcance: Alcance, codigos: string[]): Promise<void> {
-    if (alcance.todasLasEmpresas) return;
+  async verificarCodigos(
+    alcance: Alcance,
+    codigos: string[],
+    idEmpresa?: number,
+  ): Promise<void> {
     const unicos = [...new Set(codigos.filter(Boolean))];
+    // Con empresa indicada, los códigos tienen que ser de esa empresa (el
+    // código es único por empresa, no en todo el sistema).
+    if (alcance.todasLasEmpresas && !idEmpresa) return;
+    const empresas = idEmpresa
+      ? [idEmpresa]
+      : (empresasDelAlcance(alcance) ?? []);
     const encontrados = await this.prisma.empleado.findMany({
       where: {
         codigoEmpleado: { in: unicos },
-        idEmpresaEmpleadora: alcance.idEmpresa ?? -1,
+        idEmpresaEmpleadora: { in: empresas },
       },
       select: { codigoEmpleado: true },
     });
@@ -435,7 +553,7 @@ export class AlcanceService {
     const ajenos = unicos.filter((c) => !propios.has(c));
     if (ajenos.length) {
       throw new NotFoundException(
-        `Trabajadores no encontrados en tu empresa: ${ajenos.join(', ')}`,
+        `Trabajadores no encontrados en su empresa: ${ajenos.join(', ')}`,
       );
     }
   }

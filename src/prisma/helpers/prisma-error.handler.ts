@@ -10,7 +10,7 @@ import { Prisma } from '@prisma/client';
 export function handlePrismaError(error: unknown, entity = 'registro'): never {
   entity = entity.toUpperCase();
 
-  console.log("HANDLE PRISMA ERROR ====>", error)
+  console.log('HANDLE PRISMA ERROR ====>', error);
 
   // ✅ SI YA ES UNA HTTP EXCEPTION, NO LA TOQUES
   if (error instanceof HttpException) {

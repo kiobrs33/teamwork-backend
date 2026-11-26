@@ -10,6 +10,7 @@ import {
   Min,
   Max,
   IsIn,
+  IsHexColor,
   IsEnum,
 } from 'class-validator';
 import { TipoCalificacion } from '../types/empresaTypes';
@@ -59,6 +60,15 @@ export class CreateEmpresaEmpleadoraDto {
   @IsOptional()
   @IsString({ message: 'La URL del logo debe ser un texto.' })
   urlLogo?: string;
+
+  @ApiPropertyOptional({
+    example: '#722ed1',
+    description:
+      'Color primario de la empresa: el sistema lo usa en botones, enlaces y selección para que se sienta suyo. Null = el azul por defecto. El front ofrece solo colores de la paleta de antd.',
+  })
+  @IsOptional()
+  @IsHexColor({ message: 'El color debe ser un hexadecimal, como #722ed1.' })
+  colorPrimario?: string | null;
 
   // Configuración y vigencias de la empresa: valores por defecto de su
   // PRIMERA campaña. Las de cada ciclo viven en la campaña (módulo campana).

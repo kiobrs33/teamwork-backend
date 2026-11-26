@@ -1,3 +1,9 @@
+import {
+  FORMATO_DOCUMENTO,
+  SITUACIONES,
+  Situacion,
+  TipoDocumento,
+} from './types/situacion';
 import { construirLibroExcel } from 'src/common/excel/libro-excel';
 import {
   CAMPANA_EN_CURSO,
@@ -23,16 +29,11 @@ import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 import { hash } from 'bcryptjs';
 import { AuthUser } from 'src/common/interfaces/auth-user.interface';
-import {
-  EmployeeQueryDto,
-  EmpleadoSortField,
-} from './dto/employee-query.dto';
+import { EmployeeQueryDto, EmpleadoSortField } from './dto/employee-query.dto';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
-import {
-  origenDeEvaluacion,
-} from 'src/common/resultados/resultados-evaluacion';
+import { origenDeEvaluacion } from 'src/common/resultados/resultados-evaluacion';
 
 /** Lo que `conAgregados` añade a cada fila del listado. */
 type Avance = { total: number; hechas: number };
@@ -50,6 +51,123 @@ type ConAgregados<T> = T & {
   avanceObjetivos: Avance;
 };
 
+import { construirPlantillaTrabajadores } from './plantilla-importacion';
+import { generarContrasena } from 'src/common/acceso/generar-contrasena';
+import { problemaContrasena } from 'src/common/acceso/politica-contrasena';
+
+/**
+ * Ámbito de la cuenta: la de un trabajador (JEFE / EMPLEADO) es de su empresa
+ * y su usuario solo es único dentro de ella; la de un ADMIN es del sistema.
+ */
+const empresaDeCuenta = (rol: string | undefined, idEmpresa: unknown) =>
+  rol === 'JEFE' || rol === 'EMPLEADO' ? Number(idEmpresa) : null;
+
+/**
+ * Usuario y contraseña los pone el sistema: el usuario es el documento (así
+ * está en todas las empresas) y la contraseña se genera al azar. `acceso`
+ * es lo que se entrega una sola vez (la contraseña se guarda cifrada).
+ */
+const conAcceso = <
+  T extends { codigoUsuario?: string; contrasena?: string; documento: string },
+>(
+  b: T,
+) => {
+  const usuario = b.codigoUsuario || String(b.documento ?? '').trim();
+  const generada = !b.contrasena;
+  const contrasena = b.contrasena || generarContrasena();
+  return {
+    body: { ...b, codigoUsuario: usuario, contrasena } as T & {
+      codigoUsuario: string;
+      contrasena: string;
+    },
+    acceso: { usuario, contrasena, generada },
+  };
+};
+
+/** "2023-03-15" → fecha (medianoche UTC; la columna es DATE). */
+/** Cómo se nombra el dueño de una cuenta en los mensajes. */
+const ROL_EN_MENSAJE: Record<string, string> = {
+  ADMIN: 'superadministrador',
+  EQUIPO: 'equipo de TeamWork',
+  ADMIN_EMPRESA: 'administrador de la empresa',
+  JEFE: 'jefe',
+  EMPLEADO: 'trabajador',
+};
+
+/**
+ * El usuario de un trabajador es su documento y no está en ningún formulario
+ * ni en la plantilla: si ya lo usa otra cuenta, el mensaje habla del número
+ * que la persona escribió (el documento) y de quién lo usa, nunca del
+ * «código de usuario» (pedido explícito: hacía buscar una columna que no
+ * existe).
+ */
+const mensajeUsuarioTomado = (
+  numero: string,
+  duenio?: {
+    rol?: string | null;
+    nombreCompleto?: string | null;
+    empleado?: { nombres: string; apellidos: string } | null;
+  } | null,
+) => {
+  const nombre = duenio?.empleado
+    ? `${duenio.empleado.nombres} ${duenio.empleado.apellidos}`.trim()
+    : duenio?.nombreCompleto;
+  const rol = ROL_EN_MENSAJE[duenio?.rol ?? ''] ?? 'otra cuenta';
+  return `El número ${numero} ya se usa para ingresar con otra cuenta de esta empresa${nombre ? ` (${nombre}, ${rol})` : ''}. Revise el documento o comuníquese con TeamWork.`;
+};
+
+const aFecha = (v?: string | null) =>
+  v ? new Date(`${v}T00:00:00.000Z`) : null;
+
+/** "3 años y 8 meses" desde la fecha de ingreso hasta hoy. */
+const textoAntiguedad = (f?: Date | null) => {
+  if (!f) return '';
+  const hoy = new Date();
+  let meses =
+    (hoy.getUTCFullYear() - f.getUTCFullYear()) * 12 +
+    (hoy.getUTCMonth() - f.getUTCMonth());
+  if (hoy.getUTCDate() < f.getUTCDate()) meses -= 1;
+  if (meses < 1) return 'Menos de un mes';
+  const a = Math.floor(meses / 12);
+  const m = meses % 12;
+  const anos = a ? `${a} ${a === 1 ? 'año' : 'años'}` : '';
+  const mes = m ? `${m} ${m === 1 ? 'mes' : 'meses'}` : '';
+  return [anos, mes].filter(Boolean).join(' y ');
+};
+
+/** Qué tiene de malo una fecha de ingreso, o `undefined` si está bien. */
+const problemaFechaIngreso = (v?: string | null) => {
+  if (!v) return undefined;
+  const f = aFecha(v)!;
+  if (Number.isNaN(f.getTime()) || f.toISOString().slice(0, 10) !== v)
+    return `La fecha de ingreso "${v}" no existe.`;
+  if (f.getTime() > Date.now())
+    return 'La fecha de ingreso no puede ser futura.';
+  if (f.getUTCFullYear() < 1950)
+    return `La fecha de ingreso "${v}" no es válida.`;
+  return undefined;
+};
+
+/**
+ * Los textos del trabajador se guardan recortados: "  EMP-01  " no
+ * coincidía con "EMP-01" al buscar al jefe (el vínculo es texto) y los
+ * nombres salían con espacios dobles en los reportes.
+ */
+const normalizarTrabajador = <T extends object>(b: T): T => {
+  const r: Record<string, unknown> = { ...(b as Record<string, unknown>) };
+  for (const k of [
+    'codigoUsuario',
+    'codigoEmpleado',
+    'documento',
+    'codigoEmpleadoJefe',
+  ])
+    if (typeof r[k] === 'string') r[k] = (r[k] as string).trim();
+  for (const k of ['nombres', 'apellidos', 'sede'])
+    if (typeof r[k] === 'string')
+      r[k] = (r[k] as string).replace(/\s+/g, ' ').trim();
+  return r as T;
+};
+
 @Injectable()
 export class EmpleadoService {
   private readonly logger = new Logger(EmpleadoService.name);
@@ -59,25 +177,233 @@ export class EmpleadoService {
   // ============================================================
   // UTILITY: VALIDAR UNICIDAD
   // ============================================================
+  /**
+   * Comprueba que la estructura y el jefe de un trabajador existan, estén
+   * activos y sean de **su** empresa. Devuelve los problemas en vez de
+   * lanzar, para que la importación los junte todos.
+   *
+   * Antes no se miraba nada de esto: una fila de una empresa podía llevar el
+   * área o el puesto de otra (bastaba con que el id existiera), y un código de
+   * jefe mal escrito, de otra empresa o dado de baja se guardaba igual y la
+   * persona quedaba sin quien la evaluara.
+   *
+   * `jefesDelLote`: en una importación, el jefe puede venir en el mismo
+   * archivo (todavía no existe en la base). Mapa código → idEmpresa.
+   */
+  private async problemasDeRelaciones(
+    idEmpresa: number,
+    datos: {
+      codigoEmpleado?: string | null;
+      idGerenciaEmpleadora?: number | null;
+      idAreaEmpleadora?: number | null;
+      idUnidadOcupacionalEmpleadora?: number | null;
+      idPuestoEmpleadora?: number | null;
+      codigoEmpleadoJefe?: string | null;
+    },
+    jefesDelLote?: Map<string, number>,
+  ): Promise<string[]> {
+    const problemas: string[] = [];
+    const deLaEmpresa = { idEmpresaEmpleadora: idEmpresa, estado: true };
+
+    const revisar = async (
+      id: number | null | undefined,
+      nombre: string,
+      buscar: () => Promise<unknown>,
+    ) => {
+      if (id === undefined || id === null) return;
+      if (!(await buscar())) {
+        problemas.push(
+          `${nombre} con id ${id} no existe en la empresa o está dado de baja.`,
+        );
+      }
+    };
+
+    await Promise.all([
+      revisar(datos.idGerenciaEmpleadora, 'La gerencia', () =>
+        this.prisma.gerenciaEmpleadora.findFirst({
+          where: {
+            idGerenciaEmpleadora: Number(datos.idGerenciaEmpleadora),
+            ...deLaEmpresa,
+          },
+          select: { idGerenciaEmpleadora: true },
+        }),
+      ),
+      revisar(datos.idAreaEmpleadora, 'El área', () =>
+        this.prisma.areaEmpleadora.findFirst({
+          where: {
+            idAreaEmpleadora: Number(datos.idAreaEmpleadora),
+            ...deLaEmpresa,
+          },
+          select: { idAreaEmpleadora: true },
+        }),
+      ),
+      revisar(datos.idUnidadOcupacionalEmpleadora, 'El grupo ocupacional', () =>
+        this.prisma.unidadOcupacionalEmpleadora.findFirst({
+          where: {
+            idUnidadOcupacionalEmpleadora: Number(
+              datos.idUnidadOcupacionalEmpleadora,
+            ),
+            ...deLaEmpresa,
+          },
+          select: { idUnidadOcupacionalEmpleadora: true },
+        }),
+      ),
+      revisar(datos.idPuestoEmpleadora, 'El puesto', () =>
+        this.prisma.puestoEmpleadora.findFirst({
+          where: {
+            idPuestoEmpleadora: Number(datos.idPuestoEmpleadora),
+            ...deLaEmpresa,
+          },
+          select: { idPuestoEmpleadora: true },
+        }),
+      ),
+    ]);
+
+    const jefe = datos.codigoEmpleadoJefe?.toString().trim();
+    if (jefe) {
+      if (jefe === datos.codigoEmpleado?.toString().trim()) {
+        problemas.push('Un trabajador no puede ser su propio jefe.');
+      } else if (jefesDelLote?.get(jefe) === idEmpresa) {
+        // Viene en el mismo archivo, en la misma empresa: vale.
+      } else {
+        const enBase = await this.prisma.empleado.findFirst({
+          where: { codigoEmpleado: jefe, ...deLaEmpresa },
+          select: {
+            nombres: true,
+            apellidos: true,
+            usuario: { select: { rol: true } },
+          },
+        });
+        // Solo el rol Jefe tiene las pantallas para evaluar a su equipo: con
+        // un jefe de rol Empleado, sus subordinados quedaban sin evaluador.
+        if (enBase && enBase.usuario?.rol !== 'JEFE') {
+          problemas.push(
+            `${enBase.nombres} ${enBase.apellidos} (${jefe}) no tiene el rol Jefe: cámbielo a Jefe antes de asignarle personas a cargo.`,
+          );
+        }
+        if (!enBase) {
+          problemas.push(
+            `No hay un trabajador activo de la empresa con el código de jefe "${jefe}".`,
+          );
+        }
+      }
+    }
+
+    return problemas;
+  }
+
+  /**
+   * Si poner a `codigoJefe` como jefe de `codigo` cierra un círculo (el
+   * nuevo jefe depende, directa o indirectamente, de este trabajador), dice
+   * por qué; si no, `null`. Se sube por la cadena de jefes del nuevo jefe.
+   * Sin esto, A podía ser jefe de B y B de A: los dos se evaluaban como
+   * jefe y como subordinado a la vez.
+   */
+  private async formariaCiclo(
+    idEmpresa: number,
+    codigo: string,
+    codigoJefe: string,
+  ): Promise<string | null> {
+    const vistos = new Set<string>();
+    let actual: string | null = codigoJefe;
+    while (actual && !vistos.has(actual)) {
+      if (actual === codigo) {
+        return `No se puede asignar como jefe a "${codigoJefe}": está a cargo de este trabajador, directa o indirectamente.`;
+      }
+      vistos.add(actual);
+      const fila = await this.prisma.empleado.findFirst({
+        where: { codigoEmpleado: actual, idEmpresaEmpleadora: idEmpresa },
+        select: { codigoEmpleadoJefe: true },
+      });
+      actual = fila?.codigoEmpleadoJefe ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * El documento de identidad: formato según su tipo y que nadie más de la
+   * empresa lo tenga, en ninguna situación. Si es de alguien cesado, se dice:
+   * a quien vuelve se lo reactiva, no se lo registra de nuevo (perdería su
+   * historial). Antes el documento era opcional y nadie lo comparaba, así que
+   * una misma persona podía quedar registrada dos veces.
+   *
+   * En la importación (`enArchivo`) el mensaje dice además qué hacer con la
+   * fila: si es la misma persona, quitarla.
+   */
+  private async problemasDeDocumento(
+    idEmpresa: number,
+    tipo: string | undefined,
+    numero: string | null | undefined,
+    excluirIdEmpleado?: number,
+    enArchivo = false,
+  ): Promise<string[]> {
+    const tipoDoc = (tipo ?? 'DNI') as TipoDocumento;
+    const doc = (numero ?? '').toString().trim();
+    if (!doc) return ['El documento es obligatorio.'];
+    const formato = FORMATO_DOCUMENTO[tipoDoc];
+    if (!formato) return [`Tipo de documento no válido: ${tipo}.`];
+    if (!formato.regex.test(doc)) {
+      return [
+        `El ${tipoDoc} "${doc}" no es válido: debe tener ${formato.ayuda}.`,
+      ];
+    }
+    const otro = await this.prisma.empleado.findFirst({
+      where: {
+        idEmpresaEmpleadora: idEmpresa,
+        tipoDocumento: tipoDoc,
+        documento: doc,
+        ...(excluirIdEmpleado && { idEmpleado: { not: excluirIdEmpleado } }),
+      },
+      select: {
+        nombres: true,
+        apellidos: true,
+        codigoEmpleado: true,
+        situacion: true,
+      },
+    });
+    if (!otro) return [];
+    const quien = `${otro.nombres} ${otro.apellidos} (código ${otro.codigoEmpleado})`;
+    return [
+      otro.situacion === 'ACTIVO'
+        ? `Esta persona ya está registrada: el ${tipoDoc} ${doc} es de ${quien}. ${
+            enArchivo
+              ? 'Si es la misma persona, quite la fila; si no, revise el número de documento.'
+              : 'Revise el número de documento.'
+          }`
+        : `Esta persona ya está registrada: el ${tipoDoc} ${doc} es de ${quien}, que está ${otro.situacion.toLowerCase()}. Reactívela desde Trabajadores en vez de registrarla de nuevo${enArchivo ? ', y quite la fila' : ''}.`,
+    ];
+  }
+
   private async validateUniqueFields(body: CreateEmpleadoDto) {
     // ============================================================
     // VALIDAR CÓDIGO DE USUARIO
     // ============================================================
-    const existsUser = await this.prisma.usuario.findUnique({
-      where: { codigoUsuario: body.codigoUsuario },
-      select: { idUsuario: true },
+    const existsUser = await this.prisma.usuario.findFirst({
+      where: {
+        codigoUsuario: body.codigoUsuario,
+        idEmpresaCuenta: empresaDeCuenta(body.rol, body.idEmpresaEmpleadora),
+      },
+      select: {
+        rol: true,
+        nombreCompleto: true,
+        empleado: { select: { nombres: true, apellidos: true } },
+      },
     });
     if (existsUser) {
       throw new BadRequestException(
-        `El código de usuario "${body.codigoUsuario}" ya está registrado.`,
+        mensajeUsuarioTomado(String(body.codigoUsuario), existsUser),
       );
     }
 
     // ============================================================
     // VALIDAR CÓDIGO DE EMPLEADO
     // ============================================================
-    const existsEmpleado = await this.prisma.empleado.findUnique({
-      where: { codigoEmpleado: body.codigoEmpleado },
+    // Único por empresa: dos empresas pueden usar el mismo código interno.
+    const existsEmpleado = await this.prisma.empleado.findFirst({
+      where: {
+        codigoEmpleado: body.codigoEmpleado,
+        idEmpresaEmpleadora: Number(body.idEmpresaEmpleadora),
+      },
       select: { idEmpleado: true },
     });
 
@@ -163,9 +489,49 @@ export class EmpleadoService {
   // ============================================================
   // CREATE
   // ============================================================
-  async create(user: AuthUser, body: CreateEmpleadoDto) {
+  async create(user: AuthUser, entrada: CreateEmpleadoDto) {
+    const { body, acceso } = conAcceso(normalizarTrabajador(entrada));
+    // Una contraseña escrita (no generada) no puede ser obvia.
+    if (!acceso.generada) {
+      const debil = problemaContrasena(body.contrasena, [
+        body.codigoUsuario,
+        body.documento,
+        body.nombres,
+        body.apellidos,
+      ]);
+      if (debil) throw new BadRequestException(debil);
+    }
+    const fechaMala = problemaFechaIngreso(body.fechaIngreso);
+    if (fechaMala) throw new BadRequestException(fechaMala);
     try {
+      // Primero el documento: si la persona ya está registrada, eso es lo
+      // que hay que decir (el usuario es el mismo número y repetiría lo
+      // mismo con otras palabras).
+      const delDocumento = await this.problemasDeDocumento(
+        Number(body.idEmpresaEmpleadora),
+        body.tipoDocumento,
+        body.documento,
+      );
+      if (delDocumento.length) {
+        throw new BadRequestException({
+          message: delDocumento[0],
+          errors: delDocumento,
+        });
+      }
       await this.validateUniqueFields(body);
+
+      const problemas = [
+        ...(await this.problemasDeRelaciones(
+          Number(body.idEmpresaEmpleadora),
+          body,
+        )),
+      ];
+      if (problemas.length) {
+        throw new BadRequestException({
+          message: problemas[0],
+          errors: problemas,
+        });
+      }
 
       return await this.prisma.$transaction(async (tx) => {
         const hashedPassword = await hash(body.contrasena, 10);
@@ -175,6 +541,10 @@ export class EmpleadoService {
             codigoUsuario: body.codigoUsuario,
             contrasena: hashedPassword,
             rol: body.rol,
+            idEmpresaCuenta: empresaDeCuenta(
+              body.rol,
+              body.idEmpresaEmpleadora,
+            ),
             creadoPorId: user.idUsuario,
           },
         });
@@ -184,10 +554,10 @@ export class EmpleadoService {
             codigoEmpleado: body.codigoEmpleado, // obligatorio
             nombres: body.nombres,
             apellidos: body.apellidos,
-            documento: body.documento,
+            tipoDocumento: body.tipoDocumento ?? 'DNI',
+            documento: body.documento?.toString().trim(),
             sede: body.sede,
-            tiempoEmpresaValor: body.tiempoEmpresaValor,
-            tiempoEmpresaUnidad: body.tiempoEmpresaUnidad, // string
+            fechaIngreso: aFecha(body.fechaIngreso),
             idEmpresaEmpleadora: body.idEmpresaEmpleadora,
             idAreaEmpleadora: body.idAreaEmpleadora,
             idPuestoEmpleadora: body.idPuestoEmpleadora,
@@ -209,7 +579,7 @@ export class EmpleadoService {
           },
         });
 
-        return empleado;
+        return { empleado, acceso };
       });
     } catch (error) {
       this.logger.error('Error al crear empleado:', error);
@@ -231,7 +601,11 @@ export class EmpleadoService {
    * Son tres consultas por página, no por trabajador.
    */
   private async conAgregados<
-    T extends { idEmpleado: number; codigoEmpleadoJefe: string | null },
+    T extends {
+      idEmpleado: number;
+      idEmpresaEmpleadora: number;
+      codigoEmpleadoJefe: string | null;
+    },
   >(empleados: T[]): Promise<ConAgregados<T>[]> {
     // El atajo se queda, pero devolviendo ya la forma final: sin anotar el
     // tipo, el retorno era una unión y `jefe` no existía en una de las ramas,
@@ -300,7 +674,8 @@ export class EmpleadoService {
                           ec.id_evaluador = ec.id_evaluado) AS es_auto,
                  COALESCE(ec.tipo_evaluador = 'JEFE',
                           ev.codigo_empleado IS NOT NULL
-                          AND ev.codigo_empleado = e.codigo_empleado_jefe) AS es_jefe
+                          AND ev.codigo_empleado = e.codigo_empleado_jefe
+                          AND ev.id_empresa_empleadora = e.id_empresa_empleadora) AS es_jefe
           FROM evaluacion_competencia_item it
           JOIN evaluacion_competencia ec
             ON ec."idEvaluacionCompetencia" = it.id_evaluacion_competencia
@@ -353,8 +728,14 @@ export class EmpleadoService {
         GROUP BY 1`,
       codigosJefe.length
         ? this.prisma.empleado.findMany({
-            where: { codigoEmpleado: { in: codigosJefe } },
+            where: {
+              codigoEmpleado: { in: codigosJefe },
+              idEmpresaEmpleadora: {
+                in: [...new Set(empleados.map((e) => e.idEmpresaEmpleadora))],
+              },
+            },
             select: {
+              idEmpresaEmpleadora: true,
               codigoEmpleado: true,
               nombres: true,
               apellidos: true,
@@ -375,14 +756,21 @@ export class EmpleadoService {
       ]),
     );
     const mapaObjetivos = porEmpleado(objetivos);
-    const mapaJefes = new Map(jefes.map((j) => [j.codigoEmpleado, j] as const));
+    // El código es único por empresa: el jefe se busca en la del trabajador.
+    const mapaJefes = new Map(
+      jefes.map(
+        (j) => [`${j.idEmpresaEmpleadora}|${j.codigoEmpleado}`, j] as const,
+      ),
+    );
     const vacio = { total: 0, hechas: 0 };
     const vacioCompetencias = { total: 0, hechasJefe: 0, hechasAuto: 0 };
 
     return empleados.map((empleado) => ({
       ...empleado,
       jefe: empleado.codigoEmpleadoJefe
-        ? (mapaJefes.get(empleado.codigoEmpleadoJefe) ?? null)
+        ? (mapaJefes.get(
+            `${empleado.idEmpresaEmpleadora}|${empleado.codigoEmpleadoJefe}`,
+          ) ?? null)
         : null,
       avanceCompetencias:
         mapaCompetencias.get(empleado.idEmpleado) ?? vacioCompetencias,
@@ -406,6 +794,98 @@ export class EmpleadoService {
    * y nada anulado (`filtroEvaluacionesVigentes`), y una competencia está
    * completa cuando TODOS sus ítems tienen nota.
    */
+  /**
+   * Qué pasa en la campaña en curso si el trabajador pasa a otro grupo
+   * ocupacional. Mientras la campaña está abierta, lo que le toca se lee del
+   * grupo ACTUAL: las competencias que el grupo nuevo no tiene dejan de
+   * contar aunque ya tengan notas, las nuevas cuentan 0 hasta que se
+   * califiquen y las de otro nivel cambian de comportamientos. El formulario
+   * lo muestra antes de guardar.
+   */
+  async impactoCambioGrupo(idEmpleado: number, idUnidadNueva: number) {
+    const empleado = await this.prisma.empleado.findUnique({
+      where: { idEmpleado },
+      select: {
+        idEmpresaEmpleadora: true,
+        idUnidadOcupacionalEmpleadora: true,
+      },
+    });
+    if (!empleado) throw new NotFoundException('Empleado no encontrado');
+
+    const sinImpacto = {
+      campana: null as string | null,
+      quitadas: [] as { titulo: string; conNotas: boolean }[],
+      nuevas: [] as string[],
+      cambiaNivel: [] as { titulo: string; conNotas: boolean }[],
+    };
+    if (empleado.idUnidadOcupacionalEmpleadora === idUnidadNueva)
+      return sinImpacto;
+
+    const campana = await campanaEnCurso(
+      this.prisma,
+      empleado.idEmpresaEmpleadora,
+    );
+    if (!campana) return sinImpacto;
+
+    const asignacion = (idUnidad: number) =>
+      this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+        where: {
+          idUnidadOcupacionalEmpleadora: idUnidad,
+          competencia: { estado: true },
+          competenciaNivel: { estado: true },
+        },
+        select: {
+          idCompetencia: true,
+          idCompetenciaNivel: true,
+          competencia: { select: { titulo: true } },
+        },
+      });
+
+    const [actual, nueva, evaluaciones] = await Promise.all([
+      asignacion(empleado.idUnidadOcupacionalEmpleadora),
+      asignacion(idUnidadNueva),
+      this.prisma.evaluacionCompetencia.findMany({
+        where: {
+          ...filtroEvaluacionesDeCampana(campana.idCampanaEvaluacion),
+          idEvaluado: idEmpleado,
+          itemsEvaluados: {
+            some: { estado: true, calificacion: { not: null } },
+          },
+        },
+        select: { idCompetencia: true },
+      }),
+    ]);
+
+    const conNotas = new Set(evaluaciones.map((e) => e.idCompetencia));
+    const nivelNuevo = new Map(
+      nueva.map((a) => [a.idCompetencia, a.idCompetenciaNivel]),
+    );
+    const enActual = new Set(actual.map((a) => a.idCompetencia));
+    const titulo = (a: { competencia: { titulo: string } }) =>
+      a.competencia.titulo;
+
+    return {
+      campana: campana.nombre,
+      quitadas: actual
+        .filter((a) => !nivelNuevo.has(a.idCompetencia))
+        .map((a) => ({
+          titulo: titulo(a),
+          conNotas: conNotas.has(a.idCompetencia),
+        })),
+      nuevas: nueva.filter((a) => !enActual.has(a.idCompetencia)).map(titulo),
+      cambiaNivel: actual
+        .filter(
+          (a) =>
+            nivelNuevo.has(a.idCompetencia) &&
+            nivelNuevo.get(a.idCompetencia) !== a.idCompetenciaNivel,
+        )
+        .map((a) => ({
+          titulo: titulo(a),
+          conNotas: conNotas.has(a.idCompetencia),
+        })),
+    };
+  }
+
   async estadoEvaluacion(idEmpleado: number) {
     const empleado = await this.prisma.empleado.findUnique({
       where: { idEmpleado },
@@ -444,8 +924,7 @@ export class EmpleadoService {
     const [asignadas, evaluaciones, anuladas, objetivos] = await Promise.all([
       this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
         where: {
-          idUnidadOcupacionalEmpleadora:
-            empleado.idUnidadOcupacionalEmpleadora,
+          idUnidadOcupacionalEmpleadora: empleado.idUnidadOcupacionalEmpleadora,
           competencia: { estado: true },
           competenciaNivel: { estado: true },
         },
@@ -530,6 +1009,7 @@ export class EmpleadoService {
           idObjetivo: true,
           objetivoDetalles: {
             where: { estado: true },
+            orderBy: { secuencial: 'asc' },
             select: {
               idObjetivoDetalle: true,
               descripcion: true,
@@ -616,7 +1096,10 @@ export class EmpleadoService {
       },
       // Nombre de la campaña en curso (antes, el "YYYY-MM").
       periodo: campana?.nombre ?? null,
-      modelo: campana?.modeloEmpresa ?? empleado.empresaEmpleadora?.modeloEmpresa ?? null,
+      modelo:
+        campana?.modeloEmpresa ??
+        empleado.empresaEmpleadora?.modeloEmpresa ??
+        null,
 
       competencias: {
         asignadas: competencias.length,
@@ -696,13 +1179,15 @@ export class EmpleadoService {
     idUnidadOcupacionalEmpleadora,
     idPuestoEmpleadora,
     rol,
+    situacion,
   }: EmployeeQueryDto): Promise<Prisma.EmpleadoWhereInput> {
     // Cada condición compuesta va dentro de `AND` en vez de en la raíz: hay
     // tres que necesitan su propio `OR` y, puestas como claves sueltas del
     // objeto, la última pisaba a las anteriores.
     const condiciones: Prisma.EmpleadoWhereInput[] = [];
 
-    const palabras = (texto: string) => texto.trim().split(/\s+/).filter(Boolean);
+    const palabras = (texto: string) =>
+      texto.trim().split(/\s+/).filter(Boolean);
 
     if (nombreCompleto?.trim()) {
       // Cada palabra tiene que estar en el nombre o en el apellido, así que
@@ -726,7 +1211,9 @@ export class EmpleadoService {
           AND: palabras(jefe).map((palabra) => ({
             OR: [
               { nombres: { contains: palabra, mode: 'insensitive' as const } },
-              { apellidos: { contains: palabra, mode: 'insensitive' as const } },
+              {
+                apellidos: { contains: palabra, mode: 'insensitive' as const },
+              },
             ],
           })),
         },
@@ -736,7 +1223,9 @@ export class EmpleadoService {
       condiciones.push({
         OR: [
           // La caja acepta también el código escrito directo.
-          { codigoEmpleadoJefe: { contains: jefe.trim(), mode: 'insensitive' } },
+          {
+            codigoEmpleadoJefe: { contains: jefe.trim(), mode: 'insensitive' },
+          },
           { codigoEmpleadoJefe: { in: jefes.map((j) => j.codigoEmpleado) } },
         ],
       });
@@ -767,8 +1256,17 @@ export class EmpleadoService {
       });
     }
 
+    // Situación: por defecto los activos (los únicos que operan). `TODAS`
+    // es interno, para contar cuántos hay en cada una con los mismos filtros.
+    const filtroSituacion: Prisma.EmpleadoWhereInput =
+      situacion === 'TODAS'
+        ? {}
+        : !situacion || situacion === 'ACTIVO'
+          ? { estado: true }
+          : { situacion };
+
     return {
-      estado: true,
+      ...filtroSituacion,
 
       ...(idEmpleado && { idEmpleado: Number(idEmpleado) }),
 
@@ -825,7 +1323,8 @@ export class EmpleadoService {
   ): Prisma.EmpleadoOrderByWithRelationInput {
     const direccion = sortOrder === 'asc' ? 'asc' : 'desc';
 
-    if (sortBy === 'codigoUsuario') return { usuario: { codigoUsuario: direccion } };
+    if (sortBy === 'codigoUsuario')
+      return { usuario: { codigoUsuario: direccion } };
     if (sortBy === 'nombreEmpresaEmpleadora')
       return { empresaEmpleadora: { nombreEmpresa: direccion } };
 
@@ -844,9 +1343,14 @@ export class EmpleadoService {
    * y los objetivos. La autoevaluación se informa aparte porque no puntúa
    * (ver resultados-evaluacion.ts), pero sí "inicia" el proceso.
    */
-  async avance(query: AvanceQueryDto) {
+  /**
+   * `whereFijo` reemplaza los filtros del listado: lo usa el panel del jefe
+   * (`avanceDeMiEquipo`), que ve solo a su equipo directo y no debe poder
+   * ampliarlo con la URL.
+   */
+  async avance(query: AvanceQueryDto, whereFijo?: Prisma.EmpleadoWhereInput) {
     try {
-      const where = await this.construirWhereListado(query);
+      const where = whereFijo ?? (await this.construirWhereListado(query));
       const empleados = await this.prisma.empleado.findMany({
         // El administrador no se evalúa: contarlo bajaría el cumplimiento.
         where: { AND: [where, { usuario: { rol: { not: 'ADMIN' } } }] },
@@ -873,15 +1377,27 @@ export class EmpleadoService {
                 in: [...new Set(empleados.map((e) => e.idEmpresaEmpleadora))],
               },
             },
-            select: { idEmpresaEmpleadora: true, nombre: true },
+            select: {
+              idEmpresaEmpleadora: true,
+              nombre: true,
+              modeloEmpresa: true,
+            },
           })
-        ).map((c) => [c.idEmpresaEmpleadora, c.nombre]),
+        ).map((c) => [c.idEmpresaEmpleadora, c]),
       );
 
       const filas = (await this.conAgregados(empleados)).map((e) => {
         const c = e.avanceCompetencias;
         const o = e.avanceObjetivos;
-        const jefeListo = c.total === 0 || c.hechasJefe >= c.total;
+        // 180° sin jefe (la cabeza de la empresa): sus competencias las
+        // califican sus subordinados (`evaluadoSinJefe`), así que no hay
+        // nada pendiente del jefe. Antes figuraba «Faltan 6» para siempre y
+        // nunca llegaba a «Completo».
+        const calificanSubordinados =
+          !e.codigoEmpleadoJefe &&
+          campanasEnCurso.get(e.idEmpresaEmpleadora)?.modeloEmpresa === '180';
+        const jefeListo =
+          calificanSubordinados || c.total === 0 || c.hechasJefe >= c.total;
         const objetivosListos = o.total === 0 || o.hechas >= o.total;
 
         let estado: EstadoAvance;
@@ -900,11 +1416,16 @@ export class EmpleadoService {
           rol: e.usuario.rol,
           idEmpresaEmpleadora: e.idEmpresaEmpleadora,
           empresa: e.empresaEmpleadora.nombreEmpresa,
-          periodo: campanasEnCurso.get(e.idEmpresaEmpleadora) ?? null,
+          periodo: campanasEnCurso.get(e.idEmpresaEmpleadora)?.nombre ?? null,
+          calificanSubordinados,
           gerencia: e.gerenciaEmpleadora?.descripcion ?? null,
           area: e.areaEmpleadora?.descripcion ?? null,
           unidad: e.unidadOcupacionalEmpleadora?.descripcion ?? null,
           puesto: e.puestoEmpleadora?.descripcion ?? null,
+          idGerenciaEmpleadora: e.idGerenciaEmpleadora,
+          idAreaEmpleadora: e.idAreaEmpleadora,
+          idUnidadOcupacionalEmpleadora: e.idUnidadOcupacionalEmpleadora,
+          idPuestoEmpleadora: e.idPuestoEmpleadora,
           codigoEmpleadoJefe: e.codigoEmpleadoJefe,
           jefe: e.jefe ? `${e.jefe.nombres} ${e.jefe.apellidos}` : null,
           competencias: c,
@@ -922,17 +1443,26 @@ export class EmpleadoService {
       /** Indicadores de un grupo de trabajadores. */
       const resumir = (grupo: Fila[]) => {
         const s = grupo.reduce(
-          (a, f) => ({
-            compTotal: a.compTotal + f.competencias.total,
-            compJefe: a.compJefe + Math.min(f.competencias.hechasJefe, f.competencias.total),
-            compAuto: a.compAuto + Math.min(f.competencias.hechasAuto, f.competencias.total),
-            objTotal: a.objTotal + f.objetivos.total,
-            objHechas: a.objHechas + Math.min(f.objetivos.hechas, f.objetivos.total),
-          }),
+          (a, f) => {
+            // Sin jefe en 180°: sus competencias no son tarea de ningún jefe
+            // y no entran a lo que falta calificar.
+            const total = f.calificanSubordinados ? 0 : f.competencias.total;
+            return {
+              compTotal: a.compTotal + total,
+              compJefe: a.compJefe + Math.min(f.competencias.hechasJefe, total),
+              compAuto: a.compAuto + Math.min(f.competencias.hechasAuto, total),
+              objTotal: a.objTotal + f.objetivos.total,
+              objHechas:
+                a.objHechas + Math.min(f.objetivos.hechas, f.objetivos.total),
+            };
+          },
           { compTotal: 0, compJefe: 0, compAuto: 0, objTotal: 0, objHechas: 0 },
         );
         const porEstado = Object.fromEntries(
-          ESTADOS_AVANCE.map((e) => [e, grupo.filter((f) => f.estadoAvance === e).length]),
+          ESTADOS_AVANCE.map((e) => [
+            e,
+            grupo.filter((f) => f.estadoAvance === e).length,
+          ]),
         ) as Record<EstadoAvance, number>;
 
         return {
@@ -947,18 +1477,44 @@ export class EmpleadoService {
         };
       };
 
-      const agrupar = (clave: (f: Fila) => string) => {
+      /**
+       * Agrupa a los trabajadores por un nivel. `id` sirve al front para
+       * filtrar al entrar en el grupo (los nombres se repiten entre
+       * empresas); `padre` es el nivel de arriba más frecuente del grupo
+       * (el área de una unidad, la gerencia de un área), como contexto.
+       */
+      const agrupar = (
+        clave: (f: Fila) => string,
+        id?: (f: Fila) => number | null,
+        padre?: (f: Fila) => string | null,
+      ) => {
         const grupos = new Map<string, Fila[]>();
         filas.forEach((f) => {
           const k = clave(f);
           grupos.set(k, [...(grupos.get(k) ?? []), f]);
         });
+        const masFrecuente = (grupo: Fila[]) => {
+          if (!padre) return null;
+          const cuenta = new Map<string, number>();
+          grupo.forEach((f) => {
+            const p = padre(f);
+            if (p) cuenta.set(p, (cuenta.get(p) ?? 0) + 1);
+          });
+          return [...cuenta].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+        };
         return [...grupos]
-          .map(([nombre, grupo]) => ({ nombre, ...resumir(grupo) }))
+          .map(([nombre, grupo]) => ({
+            nombre,
+            id: id ? id(grupo[0]) : null,
+            padre: masFrecuente(grupo),
+            ...resumir(grupo),
+          }))
           .sort((a, b) => (a.cumplimiento ?? 101) - (b.cumplimiento ?? 101));
       };
 
-      const estadoFiltro = ESTADOS_AVANCE.includes(query.estadoAvance as EstadoAvance)
+      const estadoFiltro = ESTADOS_AVANCE.includes(
+        query.estadoAvance as EstadoAvance,
+      )
         ? query.estadoAvance
         : undefined;
 
@@ -966,9 +1522,30 @@ export class EmpleadoService {
         // Los indicadores van SIN el filtro de estado: filtrar por
         // "completos" y ver 100 % de cumplimiento no le dice nada a nadie.
         resumen: resumir(filas),
-        porJefe: agrupar((f) => f.jefe ?? 'Sin jefe asignado'),
-        porArea: agrupar((f) => f.area ?? 'Sin área'),
-        porGerencia: agrupar((f) => f.gerencia ?? 'Sin gerencia'),
+        porJefe: agrupar(
+          (f) => f.jefe ?? 'Sin jefe asignado',
+          undefined,
+          (f) => f.area,
+        ),
+        porGerencia: agrupar(
+          (f) => f.gerencia ?? 'Sin gerencia',
+          (f) => f.idGerenciaEmpleadora,
+        ),
+        porArea: agrupar(
+          (f) => f.area ?? 'Sin área',
+          (f) => f.idAreaEmpleadora,
+          (f) => f.gerencia,
+        ),
+        porUnidad: agrupar(
+          (f) => f.unidad ?? 'Sin grupo ocupacional',
+          (f) => f.idUnidadOcupacionalEmpleadora,
+          (f) => f.area,
+        ),
+        porPuesto: agrupar(
+          (f) => f.puesto ?? 'Sin puesto',
+          (f) => f.idPuestoEmpleadora,
+          (f) => f.unidad,
+        ),
         trabajadores: estadoFiltro
           ? filas.filter((f) => f.estadoAvance === estadoFiltro)
           : filas,
@@ -977,6 +1554,201 @@ export class EmpleadoService {
       this.logger.error('Error al calcular el avance:', error);
       handlePrismaError(error, 'empleados');
     }
+  }
+
+  /**
+   * Panel del jefe: el avance de su equipo directo (mismo cálculo que el
+   * avance de RR. HH., así las cifras coinciden) y lo suyo pendiente
+   * (autoevaluación; sus objetivos los califica su propio jefe).
+   */
+  async avanceDeMiEquipo(idUsuario: number) {
+    const yo = await this.prisma.empleado.findFirst({
+      where: { idUsuario, estado: true },
+      select: {
+        idEmpleado: true,
+        idEmpresaEmpleadora: true,
+        codigoEmpleado: true,
+        codigoEmpleadoJefe: true,
+      },
+    });
+    if (!yo) {
+      throw new NotFoundException(
+        'Su cuenta no tiene un trabajador asociado. Comuníquese con RR. HH.',
+      );
+    }
+    const equipo = await this.avance({} as AvanceQueryDto, {
+      codigoEmpleadoJefe: yo.codigoEmpleado,
+      idEmpresaEmpleadora: yo.idEmpresaEmpleadora,
+      estado: true,
+    });
+    const [propio] = await this.conAgregados([yo]);
+    // El jefe no carga la empresa en el front: el plazo viaja aquí.
+    const campana = await this.prisma.campanaEvaluacion.findFirst({
+      where: {
+        estado: CAMPANA_EN_CURSO,
+        idEmpresaEmpleadora: yo.idEmpresaEmpleadora,
+      },
+      select: {
+        nombre: true,
+        periodoDesde: true,
+        periodoHasta: true,
+        fechaVigenciaInicio: true,
+        fechaVigenciaFin: true,
+        modeloEmpresa: true,
+      },
+    });
+    // En 180° también evalúa a su propio jefe: es tarea suya y el panel la
+    // cuenta (antes no, y decía «terminado» con esa evaluación pendiente).
+    // Una competencia cuenta cuando calificó todos sus comportamientos.
+    let evaluarJefe: { total: number; hechas: number } | null = null;
+    if (campana?.modeloEmpresa === '180' && yo.codigoEmpleadoJefe) {
+      try {
+        const j = await this.findJefeWithCompetenciasByUsuario(idUsuario);
+        const lista = j?.competenciasAsignadas ?? [];
+        evaluarJefe = {
+          total: lista.length,
+          hechas: lista.filter((c) => c.progresoEvaluacion?.completo).length,
+        };
+      } catch {
+        evaluarJefe = null;
+      }
+    }
+    return {
+      campana,
+      evaluarJefe,
+      resumen: equipo?.resumen,
+      trabajadores: equipo?.trabajadores ?? [],
+      mio: {
+        competencias: propio.avanceCompetencias,
+        objetivos: propio.avanceObjetivos,
+        tieneJefe: !!yo.codigoEmpleadoJefe,
+      },
+    };
+  }
+
+  /**
+   * Resumen del trabajador: lo que le toca a él en la campaña en curso
+   * (autoevaluación, evaluar a su jefe en 180°, evidencias de sus objetivos y
+   * responder la retroalimentación) y cómo va lo que califica su jefe, **sin
+   * notas** (se comunican en la retroalimentación). Mismos cálculos que el
+   * avance de RR. HH. (`conAgregados`).
+   */
+  async avanceMio(idUsuario: number) {
+    const yo = await this.prisma.empleado.findFirst({
+      where: { idUsuario, estado: true },
+      select: {
+        idEmpleado: true,
+        idEmpresaEmpleadora: true,
+        codigoEmpleado: true,
+        codigoEmpleadoJefe: true,
+      },
+    });
+    if (!yo) {
+      throw new NotFoundException(
+        'Su cuenta no tiene un trabajador asociado. Comuníquese con RR. HH.',
+      );
+    }
+    const campana = await this.prisma.campanaEvaluacion.findFirst({
+      where: {
+        estado: CAMPANA_EN_CURSO,
+        idEmpresaEmpleadora: yo.idEmpresaEmpleadora,
+      },
+      select: {
+        idCampanaEvaluacion: true,
+        nombre: true,
+        fechaVigenciaInicio: true,
+        fechaVigenciaFin: true,
+        modeloEmpresa: true,
+      },
+    });
+    // El nombre del jefe también sin campaña: lo usa «Mi perfil».
+    const jefe = yo.codigoEmpleadoJefe
+      ? await this.prisma.empleado.findFirst({
+          where: {
+            codigoEmpleado: yo.codigoEmpleadoJefe,
+            idEmpresaEmpleadora: yo.idEmpresaEmpleadora,
+          },
+          select: { nombres: true, apellidos: true },
+        })
+      : null;
+    const nombreJefe = jefe ? `${jefe.nombres} ${jefe.apellidos}` : null;
+    if (!campana) return { campana: null, jefe: nombreJefe };
+    const [[propio], detalles, sesion] = await Promise.all([
+      this.conAgregados([yo]),
+      this.prisma.objetivoDetalle.findMany({
+        where: {
+          estado: true,
+          objetivo: {
+            idEmpleado: yo.idEmpleado,
+            idCampanaEvaluacion: campana.idCampanaEvaluacion,
+            estado: true,
+          },
+        },
+        select: { idObjetivoDetalle: true },
+      }),
+      this.prisma.sesionRetroalimentacion.findUnique({
+        where: {
+          idCampanaEvaluacion_idEmpleado: {
+            idCampanaEvaluacion: campana.idCampanaEvaluacion,
+            idEmpleado: yo.idEmpleado,
+          },
+        },
+        select: { conformidad: true },
+      }),
+    ]);
+    const conEvidencia = detalles.length
+      ? (
+          await this.prisma.evidencia.findMany({
+            where: {
+              estado: true,
+              idObjetivoDetalle: {
+                in: detalles.map((d) => d.idObjetivoDetalle),
+              },
+            },
+            distinct: ['idObjetivoDetalle'],
+            select: { idObjetivoDetalle: true },
+          })
+        ).length
+      : 0;
+    let evaluarJefe: { total: number; hechas: number } | null = null;
+    if (campana.modeloEmpresa === '180' && yo.codigoEmpleadoJefe) {
+      try {
+        const j = await this.findJefeWithCompetenciasByUsuario(idUsuario);
+        const lista = j?.competenciasAsignadas ?? [];
+        evaluarJefe = {
+          total: lista.length,
+          hechas: lista.filter((x) => x.progresoEvaluacion?.completo).length,
+        };
+      } catch {
+        evaluarJefe = null;
+      }
+    }
+    const c = propio.avanceCompetencias;
+    const o = propio.avanceObjetivos;
+    return {
+      campana: {
+        nombre: campana.nombre,
+        fechaVigenciaInicio: campana.fechaVigenciaInicio,
+        fechaVigenciaFin: campana.fechaVigenciaFin,
+      },
+      jefe: nombreJefe,
+      autoevaluacion: {
+        total: c.total,
+        hechas: Math.min(c.hechasAuto, c.total),
+      },
+      evaluarJefe,
+      evidencias: { total: detalles.length, hechas: conEvidencia },
+      // Lo que califica su jefe: solo cuántos, no la nota.
+      porSuJefe: {
+        competencias: {
+          total: c.total,
+          hechas: Math.min(c.hechasJefe, c.total),
+        },
+        objetivos: { total: o.total, hechas: Math.min(o.hechas, o.total) },
+      },
+      // null = su jefe todavía no registró la sesión.
+      retroalimentacion: sesion?.conformidad ?? null,
+    };
   }
 
   async findAll(query: EmployeeQueryDto) {
@@ -992,6 +1764,12 @@ export class EmpleadoService {
           select: { idUsuario: true, codigoUsuario: true, rol: true },
         },
         empresaEmpleadora: true,
+        // Los nombres de su estructura: sin ellos la pantalla cargaba las
+        // cuatro listas completas solo para traducir ids.
+        gerenciaEmpleadora: { select: { descripcion: true } },
+        areaEmpleadora: { select: { descripcion: true } },
+        unidadOcupacionalEmpleadora: { select: { descripcion: true } },
+        puestoEmpleadora: { select: { descripcion: true } },
       };
 
       if (Number(limit) === 0) {
@@ -1016,7 +1794,12 @@ export class EmpleadoService {
       const safePage = Math.max(Number(page) || 1, 1);
       const skip = (safePage - 1) * safeLimit;
 
-      const [total, data] = await Promise.all([
+      const whereTodas = await this.construirWhereListado({
+        ...query,
+        situacion: 'TODAS',
+      });
+
+      const [total, data, porSituacion] = await Promise.all([
         this.prisma.empleado.count({ where }),
         this.prisma.empleado.findMany({
           where,
@@ -1025,7 +1808,21 @@ export class EmpleadoService {
           include,
           orderBy,
         }),
+        // Cuántos hay en cada situación con los mismos filtros: las pestañas
+        // del listado los muestran sin pedir tres veces la lista.
+        this.prisma.empleado.groupBy({
+          by: ['situacion'],
+          where: whereTodas,
+          _count: { _all: true },
+        }),
       ]);
+
+      const situaciones = Object.fromEntries(
+        SITUACIONES.map((sit) => [
+          sit,
+          porSituacion.find((g) => g.situacion === sit)?._count._all ?? 0,
+        ]),
+      );
 
       return {
         data: await this.conAgregados(data),
@@ -1034,6 +1831,7 @@ export class EmpleadoService {
           page: safePage,
           limit: safeLimit,
           totalPages: Math.ceil(total / safeLimit),
+          situaciones,
         },
       };
     } catch (error) {
@@ -1094,55 +1892,124 @@ export class EmpleadoService {
   // UPDATE
   // ============================================================
   async update(user: AuthUser, id: number, body: UpdateEmpleadoDto) {
+    body = normalizarTrabajador(body);
+    const fechaMala = problemaFechaIngreso(body.fechaIngreso);
+    if (fechaMala) throw new BadRequestException(fechaMala);
     try {
       const existEmpleado = await this.prisma.empleado.findUnique({
         where: { idEmpleado: id, estado: true },
-        select: { idEmpleado: true, idUsuario: true, codigoEmpleado: true },
+        select: {
+          idEmpleado: true,
+          idUsuario: true,
+          codigoEmpleado: true,
+          idEmpresaEmpleadora: true,
+          tipoDocumento: true,
+          documento: true,
+          usuario: { select: { rol: true, codigoUsuario: true } },
+        },
       });
 
       if (!existEmpleado) throw new NotFoundException('Empleado no encontrado');
 
+      // Quitarle el rol Jefe a quien tiene gente a cargo la dejaba sin
+      // evaluador: primero se reasigna a su equipo.
+      if (
+        body.rol !== undefined &&
+        body.rol !== 'JEFE' &&
+        existEmpleado.usuario?.rol === 'JEFE'
+      ) {
+        const aCargo = await this.prisma.empleado.count({
+          where: {
+            codigoEmpleadoJefe: existEmpleado.codigoEmpleado,
+            idEmpresaEmpleadora: existEmpleado.idEmpresaEmpleadora,
+            situacion: { not: 'CESADO' },
+          },
+        });
+        if (aCargo > 0)
+          throw new BadRequestException(
+            `Tiene ${aCargo === 1 ? '1 persona' : `${aCargo} personas`} a cargo: reasígne${aCargo === 1 ? 'la' : 'las'} a otro jefe antes de quitarle el rol Jefe.`,
+          );
+      }
+
       // Jefe: `undefined` = no se toca (PATCH parcial); "" o null = sin jefe.
       // Antes `?? null` dejaba sin jefe a cualquiera actualizado sin el campo.
-      const codigoEmpleadoFinal = body.codigoEmpleado ?? existEmpleado.codigoEmpleado;
+      const codigoEmpleadoFinal =
+        body.codigoEmpleado ?? existEmpleado.codigoEmpleado;
       let codigoEmpleadoJefe: string | null | undefined;
       if (body.codigoEmpleadoJefe !== undefined) {
         codigoEmpleadoJefe = body.codigoEmpleadoJefe?.trim() || null;
       }
+      // Estructura y jefe: de la empresa final del trabajador, activos.
+      // Solo se revisa lo que llega (el PATCH es parcial).
+      const idEmpresaFinal = Number(
+        body.idEmpresaEmpleadora ?? existEmpleado.idEmpresaEmpleadora,
+      );
+      const cambiaDocumento =
+        body.documento !== undefined || body.tipoDocumento !== undefined;
+      const problemas = [
+        ...(cambiaDocumento
+          ? await this.problemasDeDocumento(
+              idEmpresaFinal,
+              body.tipoDocumento ?? existEmpleado.tipoDocumento,
+              body.documento ?? existEmpleado.documento,
+              id,
+            )
+          : []),
+        ...(await this.problemasDeRelaciones(idEmpresaFinal, {
+          codigoEmpleado: codigoEmpleadoFinal,
+          idGerenciaEmpleadora: body.idGerenciaEmpleadora,
+          idAreaEmpleadora: body.idAreaEmpleadora,
+          idUnidadOcupacionalEmpleadora: body.idUnidadOcupacionalEmpleadora,
+          idPuestoEmpleadora: body.idPuestoEmpleadora,
+          codigoEmpleadoJefe: codigoEmpleadoJefe ?? undefined,
+        })),
+      ];
       if (codigoEmpleadoJefe) {
-        if (codigoEmpleadoJefe === codigoEmpleadoFinal) {
-          throw new BadRequestException(
-            'Un trabajador no puede ser su propio jefe.',
-          );
-        }
-        const jefe = await this.prisma.empleado.findFirst({
-          where: { codigoEmpleado: codigoEmpleadoJefe, estado: true },
-          select: { idEmpleado: true },
+        const ciclo = await this.formariaCiclo(
+          idEmpresaFinal,
+          existEmpleado.codigoEmpleado,
+          codigoEmpleadoJefe,
+        );
+        if (ciclo) problemas.push(ciclo);
+      }
+      if (problemas.length) {
+        throw new BadRequestException({
+          message: problemas[0],
+          errors: problemas,
         });
-        if (!jefe) {
-          throw new BadRequestException(
-            `No existe un trabajador activo con el código de jefe "${codigoEmpleadoJefe}".`,
-          );
-        }
       }
 
       // Validación de unicidad: códigoUsuario
-      if (body.codigoUsuario) {
-        const existsUser = await this.prisma.usuario.findUnique({
-          where: { codigoUsuario: body.codigoUsuario },
+      // El ámbito de la cuenta sigue al rol y a la empresa finales.
+      const rolFinal = body.rol ?? existEmpleado.usuario?.rol;
+      const cuentaFinal = empresaDeCuenta(rolFinal, idEmpresaFinal);
+      const usuarioFinal =
+        body.codigoUsuario ?? existEmpleado.usuario?.codigoUsuario;
+      if (usuarioFinal) {
+        const existsUser = await this.prisma.usuario.findFirst({
+          where: { codigoUsuario: usuarioFinal, idEmpresaCuenta: cuentaFinal },
+          select: {
+            idUsuario: true,
+            rol: true,
+            nombreCompleto: true,
+            empleado: { select: { nombres: true, apellidos: true } },
+          },
         });
 
         if (existsUser && existsUser.idUsuario !== existEmpleado.idUsuario) {
           throw new BadRequestException(
-            `El código de usuario "${body.codigoUsuario}" ya está registrado.`,
+            mensajeUsuarioTomado(usuarioFinal, existsUser),
           );
         }
       }
 
       // Validación de unicidad: códigoEmpleado
       if (body.codigoEmpleado) {
-        const existsEmp = await this.prisma.empleado.findUnique({
-          where: { codigoEmpleado: body.codigoEmpleado },
+        const existsEmp = await this.prisma.empleado.findFirst({
+          where: {
+            codigoEmpleado: body.codigoEmpleado,
+            idEmpresaEmpleadora: idEmpresaFinal,
+          },
         });
 
         if (existsEmp && existsEmp.idEmpleado !== id) {
@@ -1156,11 +2023,17 @@ export class EmpleadoService {
       const usuarioUpdateData: any = {
         codigoUsuario: body.codigoUsuario,
         rol: body.rol,
+        idEmpresaCuenta: cuentaFinal,
         fechaModificacion: new Date(),
         actualizadoPorId: user.idUsuario,
       };
 
       if (body.contrasena) {
+        const debil = problemaContrasena(body.contrasena, [
+          usuarioFinal,
+          body.documento ?? existEmpleado.documento,
+        ]);
+        if (debil) throw new BadRequestException(debil);
         usuarioUpdateData.contrasena = await hash(body.contrasena, 10);
       }
 
@@ -1169,10 +2042,13 @@ export class EmpleadoService {
         codigoEmpleado: body.codigoEmpleado,
         nombres: body.nombres,
         apellidos: body.apellidos,
-        documento: body.documento,
+        tipoDocumento: body.tipoDocumento,
+        documento: body.documento?.toString().trim(),
         sede: body.sede,
-        tiempoEmpresaValor: body.tiempoEmpresaValor,
-        tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
+        // PATCH parcial: si no llega, no se toca; "" o null la borran.
+        ...(body.fechaIngreso !== undefined && {
+          fechaIngreso: aFecha(body.fechaIngreso),
+        }),
         idEmpresaEmpleadora: body.idEmpresaEmpleadora,
         idAreaEmpleadora: body.idAreaEmpleadora,
         idPuestoEmpleadora: body.idPuestoEmpleadora,
@@ -1196,7 +2072,10 @@ export class EmpleadoService {
         // sus evaluaciones dejarían de contar como "del jefe".
         if (cambiaCodigo) {
           await tx.empleado.updateMany({
-            where: { codigoEmpleadoJefe: existEmpleado.codigoEmpleado },
+            where: {
+              codigoEmpleadoJefe: existEmpleado.codigoEmpleado,
+              idEmpresaEmpleadora: existEmpleado.idEmpresaEmpleadora,
+            },
             data: {
               codigoEmpleadoJefe: codigoEmpleadoFinal,
               fechaModificacion: new Date(),
@@ -1225,63 +2104,14 @@ export class EmpleadoService {
   // ============================================================
   // REMOVE (INACTIVAR)
   // ============================================================
+  /** Dar de baja a uno = cesarlo (mismo camino que la baja masiva). */
   async remove(user: AuthUser, id: number) {
-    try {
-      const empleado = await this.prisma.empleado.findUnique({
-        where: { idEmpleado: id },
-        select: {
-          idEmpleado: true,
-          estado: true,
-          idUsuario: true,
-          codigoEmpleado: true,
-        },
-      });
-
-      if (!empleado || !empleado.estado)
-        throw new NotFoundException('Empleado no encontrado');
-
-      // Quien tiene gente a cargo no se puede dar de baja sin más: sus
-      // subordinados quedarían apuntando a un jefe inexistente y nadie podría
-      // evaluarlos, porque la lista de subordinados se arma por
-      // `codigoEmpleadoJefe`. Mismo criterio que al eliminar una empresa.
-      const subordinados = await this.prisma.empleado.count({
-        where: { codigoEmpleadoJefe: empleado.codigoEmpleado, estado: true },
-      });
-
-      if (subordinados > 0) {
-        throw new ConflictException(
-          `No se puede eliminar: todavía es jefe de ${subordinados} trabajador(es). Reasígnalos a otro jefe primero.`,
-        );
-      }
-
-      // El usuario se desactiva junto con el empleado. El login solo mira
-      // `usuario.estado`, así que dando de baja únicamente al empleado la
-      // persona seguía entrando al sistema como si nada.
-      return await this.prisma.$transaction(async (tx) => {
-        const fechaModificacion = new Date();
-
-        await tx.usuario.update({
-          where: { idUsuario: empleado.idUsuario },
-          data: {
-            estado: false,
-            fechaModificacion,
-            actualizadoPorId: user.idUsuario,
-          },
-        });
-
-        return await tx.empleado.update({
-          where: { idEmpleado: id },
-          data: {
-            estado: false,
-            fechaModificacion,
-            actualizadoPorId: user.idUsuario,
-          },
-        });
-      });
-    } catch (error) {
-      this.logger.error('Error al eliminar (inactivar) al empleado:', error);
-      handlePrismaError(error, 'empleado');
-    }
+    await this.cambiarSituacion(user, {
+      ids: [id],
+      situacion: 'CESADO',
+      motivo: 'Dado de baja',
+    });
+    return { idEmpleado: id };
   }
 
   /**
@@ -1293,146 +2123,412 @@ export class EmpleadoService {
    * terminar no queda nadie apuntando a un jefe inexistente. Borrando de uno
    * en uno eso solo funcionaba si se acertaba el orden.
    */
+  /**
+   * Dar de baja = cesar. Se conserva por compatibilidad con
+   * `DELETE /empleado/masivo`; el camino completo es `cambiarSituacion`.
+   */
   async removeMany(user: AuthUser, ids: number[]) {
+    const r = await this.cambiarSituacion(user, {
+      ids,
+      situacion: 'CESADO',
+      motivo: 'Dado de baja',
+    });
+    return { eliminados: r?.ids ?? [] };
+  }
+
+  /**
+   * Suspender, cesar o reactivar a uno o varios trabajadores, todo o nada.
+   *
+   * - A SUSPENDIDO o CESADO (desde ACTIVO): no se deja a nadie sin jefe. Si
+   *   alguien de la selección todavía es jefe de gente activa que no está en
+   *   la selección, no se cambia a nadie. Se desactiva también su usuario.
+   * - Entre SUSPENDIDO y CESADO: solo cambia la situación (ya no opera).
+   * - A ACTIVO: su estructura y su jefe tienen que seguir vigentes; vuelve a
+   *   entrar con su mismo usuario y conserva todo su historial.
+   */
+  async cambiarSituacion(
+    user: AuthUser,
+    dto: {
+      ids: number[];
+      situacion: Situacion;
+      fecha?: string;
+      motivo?: string;
+    },
+  ) {
     try {
-      const unicos = [...new Set(ids)];
+      const unicos = [...new Set(dto.ids.map(Number))];
+      const motivo = dto.motivo?.trim() || null;
+      if (dto.situacion !== 'ACTIVO' && !motivo) {
+        throw new BadRequestException(
+          dto.situacion === 'SUSPENDIDO'
+            ? 'Indique el motivo de la suspensión.'
+            : 'Indique el motivo del cese.',
+        );
+      }
 
       const empleados = await this.prisma.empleado.findMany({
-        where: { idEmpleado: { in: unicos }, estado: true },
+        where: { idEmpleado: { in: unicos } },
         select: {
           idEmpleado: true,
           idUsuario: true,
           codigoEmpleado: true,
           nombres: true,
           apellidos: true,
+          situacion: true,
+          idEmpresaEmpleadora: true,
+          idGerenciaEmpleadora: true,
+          idAreaEmpleadora: true,
+          idUnidadOcupacionalEmpleadora: true,
+          idPuestoEmpleadora: true,
+          codigoEmpleadoJefe: true,
         },
       });
-
       if (empleados.length !== unicos.length) {
         const encontrados = new Set(empleados.map((e) => e.idEmpleado));
-        const faltantes = unicos.filter((id) => !encontrados.has(id));
-
         throw new NotFoundException(
-          `No se encontraron los empleados con ID ${faltantes.join(', ')}.`,
+          `No se encontraron los trabajadores con ID ${unicos.filter((id) => !encontrados.has(id)).join(', ')}.`,
         );
       }
 
-      // Subordinados que se quedarían huérfanos: los que siguen activos, tienen
-      // como jefe a alguien de la tanda y no están ellos mismos en la tanda.
-      const huerfanos = await this.prisma.empleado.findMany({
-        where: {
-          estado: true,
-          idEmpleado: { notIn: unicos },
-          codigoEmpleadoJefe: { in: empleados.map((e) => e.codigoEmpleado) },
-        },
-        select: { codigoEmpleadoJefe: true },
-      });
+      const yaEstan = empleados.filter((e) => e.situacion === dto.situacion);
+      if (yaEstan.length === empleados.length) {
+        throw new BadRequestException(
+          `${empleados.length === 1 ? 'Ya está' : 'Ya están'} en situación ${dto.situacion.toLowerCase()}.`,
+        );
+      }
 
-      if (huerfanos.length > 0) {
-        const cuantos = new Map<string, number>();
-        for (const h of huerfanos) {
-          const codigo = h.codigoEmpleadoJefe ?? '';
-          cuantos.set(codigo, (cuantos.get(codigo) ?? 0) + 1);
-        }
+      const nombre = (e: { nombres: string; apellidos: string }) =>
+        `${e.nombres} ${e.apellidos}`;
 
-        const detalle = empleados
-          .filter((e) => cuantos.has(e.codigoEmpleado))
-          .map(
-            (e) =>
-              `${e.nombres} ${e.apellidos} (${cuantos.get(e.codigoEmpleado)})`,
+      if (dto.situacion === 'ACTIVO') {
+        // Reactivar: la estructura y el jefe que tenía tienen que seguir
+        // vigentes en su empresa (pudieron darse de baja mientras tanto).
+        const delConjunto = new Map(
+          empleados.map((e) => [e.codigoEmpleado, e.idEmpresaEmpleadora]),
+        );
+        const problemas = (
+          await Promise.all(
+            empleados.map(async (e) =>
+              (
+                await this.problemasDeRelaciones(
+                  e.idEmpresaEmpleadora,
+                  e,
+                  // El jefe puede volver en la misma operación: un jefe con
+                  // su equipo se suspende junto y se reactiva junto.
+                  delConjunto,
+                )
+              ).map((p) => `${nombre(e)}: ${p}`),
+            ),
           )
-          .join(', ');
-
-        // Con una sola fila seleccionada, hablar de "la selección" no dice
-        // nada: es el mismo caso que `remove` y se explica igual.
-        throw new ConflictException(
-          unicos.length === 1
-            ? `No se puede eliminar: ${detalle} todavía tiene gente a cargo. Reasígnala a otro jefe primero.`
-            : `No se eliminó a nadie: ${detalle} todavía tiene gente a cargo fuera de la selección. Reasígnala a otro jefe o inclúyela en la selección.`,
-        );
+        ).flat();
+        if (problemas.length) {
+          throw new BadRequestException({
+            message: `No se reactivó a nadie: ${problemas[0]}`,
+            errors: problemas,
+          });
+        }
+      } else {
+        // Dejar de operar: nadie activo puede quedar sin jefe.
+        const activos = empleados.filter((e) => e.situacion === 'ACTIVO');
+        const huerfanos = activos.length
+          ? await this.prisma.empleado.findMany({
+              where: {
+                estado: true,
+                idEmpleado: { notIn: unicos },
+                codigoEmpleadoJefe: {
+                  in: activos.map((e) => e.codigoEmpleado),
+                },
+              },
+              select: { codigoEmpleadoJefe: true },
+            })
+          : [];
+        if (huerfanos.length > 0) {
+          const cuantos = new Map<string, number>();
+          for (const h of huerfanos) {
+            const codigo = h.codigoEmpleadoJefe ?? '';
+            cuantos.set(codigo, (cuantos.get(codigo) ?? 0) + 1);
+          }
+          const detalle = activos
+            .filter((e) => cuantos.has(e.codigoEmpleado))
+            .map((e) => `${nombre(e)} (${cuantos.get(e.codigoEmpleado)})`)
+            .join(', ');
+          throw new ConflictException(
+            unicos.length === 1
+              ? `No se puede cambiar su situación: ${detalle} todavía tiene gente a cargo. Reasígnala a otro jefe primero.`
+              : `No se cambió a nadie: ${detalle} todavía tiene gente a cargo fuera de la selección. Reasígnala a otro jefe o inclúyela en la selección.`,
+          );
+        }
       }
 
-      const fechaModificacion = new Date();
+      const ahora = new Date();
+      const fecha = dto.fecha ? new Date(dto.fecha) : ahora;
+      const opera = dto.situacion === 'ACTIVO';
+      const ids = empleados
+        .filter((e) => e.situacion !== dto.situacion)
+        .map((e) => e.idEmpleado);
 
       await this.prisma.$transaction([
         this.prisma.usuario.updateMany({
-          where: { idUsuario: { in: empleados.map((e) => e.idUsuario) } },
+          where: {
+            idUsuario: {
+              in: empleados
+                .filter((e) => ids.includes(e.idEmpleado))
+                .map((e) => e.idUsuario),
+            },
+          },
           data: {
-            estado: false,
-            fechaModificacion,
+            estado: opera,
+            fechaModificacion: ahora,
             actualizadoPorId: user.idUsuario,
           },
         }),
         this.prisma.empleado.updateMany({
-          where: { idEmpleado: { in: unicos } },
+          where: { idEmpleado: { in: ids } },
           data: {
-            estado: false,
-            fechaModificacion,
+            estado: opera,
+            situacion: dto.situacion,
+            fechaSituacion: fecha,
+            motivoSituacion: motivo,
+            fechaModificacion: ahora,
             actualizadoPorId: user.idUsuario,
           },
         }),
       ]);
 
-      return { eliminados: unicos };
+      return { ids, situacion: dto.situacion };
     } catch (error) {
-      this.logger.error('Error al eliminar (inactivar) empleados:', error);
+      this.logger.error(
+        'Error al cambiar la situación de trabajadores:',
+        error,
+      );
       handlePrismaError(error, 'empleado');
     }
   }
 
-  async createMany(user: AuthUser, data: CreateEmpleadoDto[]) {
+  /** Plantilla de importación con listas desplegables (ver su archivo). */
+  plantillaImportacion(idEmpresa: number) {
+    return construirPlantillaTrabajadores(this.prisma, idEmpresa);
+  }
+
+  /**
+   * Documento, código, nombre y situación de todos los trabajadores de la
+   * empresa (también suspendidos y cesados: el documento no se repite en
+   * ninguna situación). La revisión de la importación marca con esto «Ya
+   * registrado» antes de enviar, con el mismo criterio que `createMany`.
+   */
+  registradosParaImportar(idEmpresa: number) {
+    return this.prisma.empleado.findMany({
+      where: { idEmpresaEmpleadora: idEmpresa },
+      select: {
+        tipoDocumento: true,
+        documento: true,
+        codigoEmpleado: true,
+        nombres: true,
+        apellidos: true,
+        situacion: true,
+      },
+    });
+  }
+
+  async createMany(user: AuthUser, entrada: CreateEmpleadoDto[]) {
+    const conAccesos = entrada.map((f) => conAcceso(normalizarTrabajador(f)));
+    const data = conAccesos.map((c) => c.body);
     const BATCH_SIZE = 10;
 
     try {
       /* =====================================================
        * 1. Validaciones en memoria (archivo)
        * ===================================================== */
-      const codesUser = new Set<string>();
-      const codesEmpleado = new Set<string>();
-
-      for (const body of data) {
-        if (codesUser.has(body.codigoUsuario)) {
-          throw new BadRequestException(
-            `Código de usuario duplicado en el archivo: ${body.codigoUsuario}`,
+      // Usuario y código: repetidos en el archivo o ya registrados. Se
+      // informan por fila ("[i] …", junto con el resto), no con el primero
+      // que aparezca: el front marca cada fila con su problema.
+      const usuarioEn = new Set<string>();
+      const empleadoEn = new Set<string>();
+      const repetidos = data.map((b) => {
+        const p: string[] = [];
+        // Las filas de ejemplo de la plantilla (apellidos que terminan en
+        // «(Ejemplo)») no se crean. El front ya no las envía; si llegan, se
+        // rechazan en su fila en vez de crear trabajadores ficticios.
+        if (/\(\s*ejemplo\s*\)\s*$/i.test(b.apellidos ?? ''))
+          p.push('Es una fila de ejemplo de la plantilla: no se importa.');
+        // Usuario único dentro de su ámbito (empresa, o sistema si es ADMIN).
+        const u = `${empresaDeCuenta(b.rol, b.idEmpresaEmpleadora) ?? 'sistema'}|${b.codigoUsuario}`;
+        // El código es único por empresa: la clave lleva la empresa.
+        const c = `${b.idEmpresaEmpleadora}|${b.codigoEmpleado}`;
+        // El usuario es el documento: si se repite, ya lo dice «El documento
+        // … se repite en el archivo» (más abajo). Solo se marca para no
+        // repetirlo con otras palabras.
+        usuarioEn.add(u);
+        if (empleadoEn.has(c))
+          p.push(
+            `El código de empleado "${b.codigoEmpleado}" se repite en el archivo.`,
           );
-        }
-        codesUser.add(body.codigoUsuario);
-
-        if (codesEmpleado.has(body.codigoEmpleado)) {
-          throw new BadRequestException(
-            `Código de empleado duplicado en el archivo: ${body.codigoEmpleado}`,
-          );
-        }
-        codesEmpleado.add(body.codigoEmpleado);
-      }
-
-      /* =====================================================
-       * 2. Validar duplicados en BD (UNA sola vez)
-       * ===================================================== */
-      const codigosUsuario = [...codesUser];
-      const codigosEmpleado = [...codesEmpleado];
+        empleadoEn.add(c);
+        return p;
+      });
 
       const [usuariosExistentes, empleadosExistentes] = await Promise.all([
         this.prisma.usuario.findMany({
-          where: { codigoUsuario: { in: codigosUsuario } },
-          select: { codigoUsuario: true },
+          where: {
+            codigoUsuario: { in: data.map((b) => String(b.codigoUsuario)) },
+          },
+          select: {
+            codigoUsuario: true,
+            idEmpresaCuenta: true,
+            rol: true,
+            nombreCompleto: true,
+            empleado: { select: { nombres: true, apellidos: true } },
+          },
         }),
         this.prisma.empleado.findMany({
-          where: { codigoEmpleado: { in: codigosEmpleado } },
-          select: { codigoEmpleado: true },
+          where: {
+            codigoEmpleado: {
+              in: data.map((b) => String(b.codigoEmpleado)),
+            },
+            idEmpresaEmpleadora: {
+              in: [...new Set(data.map((b) => Number(b.idEmpresaEmpleadora)))],
+            },
+          },
+          select: { codigoEmpleado: true, idEmpresaEmpleadora: true },
         }),
       ]);
-
-      if (usuariosExistentes.length > 0) {
-        throw new BadRequestException(
-          `El código de usuario ya existe: ${usuariosExistentes[0].codigoUsuario}`,
+      const usuariosTomados = new Map(
+        usuariosExistentes.map((u) => [
+          `${u.idEmpresaCuenta ?? 'sistema'}|${u.codigoUsuario}`,
+          u,
+        ]),
+      );
+      const empleadosTomados = new Set(
+        empleadosExistentes.map(
+          (e) => `${e.idEmpresaEmpleadora}|${e.codigoEmpleado}`,
+        ),
+      );
+      // El usuario tomado se informa aparte (`usuarioTomado`): solo hace
+      // falta si el documento no explicó ya que la persona está registrada.
+      const usuarioTomado = data.map((b) => {
+        const duenio = usuariosTomados.get(
+          `${empresaDeCuenta(b.rol, b.idEmpresaEmpleadora) ?? 'sistema'}|${b.codigoUsuario}`,
         );
-      }
+        return duenio
+          ? mensajeUsuarioTomado(String(b.codigoUsuario), duenio)
+          : null;
+      });
+      const unicidad = data.map((b, i) => [
+        ...repetidos[i],
+        ...(empleadosTomados.has(`${b.idEmpresaEmpleadora}|${b.codigoEmpleado}`)
+          ? [`El código de empleado "${b.codigoEmpleado}" ya está registrado.`]
+          : []),
+      ]);
 
-      if (empleadosExistentes.length > 0) {
-        throw new BadRequestException(
-          `El código de empleado ya existe: ${empleadosExistentes[0].codigoEmpleado}`,
-        );
+      /* =====================================================
+       * 2b. Estructura y jefe de cada fila (todas, juntas)
+       * ===================================================== */
+      const jefesDelLote = new Map(
+        data.map((f) => [
+          String(f.codigoEmpleado).trim(),
+          Number(f.idEmpresaEmpleadora),
+        ]),
+      );
+      // Jefes en círculo dentro del archivo (A jefe de B y B jefe de A):
+      // se sube por los jefes que el mismo archivo declara.
+      const jefeEnArchivo = new Map(
+        data.map((f) => [
+          String(f.codigoEmpleado ?? '').trim(),
+          String(f.codigoEmpleadoJefe ?? '').trim(),
+        ]),
+      );
+      // Un jefe que viene en el mismo archivo también tiene que tener rol JEFE.
+      const rolEnArchivo = new Map(
+        data.map((f) => [String(f.codigoEmpleado ?? '').trim(), f.rol]),
+      );
+      const jefeSinRolEnArchivo = (i: number): string[] => {
+        const jefe = String(data[i].codigoEmpleadoJefe ?? '').trim();
+        const rol = rolEnArchivo.get(jefe);
+        return jefe && rol && rol !== 'JEFE'
+          ? [
+              `Su jefe ${jefe} viene en el archivo con rol ${rol}: para tener personas a cargo debe ser JEFE.`,
+            ]
+          : [];
+      };
+      const cicloEnArchivo = (i: number): string[] => {
+        const codigo = String(data[i].codigoEmpleado ?? '').trim();
+        const vistos = new Set<string>();
+        let actual = jefeEnArchivo.get(codigo);
+        // Ser su propio jefe ya lo informa `problemasDeRelaciones`.
+        if (actual === codigo) return [];
+        while (actual && !vistos.has(actual)) {
+          if (actual === codigo)
+            return [
+              `${codigo}: los jefes del archivo forman un círculo (nadie puede depender de su propio subordinado).`,
+            ];
+          vistos.add(actual);
+          actual = jefeEnArchivo.get(actual);
+        }
+        return [];
+      };
+      // Mismo documento dos veces en el archivo (por empresa y tipo).
+      const vistos = new Map<string, number>();
+      const repetidosEnArchivo = data.map((f, i) => {
+        const clave = `${f.idEmpresaEmpleadora}|${f.tipoDocumento ?? 'DNI'}|${String(f.documento ?? '').trim()}`;
+        const primera = vistos.get(clave);
+        if (primera === undefined) {
+          vistos.set(clave, i);
+          return [] as string[];
+        }
+        return [
+          `El documento ${String(f.documento).trim()} se repite en el archivo (también en la fila ${primera + 2}).`,
+        ];
+      });
+      const porFila = await Promise.all(
+        data.map(async (f, i) => {
+          const delDocumento = [
+            ...repetidosEnArchivo[i],
+            ...(await this.problemasDeDocumento(
+              Number(f.idEmpresaEmpleadora),
+              f.tipoDocumento,
+              f.documento,
+              undefined,
+              true,
+            )),
+          ];
+          return [
+            ...unicidad[i],
+            ...delDocumento,
+            ...(!delDocumento.length && usuarioTomado[i]
+              ? [usuarioTomado[i]]
+              : []),
+            ...(!conAccesos[i].acceso.generada &&
+            problemaContrasena(f.contrasena, [f.codigoUsuario, f.documento])
+              ? [
+                  problemaContrasena(f.contrasena, [
+                    f.codigoUsuario,
+                    f.documento,
+                  ])!,
+                ]
+              : []),
+            ...(problemaFechaIngreso(f.fechaIngreso)
+              ? [problemaFechaIngreso(f.fechaIngreso)!]
+              : []),
+            ...(await this.problemasDeRelaciones(
+              Number(f.idEmpresaEmpleadora),
+              f,
+              jefesDelLote,
+            )),
+            ...cicloEnArchivo(i),
+            ...jefeSinRolEnArchivo(i),
+          ];
+        }),
+      );
+      // "[i] …" como los mensajes de ParseArrayPipe: el front lo traduce a la
+      // fila del Excel.
+      const problemasLote = porFila.flatMap((ps, i) =>
+        ps.map((p) => `[${i}] ${p}`),
+      );
+      if (problemasLote.length) {
+        throw new BadRequestException({
+          message: `No se importó nada: hay ${problemasLote.length} problema(s) en el archivo.`,
+          errors: problemasLote,
+        });
       }
 
       /* =====================================================
@@ -1460,6 +2556,10 @@ export class EmpleadoService {
                 codigoUsuario: body.codigoUsuario,
                 contrasena: body.hashedPassword,
                 rol: body.rol,
+                idEmpresaCuenta: empresaDeCuenta(
+                  body.rol,
+                  body.idEmpresaEmpleadora,
+                ),
                 creadoPorId: user.idUsuario,
               },
             });
@@ -1469,11 +2569,10 @@ export class EmpleadoService {
                 codigoEmpleado: body.codigoEmpleado,
                 nombres: body.nombres,
                 apellidos: body.apellidos,
-                // documento: body.documento,
-                documento: body.documento ? String(body.documento) : null,
+                tipoDocumento: body.tipoDocumento ?? 'DNI',
+                documento: String(body.documento).trim(),
                 sede: body.sede,
-                tiempoEmpresaValor: body.tiempoEmpresaValor,
-                tiempoEmpresaUnidad: body.tiempoEmpresaUnidad,
+                fechaIngreso: aFecha(body.fechaIngreso),
                 idEmpresaEmpleadora: body.idEmpresaEmpleadora,
                 idAreaEmpleadora: body.idAreaEmpleadora,
                 idPuestoEmpleadora: body.idPuestoEmpleadora,
@@ -1504,6 +2603,15 @@ export class EmpleadoService {
       return {
         totalInsertados: createdEmployees.length,
         empleados: createdEmployees,
+        // Una sola vez: con esto se arma el Excel de accesos para entregar.
+        accesos: data.map((f, i) => ({
+          codigoEmpleado: f.codigoEmpleado,
+          nombre: `${f.nombres} ${f.apellidos}`.trim(),
+          usuario: conAccesos[i].acceso.usuario,
+          contrasena: conAccesos[i].acceso.generada
+            ? conAccesos[i].acceso.contrasena
+            : null,
+        })),
       };
     } catch (error) {
       this.logger.error('Error en creación masiva de empleados', error);
@@ -1524,6 +2632,7 @@ export class EmpleadoService {
         },
         select: {
           codigoEmpleado: true,
+          idEmpresaEmpleadora: true,
         },
       });
 
@@ -1537,6 +2646,7 @@ export class EmpleadoService {
       const subordinados = await this.prisma.empleado.findMany({
         where: {
           codigoEmpleadoJefe: empleado.codigoEmpleado,
+          idEmpresaEmpleadora: empleado.idEmpresaEmpleadora,
           estado: true,
         },
         include: {
@@ -1568,6 +2678,7 @@ export class EmpleadoService {
         select: {
           idEmpleado: true,
           codigoEmpleadoJefe: true,
+          idEmpresaEmpleadora: true,
         },
       });
 
@@ -1585,6 +2696,7 @@ export class EmpleadoService {
       const jefe = await this.prisma.empleado.findFirst({
         where: {
           codigoEmpleado: empleado.codigoEmpleadoJefe,
+          idEmpresaEmpleadora: empleado.idEmpresaEmpleadora,
           estado: true,
         },
         include: {
@@ -1702,6 +2814,7 @@ export class EmpleadoService {
         },
         select: {
           codigoEmpleado: true,
+          idEmpresaEmpleadora: true,
         },
       });
 
@@ -1715,15 +2828,40 @@ export class EmpleadoService {
       const subordinados = await this.prisma.empleado.findMany({
         where: {
           codigoEmpleadoJefe: jefe.codigoEmpleado,
+          idEmpresaEmpleadora: jefe.idEmpresaEmpleadora,
           estado: true,
         },
         include: {
           unidadOcupacionalEmpleadora: true,
+          puestoEmpleadora: { select: { descripcion: true } },
         },
         orderBy: {
           fechaCreacion: 'desc',
         },
       });
+
+      // Evidencias de competencias de cada uno en la campaña en curso (la
+      // tabla del jefe muestra cuántas tiene antes de calificar).
+      const campana = await campanaEnCurso(
+        this.prisma,
+        jefe.idEmpresaEmpleadora,
+      );
+      const evidencias = campana
+        ? await this.prisma.evidencia.groupBy({
+            by: ['idEmpleado'],
+            where: {
+              idEmpleado: { in: subordinados.map((s) => s.idEmpleado) },
+              idCampanaEvaluacion: campana.idCampanaEvaluacion,
+              // Solo las de competencias: las de objetivos van en su lista.
+              idEvaluacionCompetencia: { not: null },
+              estado: true,
+            },
+            _count: { _all: true },
+          })
+        : [];
+      const evidenciasDe = new Map(
+        evidencias.map((e) => [e.idEmpleado, e._count._all]),
+      );
 
       // 3. Para cada subordinado obtener competencias de su unidad ocupacional
       const results: any[] = [];
@@ -1764,10 +2902,20 @@ export class EmpleadoService {
           competencias,
         );
 
+        // Su autoevaluación (el mismo conteo, con él como evaluador): el
+        // jefe ve si ya la hizo antes de calificarlo.
+        const auto = await this.calcularProgresoCompetencias(
+          sub.idEmpleado,
+          sub.idEmpleado,
+          competencias,
+        );
+
         results.push({
           subordinado: sub,
           competenciasAsignadas: progreso.competenciasAsignadas,
           progresoEvaluacion: progreso.progresoEvaluacion,
+          progresoAutoevaluacion: auto.progresoEvaluacion,
+          evidencias: evidenciasDe.get(sub.idEmpleado) ?? 0,
         });
       }
 
@@ -1975,35 +3123,76 @@ export class EmpleadoService {
 
       // Trae TODOS los campos de la carga masiva, con nombre e ID: el archivo
       // sirve para leerlo y también como base para volver a importar.
+      // Desde el espacio de una empresa «Empresa» repetiría el mismo nombre
+      // en cada fila: solo va si el archivo mezcla empresas.
+      const variasEmpresas =
+        !query.idEmpresaEmpleadora &&
+        new Set(empleados.map((e) => e.idEmpresaEmpleadora)).size > 1;
+      const columnasEmpresa = variasEmpresas
+        ? [
+            { header: 'Empresa', key: 'empresa', width: 28 },
+            { header: 'ID empresa', key: 'idEmpresaEmpleadora' },
+          ]
+        : [];
       return await construirLibroExcel([
         {
           nombre: 'Trabajadores',
           columnas: [
             { header: 'ID', key: 'idEmpleado', width: 8 },
-            { header: 'Código de empleado', key: 'codigoEmpleado', tipo: 'texto' },
+            {
+              header: 'Código de empleado',
+              key: 'codigoEmpleado',
+              tipo: 'texto',
+            },
             { header: 'Nombres', key: 'nombres', width: 24 },
             { header: 'Apellidos', key: 'apellidos', width: 24 },
-            { header: 'Documento', key: 'documento', tipo: 'texto' },
+            // Para volver a importar el archivo: la importación lo pide.
+            {
+              header: 'Tipo de documento',
+              key: 'tipoDocumento',
+              breve: 'DNI, CE o PASAPORTE',
+            },
+            {
+              header: 'Documento',
+              key: 'documento',
+              tipo: 'texto',
+              breve: '8 dígitos si es DNI',
+            },
             { header: 'Usuario', key: 'codigoUsuario', tipo: 'texto' },
-            { header: 'Rol', key: 'rol' },
-            { header: 'Empresa', key: 'empresa', width: 28 },
-            { header: 'ID empresa', key: 'idEmpresaEmpleadora' },
+            { header: 'Rol', key: 'rol', breve: 'EMPLEADO o JEFE' },
+            ...columnasEmpresa,
             { header: 'Gerencia', key: 'gerencia', width: 24 },
             { header: 'ID gerencia', key: 'idGerenciaEmpleadora' },
             { header: 'Área', key: 'area', width: 24 },
             { header: 'ID área', key: 'idAreaEmpleadora' },
-            { header: 'Unidad ocupacional', key: 'unidad', width: 26 },
-            { header: 'ID unidad', key: 'idUnidadOcupacionalEmpleadora' },
+            { header: 'Grupo ocupacional', key: 'unidad', width: 26 },
+            {
+              header: 'ID grupo ocupacional',
+              key: 'idUnidadOcupacionalEmpleadora',
+            },
             { header: 'Puesto', key: 'puesto', width: 24 },
             { header: 'ID puesto', key: 'idPuestoEmpleadora' },
             { header: 'Jefe', key: 'jefe', width: 28 },
-            { header: 'Código del jefe', key: 'codigoEmpleadoJefe', tipo: 'texto' },
+            {
+              header: 'Código del jefe',
+              key: 'codigoEmpleadoJefe',
+              tipo: 'texto',
+            },
             { header: 'Sede', key: 'sede', width: 18 },
-            { header: 'Tiempo en la empresa', key: 'tiempoEmpresaValor' },
-            { header: 'Unidad de tiempo', key: 'tiempoEmpresaUnidad' },
+            // dd/mm/aaaa como texto: la importación lo vuelve a leer igual.
+            {
+              header: 'Fecha de ingreso',
+              key: 'fechaIngreso',
+              tipo: 'texto',
+              breve: 'dd/mm/aaaa',
+            },
+            { header: 'Antigüedad', key: 'antiguedad' },
             // Cuatro números en vez de un "1/2" de texto: así se pueden sumar
             // y cruzar en una tabla dinámica, que es para lo que se exporta.
-            { header: 'Competencias evaluadas por el jefe', key: 'competenciasJefe' },
+            {
+              header: 'Competencias evaluadas por el jefe',
+              key: 'competenciasJefe',
+            },
             { header: 'Competencias autoevaluadas', key: 'competenciasAuto' },
             { header: 'Competencias totales', key: 'competenciasTotal' },
             { header: 'Objetivos evaluados', key: 'objetivosHechas' },
@@ -2014,6 +3203,7 @@ export class EmpleadoService {
             codigoEmpleado: item.codigoEmpleado,
             nombres: item.nombres,
             apellidos: item.apellidos,
+            tipoDocumento: item.tipoDocumento,
             documento: item.documento,
             codigoUsuario: item.usuario.codigoUsuario,
             rol: item.usuario.rol,
@@ -2027,11 +3217,20 @@ export class EmpleadoService {
             idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
             puesto: item.puestoEmpleadora?.descripcion,
             idPuestoEmpleadora: item.idPuestoEmpleadora,
-            jefe: item.jefe ? `${item.jefe.nombres} ${item.jefe.apellidos}` : '',
+            jefe: item.jefe
+              ? `${item.jefe.nombres} ${item.jefe.apellidos}`
+              : '',
             codigoEmpleadoJefe: item.codigoEmpleadoJefe,
             sede: item.sede,
-            tiempoEmpresaValor: item.tiempoEmpresaValor,
-            tiempoEmpresaUnidad: item.tiempoEmpresaUnidad,
+            fechaIngreso: item.fechaIngreso
+              ? item.fechaIngreso
+                  .toISOString()
+                  .slice(0, 10)
+                  .split('-')
+                  .reverse()
+                  .join('/')
+              : '',
+            antiguedad: textoAntiguedad(item.fechaIngreso),
             competenciasJefe: item.avanceCompetencias.hechasJefe,
             competenciasAuto: item.avanceCompetencias.hechasAuto,
             competenciasTotal: item.avanceCompetencias.total,

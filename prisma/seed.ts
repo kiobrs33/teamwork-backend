@@ -5,6 +5,14 @@ import { hash } from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  // Datos de prueba con contraseña conocida (12345678) y empresas falsas: nunca
+  // en producción. Allí el único dato inicial es el superadministrador, que
+  // crea el backend al arrancar desde SUPERADMIN_USUARIO / SUPERADMIN_CONTRASENA.
+  if (process.env.NODE_ENV === 'production')
+    throw new Error(
+      'El seed crea cuentas de prueba con contraseña conocida y no se ejecuta en producción.',
+    );
+
   const hashedPassword = await hash('12345678', 10);
 
   // 1. Crear empresa y grupos base

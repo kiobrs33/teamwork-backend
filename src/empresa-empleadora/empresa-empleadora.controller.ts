@@ -3,8 +3,10 @@ import { AlcanceService } from 'src/autorizacion/alcance.service';
 import {
   Alcance,
   ADMINISTRADORES,
+  INTERNOS,
   TODOS,
   empresaDelListado,
+  empresasDelAlcance,
   verificarEmpresa,
 } from 'src/autorizacion/alcance';
 import { Rol } from 'src/empleado/types/empleadoTypes';
@@ -12,6 +14,7 @@ import { enviarExcel } from 'src/common/excel/libro-excel';
 // empresa-empleadora.controller.ts
 import {
   BadRequestException,
+  ForbiddenException,
   Controller,
   Get,
   Post,
@@ -57,7 +60,8 @@ interface ArchivoLogoSubido {
 @ApiTags('Empresas Empleadoras')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Rol.ADMIN)
+// Crear y editar empresas: TeamWork (dueño y equipo, en sus empresas).
+@Roles(...INTERNOS)
 @Controller('empresa-empleadora')
 export class EmpresaEmpleadoraController {
   constructor(
@@ -72,10 +76,19 @@ export class EmpresaEmpleadoraController {
     description: 'Empresa empleadora creada exitosamente.',
   })
   async create(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Body() dto: CreateEmpresaEmpleadoraDto,
   ) {
     const empresa = await this.service.create(user, dto);
+    // Quien la crea con empresas asignadas la atiende: sin esto, el equipo
+    // crearía empresas que después no puede ver.
+    if (empresa && alcance.empresasPermitidas) {
+      await this.service.asignarAlEquipo(
+        alcance.idUsuario,
+        empresa.idEmpresaEmpleadora,
+      );
+    }
     return {
       message: 'Empresa empleadora creada exitosamente.',
       data: { empresa },
@@ -99,13 +112,15 @@ export class EmpresaEmpleadoraController {
   @ApiResponse({ status: 201, description: 'Logo subido correctamente.' })
   @UseInterceptors(FileInterceptor('file', empresaLogoUploadOptions))
   async uploadLogo(
+    @AlcanceActual() alcance: Alcance,
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: ArchivoLogoSubido | undefined,
   ) {
+    verificarEmpresa(alcance, id, 'Empresa');
     // Sin archivo, `file` llega undefined y leer `file.path` reventaba en un 500.
     if (!file?.path) {
       throw new BadRequestException(
-        'Debes adjuntar una imagen en el campo file.',
+        'Debe adjuntar una imagen en el campo file.',
       );
     }
 
@@ -128,10 +143,19 @@ export class EmpresaEmpleadoraController {
     @AlcanceActual() alcance: Alcance,
     @Query() query: EmpresaQueryDto,
   ) {
-    query.idEmpresaEmpleadora = empresaDelListado(
-      alcance,
-      query.idEmpresaEmpleadora,
-    );
+    // Las archivadas solo las ve (y restaura) el dueño.
+    if (query.archivadas === 'true' && alcance.rol !== Rol.ADMIN) {
+      throw new ForbiddenException('Solo el dueño ve las empresas archivadas.');
+    }
+    // Equipo con empresas asignadas y sin pedir una: toda su cartera.
+    if (alcance.empresasPermitidas && !query.idEmpresaEmpleadora) {
+      query.idsPermitidos = empresasDelAlcance(alcance) ?? [];
+    } else {
+      query.idEmpresaEmpleadora = empresaDelListado(
+        alcance,
+        query.idEmpresaEmpleadora,
+      );
+    }
     // Pasar la query completa: destructurarla dejaba fuera los filtros por
     // columna y el ordenamiento que el servicio sí sabe aplicar.
     const resp = await this.service.findAll(query);
@@ -153,10 +177,15 @@ export class EmpresaEmpleadoraController {
     @Query() query: EmpresaQueryDto,
     @Res() res: Response,
   ) {
-    query.idEmpresaEmpleadora = empresaDelListado(
-      alcance,
-      query.idEmpresaEmpleadora,
-    );
+    // Equipo con empresas asignadas y sin pedir una: toda su cartera.
+    if (alcance.empresasPermitidas && !query.idEmpresaEmpleadora) {
+      query.idsPermitidos = empresasDelAlcance(alcance) ?? [];
+    } else {
+      query.idEmpresaEmpleadora = empresaDelListado(
+        alcance,
+        query.idEmpresaEmpleadora,
+      );
+    }
     enviarExcel(res, await this.service.exportExcel(query), 'empresas');
   }
 
@@ -185,10 +214,12 @@ export class EmpresaEmpleadoraController {
     description: 'Empresa empleadora actualizada correctamente.',
   })
   async update(
+    @AlcanceActual() alcance: Alcance,
     @User() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateEmpresaEmpleadoraDto,
   ) {
+    verificarEmpresa(alcance, id, 'Empresa');
     const empresa = await this.service.update(user, id, dto);
     return {
       message: `Empresa empleadora con ID ${id} actualizada correctamente.`,
@@ -196,18 +227,48 @@ export class EmpresaEmpleadoraController {
     };
   }
 
-  @Delete(':id')
-  @ApiOperation({ summary: 'Eliminar empresa empleadora (soft delete)' })
-  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
-  @ApiResponse({
-    status: 200,
-    description: 'Empresa empleadora eliminada correctamente.',
+  @Post(':id/archivar')
+  // Archivar y restaurar: solo el dueño.
+  @Roles(Rol.ADMIN)
+  @ApiOperation({
+    summary:
+      'Archivar empresa: sale de la cartera y nadie de ella entra; no se borra nada',
   })
-  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    const empresa = await this.service.remove(user, id);
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  async archivar(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const empresa = await this.service.archivar(user, id);
     return {
-      message: `Empresa empleadora con ID ${id} eliminada correctamente.`,
+      message: `Empresa ${empresa?.nombreEmpresa ?? id} archivada.`,
       data: { empresa },
     };
+  }
+
+  @Post(':id/restaurar')
+  @Roles(Rol.ADMIN)
+  @ApiOperation({
+    summary: 'Restaurar una empresa archivada, con todo lo que tenía',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  async restaurar(
+    @User() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const empresa = await this.service.restaurar(user, id);
+    return {
+      message: `Empresa ${empresa?.nombreEmpresa ?? id} restaurada.`,
+      data: { empresa },
+    };
+  }
+
+  /** Ruta anterior de "eliminar": ahora archiva (no se borra nada). */
+  @Delete(':id')
+  @Roles(Rol.ADMIN)
+  @ApiOperation({ summary: 'Obsoleto: usar POST :id/archivar' })
+  @ApiParam({ name: 'id', description: 'ID de la empresa empleadora' })
+  async remove(@User() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.archivar(user, id);
   }
 }

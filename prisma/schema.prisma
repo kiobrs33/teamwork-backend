@@ -17,11 +17,22 @@ model Empleado {
   idEmpleado                      Int                         @id @default(autoincrement()) @map("id_empleado")
   nombres                         String
   apellidos                       String
+  /// DNI | CE | PASAPORTE. Con `documento`, único por empresa (validado en
+  /// el servicio: el índice único espera a que se limpien los duplicados).
+  tipoDocumento                   String                      @default("DNI") @map("tipo_documento")
   documento                       String?
   sede                            String?
   tiempoEmpresaValor              Int?                        @map("tiempo_empresa_valor")
   tiempoEmpresaUnidad             String?                     @default("DIAS") @map("tiempo_empresa_unidad")
-  codigoEmpleado                  String                      @unique @map("codigo_empleado")
+  /// Fecha en que ingresó a la empresa: la antigüedad se calcula al día con
+  /// ella. Reemplaza a `tiempoEmpresaValor/Unidad` ("3 años" escrito una vez
+  /// quedaba desactualizado); esas dos columnas se conservan solo como el
+  /// dato original y ya no se escriben (`20261122090000_fecha_ingreso`).
+  fechaIngreso                    DateTime?                   @map("fecha_ingreso") @db.Date
+  /// Único POR EMPRESA (@@unique abajo), no en todo el sistema: dos empresas
+  /// pueden usar el mismo código interno. Es el vínculo con el jefe
+  /// (`codigoEmpleadoJefe`): toda búsqueda por código filtra la empresa.
+  codigoEmpleado                  String                      @map("codigo_empleado")
   codigoEmpleadoJefe              String?                     @map("codigo_empleado_jefe")
   idEmpresaEmpleadora             Int                         @map("id_empresa_empleadora")
   empresaEmpleadora               EmpresaEmpleadora           @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
@@ -35,6 +46,11 @@ model Empleado {
   unidadOcupacionalEmpleadora     UnidadOcupacionalEmpleadora @relation(fields: [idUnidadOcupacionalEmpleadora], references: [idUnidadOcupacionalEmpleadora])
   idUsuario                       Int                         @unique @map("id_usuario") // relación 1:1 UNO a UNO
   usuario                         Usuario                     @relation(fields: [idUsuario], references: [idUsuario])
+  /// ACTIVO | SUSPENDIDO | CESADO. `estado` sigue siendo "opera o no"
+  /// (entra, se evalúa, puede ser jefe) y vale true solo en ACTIVO.
+  situacion                       String                      @default("ACTIVO")
+  fechaSituacion                  DateTime?                   @map("fecha_situacion")
+  motivoSituacion                 String?                     @map("motivo_situacion")
   estado                          Boolean                     @default(true)
   creadoPorId                     Int                         @map("creado_por_id")
   actualizadoPorId                Int?                        @map("actualizado_por_id")
@@ -44,20 +60,44 @@ model Empleado {
   evaluacionCompetenciasEvaluador EvaluacionCompetencia[]     @relation("evaluador")
   evaluacionCompetenciasEvaluado  EvaluacionCompetencia[]     @relation("evaluado")
   evidencias                      Evidencia[]
+  ajustesCalibracion              AjusteCalibracion[]
+  sesionesRetroalimentacion       SesionRetroalimentacion[]     @relation("retroEvaluado")
+  sesionesRetroComoJefe           SesionRetroalimentacion[]     @relation("retroJefe")
 
+  @@unique([idEmpresaEmpleadora, codigoEmpleado])
+  @@index([idEmpresaEmpleadora, tipoDocumento, documento])
+  @@index([idEmpresaEmpleadora, situacion])
   @@map("empleado")
 }
 
 model Usuario {
   idUsuario           Int                @id @default(autoincrement()) @map("id_usuario")
-  codigoUsuario       String             @unique @map("codigo_usuario")
+  /// Único dentro de su ámbito (`idEmpresaCuenta`): por empresa para las
+  /// cuentas de trabajadores, en todo el sistema para las demás.
+  codigoUsuario       String             @map("codigo_usuario")
+  /// Empresa dueña de la cuenta, SOLO para trabajadores (JEFE / EMPLEADO): su
+  /// usuario es único dentro de esa empresa, así una persona puede tener
+  /// cuenta en varias empresas con el mismo DNI. `null` = cuenta del sistema
+  /// (dueño, equipo de TeamWork, RR. HH.): única en todo el sistema. Esa
+  /// unicidad la comprueba el servicio: en Postgres los NULL no chocan en un
+  /// índice único (`20261122110000_usuario_por_empresa`).
+  idEmpresaCuenta     Int?               @map("id_empresa_cuenta")
+  /// Nivel de acceso de las cuentas de gestión (EQUIPO y ADMIN_EMPRESA):
+  /// `true` = Solo lectura (ve y descarga; no crea, edita, cierra ni elimina),
+  /// `false` = Edición. El bloqueo lo hace `RolesGuard` para toda escritura
+  /// salvo cambiar la propia contraseña (`20261122120000_solo_lectura`).
+  soloLectura         Boolean            @default(false) @map("solo_lectura")
   contrasena          String
   rol                 String             @default("EMPLEADO")
   /// Administrador de empresa (ADMIN_EMPRESA): la persona de RR. HH. que usa
   /// la cuenta y la empresa que administra. No es un trabajador evaluado, por
   /// eso no tiene Empleado. Para JEFE/EMPLEADO la empresa sale de su Empleado
   /// y para ADMIN (TeamWork) no hay empresa: administra todas.
+  /// EQUIPO (personal de TeamWork): las empresas de `empresasAsignadas`, o
+  /// todas si `todasLasEmpresas`.
   nombreCompleto      String?            @map("nombre_completo")
+  todasLasEmpresas    Boolean            @default(false) @map("todas_las_empresas")
+  empresasAsignadas   UsuarioEmpresa[]
   idEmpresaEmpleadora Int?               @map("id_empresa_empleadora")
   empresaEmpleadora   EmpresaEmpleadora? @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
   estado              Boolean            @default(true)
@@ -67,7 +107,9 @@ model Usuario {
   fechaModificacion   DateTime?          @map("fecha_modificacion")
   empleado            Empleado?
 
+  @@unique([idEmpresaCuenta, codigoUsuario])
   @@index([idEmpresaEmpleadora])
+  @@index([codigoUsuario])
   @@map("usuario")
 }
 
@@ -78,6 +120,13 @@ model EmpresaEmpleadora {
   direccionEmpresa                           String?                       @map("direccion_empresa")
   urlLogo                                    String                        @map("url_logo")
   logoPublicId                               String?                       @map("logo_public_id") // Para almacenar el public_id de Cloudinary
+  // Archivada = `estado` en false. Cuándo se archivó, para decirlo en la
+  // cartera y al intentar registrarla de nuevo. Null en las activas (y en las
+  // que se "eliminaron" antes de que existiera el archivo).
+  fechaArchivo                               DateTime?                     @map("fecha_archivo")
+  // Color primario con que la ve su gente (hex de la paleta de antd que
+  // ofrece el front). Null = el azul por defecto de antd.
+  colorPrimario                              String?                       @map("color_primario")
   // Configuración y vigencias: valores por defecto de la PRIMERA campaña.
   // Las de cada ciclo viven en CampanaEvaluacion (la API las devuelve
   // combinadas con las de la campaña en curso).
@@ -106,6 +155,7 @@ model EmpresaEmpleadora {
   competencias                               Competencia[]
   campanas                                   CampanaEvaluacion[]
   administradores                            Usuario[]
+  equipoAsignado                             UsuarioEmpresa[]
 
   @@map("empresa_empleadora")
 }
@@ -216,6 +266,7 @@ model ObjetivoDetalle {
   fechaModificacion     DateTime? @map("fecha_modificacion")
 
   @@map("objetivo_detalle")
+  evidencias            Evidencia[]
 }
 
 // TODO: TABLAS MAESTRAS Y DETALLES
@@ -457,6 +508,9 @@ model Evidencia {
   evaluacion              EvaluacionCompetencia? @relation(fields: [idEvaluacionCompetencia], references: [idEvaluacionCompetencia])
   idObjetivo              Int?                   @map("id_objetivo")
   objetivo                Objetivo?              @relation(fields: [idObjetivo], references: [idObjetivo])
+  /// La meta concreta que sustenta (además de su ficha en `idObjetivo`).
+  idObjetivoDetalle       Int?                   @map("id_objetivo_detalle")
+  objetivoDetalle         ObjetivoDetalle?       @relation(fields: [idObjetivoDetalle], references: [idObjetivoDetalle])
   idEmpleado              Int                    @map("id_empleado")
   empleado                Empleado               @relation(fields: [idEmpleado], references: [idEmpleado])
   nombreArchivo           String
@@ -522,6 +576,9 @@ model CampanaEvaluacion {
   objetivos         Objetivo[]
   evidencias        Evidencia[]
   CampanaAsignacion CampanaAsignacion[]
+  ajustesCalibracion AjusteCalibracion[]
+  sesionesRetroalimentacion SesionRetroalimentacion[]
+  hitos                     HitoCampana[]
 
   @@unique([idEmpresaEmpleadora, periodoEvaluacion])
   @@index([idEmpresaEmpleadora, estado])
@@ -543,4 +600,159 @@ model CampanaAsignacion {
 
   @@unique([idCampanaEvaluacion, idEmpleado, idCompetencia])
   @@map("campana_asignacion")
+}
+
+/// Empresas que atiende una cuenta del equipo de TeamWork (rol EQUIPO).
+model UsuarioEmpresa {
+  idUsuario           Int               @map("id_usuario")
+  usuario             Usuario           @relation(fields: [idUsuario], references: [idUsuario])
+  idEmpresaEmpleadora Int               @map("id_empresa_empleadora")
+  empresaEmpleadora   EmpresaEmpleadora @relation(fields: [idEmpresaEmpleadora], references: [idEmpresaEmpleadora])
+  asignadoPorId       Int?              @map("asignado_por_id")
+  fechaAsignacion     DateTime          @default(now()) @map("fecha_asignacion")
+
+  @@id([idUsuario, idEmpresaEmpleadora])
+  @@index([idEmpresaEmpleadora])
+  @@map("usuario_empresa")
+}
+
+/// Bitácora: quién hizo qué, cuándo y en qué empresa. Solo se agrega: un
+/// trigger de la base rechaza UPDATE y DELETE. Los datos del autor se copian
+/// (no son relación) para que el registro se lea aunque la cuenta cambie.
+/// Nunca guarda contraseñas.
+model RegistroActividad {
+  idRegistro          Int      @id @default(autoincrement()) @map("id_registro")
+  fecha               DateTime @default(now())
+  idUsuario           Int?     @map("id_usuario")
+  usuarioCodigo       String?  @map("usuario_codigo")
+  usuarioNombre       String?  @map("usuario_nombre")
+  usuarioRol          String?  @map("usuario_rol")
+  idEmpresaEmpleadora Int?     @map("id_empresa_empleadora")
+  /// CREAR | EDITAR | ELIMINAR | CAMBIAR_SITUACION | IMPORTAR | INICIAR_SESION | INICIO_FALLIDO | OTRA
+  accion              String
+  entidad             String
+  idEntidad           String?  @map("id_entidad")
+  descripcion         String
+  /// { antes, despues } de los campos que cambiaron, o lo enviado.
+  detalle             Json?
+  metodo              String?
+  ruta                String?
+  resultado           String   @default("OK")
+  codigoHttp          Int?     @map("codigo_http")
+  ip                  String?
+  userAgent           String?  @map("user_agent")
+
+  @@index([idEmpresaEmpleadora, fecha])
+  @@index([idUsuario, fecha])
+  @@index([fecha])
+  @@map("registro_actividad")
+}
+
+/// Configuración de la plataforma TeamWork (no de una empresa): una sola
+/// fila, id 1. Hoy guarda el color primario de la consola de TeamWork.
+model ConfiguracionPlataforma {
+  id                Int       @id @default(1)
+  // Hex; null = el azul por defecto de antd.
+  colorPrimario     String?   @map("color_primario")
+  fechaModificacion DateTime? @map("fecha_modificacion")
+  actualizadoPorId  Int?      @map("actualizado_por_id")
+
+  @@map("configuracion_plataforma")
+}
+
+/// Ajuste de calibración: el comité corrige el resultado de competencias y/o
+/// de objetivos de un trabajador en una campaña, con motivo. Uno por
+/// trabajador y campaña; los originales se guardan para el acta.
+model AjusteCalibracion {
+  idAjusteCalibracion   Int               @id @default(autoincrement()) @map("id_ajuste_calibracion")
+  idCampanaEvaluacion   Int               @map("id_campana_evaluacion")
+  campana               CampanaEvaluacion @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
+  idEmpleado            Int               @map("id_empleado")
+  empleado              Empleado          @relation(fields: [idEmpleado], references: [idEmpleado])
+  /// Resultado ajustado; null = ese componente no se ajusta.
+  competencias          Float?
+  objetivos             Float?
+  /// Lo que daba el cálculo al ajustar (para el acta).
+  competenciasOriginal  Float?            @map("competencias_original")
+  objetivosOriginal     Float?            @map("objetivos_original")
+  motivo                String
+  creadoPorId           Int               @map("creado_por_id")
+  actualizadoPorId      Int?              @map("actualizado_por_id")
+  fechaCreacion         DateTime          @default(now()) @map("fecha_creacion")
+  fechaModificacion     DateTime?         @map("fecha_modificacion")
+
+  @@unique([idCampanaEvaluacion, idEmpleado])
+  @@map("ajuste_calibracion")
+}
+
+/// Sesión de retroalimentación (guía FONAFE, pp. 33–34): el jefe comunica el
+/// resultado de la campaña, fortalezas, oportunidades y compromisos; el
+/// trabajador responde si está conforme. Una por trabajador y campaña, sin
+/// depender de la ficha de objetivos.
+model SesionRetroalimentacion {
+  idSesionRetroalimentacion Int               @id @default(autoincrement()) @map("id_sesion_retroalimentacion")
+  idCampanaEvaluacion       Int               @map("id_campana_evaluacion")
+  campana                   CampanaEvaluacion @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
+  idEmpleado                Int               @map("id_empleado")
+  empleado                  Empleado          @relation("retroEvaluado", fields: [idEmpleado], references: [idEmpleado])
+  /// Quien la registró (su jefe inmediato).
+  idJefe                    Int               @map("id_jefe")
+  jefe                      Empleado          @relation("retroJefe", fields: [idJefe], references: [idEmpleado])
+  fechaSesion               DateTime          @map("fecha_sesion") @db.Date
+  fortalezas                String
+  oportunidades             String
+  compromisos               String
+  /// PENDIENTE, CONFORME o NO_CONFORME.
+  conformidad               String            @default("PENDIENTE")
+  comentarioTrabajador      String?           @map("comentario_trabajador")
+  fechaRespuesta            DateTime?         @map("fecha_respuesta")
+  creadoPorId               Int               @map("creado_por_id")
+  actualizadoPorId          Int?              @map("actualizado_por_id")
+  fechaCreacion             DateTime          @default(now()) @map("fecha_creacion")
+  fechaModificacion         DateTime?         @map("fecha_modificacion")
+
+  @@unique([idCampanaEvaluacion, idEmpleado])
+  @@map("sesion_retroalimentacion")
+}
+
+/// Hito del proceso de una campaña (guía FONAFE, pp. 36–39): la acción que
+/// se debe realizar y el registro que la sustenta. La lista es de cada
+/// campaña y la arma RR. HH. (sugerida de FONAFE, copiada de la anterior o a
+/// mano). Se cumple cuando tiene al menos un archivo.
+model HitoCampana {
+  idHitoCampana       Int               @id @default(autoincrement()) @map("id_hito_campana")
+  idCampanaEvaluacion Int               @map("id_campana_evaluacion")
+  campana             CampanaEvaluacion @relation(fields: [idCampanaEvaluacion], references: [idCampanaEvaluacion])
+  etapa               String
+  nombre              String
+  /// Qué registro se espera (y, si TeamWork lo genera, dónde descargarlo).
+  registro            String
+  orden               Int               @default(0)
+  estado              Boolean           @default(true)
+  creadoPorId         Int               @map("creado_por_id")
+  actualizadoPorId    Int?              @map("actualizado_por_id")
+  fechaCreacion       DateTime          @default(now()) @map("fecha_creacion")
+  fechaModificacion   DateTime?         @map("fecha_modificacion")
+  archivos            RegistroHito[]
+
+  @@index([idCampanaEvaluacion])
+  @@map("hito_campana")
+}
+
+/// Archivo que sustenta un hito (acta, cronograma, matriz aprobada…).
+model RegistroHito {
+  idRegistroHito    Int         @id @default(autoincrement()) @map("id_registro_hito")
+  idHitoCampana     Int         @map("id_hito_campana")
+  hito              HitoCampana @relation(fields: [idHitoCampana], references: [idHitoCampana])
+  nombreArchivo     String      @map("nombre_archivo")
+  urlArchivo        String      @map("url_archivo")
+  publicId          String?     @map("public_id")
+  tipoArchivo       String      @map("tipo_archivo")
+  estado            Boolean     @default(true)
+  creadoPorId       Int         @map("creado_por_id")
+  actualizadoPorId  Int?        @map("actualizado_por_id")
+  fechaCreacion     DateTime    @default(now()) @map("fecha_creacion")
+  fechaModificacion DateTime?   @map("fecha_modificacion")
+
+  @@map("registro_hito")
 }

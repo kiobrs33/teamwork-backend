@@ -1,5 +1,6 @@
 import * as ExcelJS from 'exceljs';
 import type { Response } from 'express';
+import { aplicarCabecera } from './estilo-excel';
 
 export interface ColumnaExcel {
   header: string;
@@ -11,6 +12,8 @@ export interface ColumnaExcel {
    * como NaN.
    */
   tipo?: 'texto' | 'numero' | 'fecha';
+  /** Línea gris bajo el título (formato, unidad…), como en las plantillas. */
+  breve?: string;
 }
 
 export interface HojaExcel {
@@ -20,9 +23,10 @@ export interface HojaExcel {
 }
 
 /**
- * Arma un libro con el formato común de todas las exportaciones: cabecera en
- * negrita, autofiltro sobre todas las columnas y cabecera fija al bajar.
- * Cada exportación lo repetía a mano y el autofiltro llegó a quedarse corto.
+ * Arma un libro con el formato común de todas las exportaciones: el
+ * encabezado de las plantillas (`aplicarCabecera`: negrita, línea gris
+ * opcional, fondo y bordes) y autofiltro sobre todas las columnas. La fila de
+ * títulos NO se fija al bajar: se pidió así.
  */
 export async function construirLibroExcel(hojas: HojaExcel[]) {
   const workbook = new ExcelJS.Workbook();
@@ -55,12 +59,12 @@ export async function construirLibroExcel(hojas: HojaExcel[]) {
       ws.addRow(normalizada);
     }
 
-    ws.getRow(1).font = { bold: true };
-    if (ws.columnCount > 0) {
-      const ultima = ws.getColumn(ws.columnCount).letter;
-      ws.autoFilter = { from: 'A1', to: `${ultima}1` };
-    }
-    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    aplicarCabecera(
+      ws,
+      hoja.columnas.map(
+        (c) => c.breve ?? (c.tipo === 'fecha' ? 'dd/mm/aaaa hh:mm' : undefined),
+      ),
+    );
   }
 
   return workbook.xlsx.writeBuffer();

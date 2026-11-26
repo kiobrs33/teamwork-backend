@@ -36,7 +36,7 @@ import { EvidenciaService } from './evidencia.service';
 import { CreateEvidenciaDto } from './dto/create-evidencia.dto';
 import { EvidenciaQueryDto } from './dto/evidencia-query.dto';
 
-import { evidenciaStorage } from 'src/common/interceptors/cloudinary.evidencias.interceptor';
+import { opcionesEvidencia } from 'src/common/interceptors/cloudinary.evidencias.interceptor';
 
 @ApiTags('Evidencias')
 @ApiBearerAuth()
@@ -51,7 +51,7 @@ export class EvidenciaController {
   @Post()
   @ApiOperation({ summary: 'Subir evidencia (PDF, DOCX, etc)' })
   @ApiResponse({ status: 201, description: 'Evidencia creada correctamente' })
-  @UseInterceptors(FileInterceptor('file', { storage: evidenciaStorage }))
+  @UseInterceptors(FileInterceptor('file', opcionesEvidencia))
   async create(
     @User() user: AuthUser,
     @UploadedFile() file: any,

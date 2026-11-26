@@ -1,5 +1,5 @@
 // auth.controller.ts
-import { Body, Controller, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Patch, Post, UseGuards, Req } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -14,6 +14,7 @@ import { JwtAuthGuard } from './jwt.guard';
 import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
 import { Alcance, TODOS } from 'src/autorizacion/alcance';
 
+import type { Request } from 'express';
 @ApiTags('Autenticación') // Agrupa en Swagger bajo esta categoría
 @Controller('auth')
 export class AuthController {
@@ -23,10 +24,24 @@ export class AuthController {
   @ApiBody({ type: LoginAuthDto })
   @ApiResponse({ status: 200, description: 'Login exitoso.' })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
-  async login(@Body() body: LoginAuthDto) {
-    const usuario = await this.authService.login(body);
+  async login(@Body() body: LoginAuthDto, @Req() req: Request) {
+    // Detrás del proxy (Traefik en Easypanel) la IP real llega en
+    // X-Forwarded-For. Se toma la ÚLTIMA: la agrega el proxy. La primera la
+    // escribe el cliente, y con ella se podía inventar una IP por intento y
+    // saltarse el límite de 20 por IP.
+    const reenviada =
+      String(req.headers['x-forwarded-for'] ?? '')
+        .split(',')
+        .map((ip) => ip.trim())
+        .filter(Boolean)
+        .pop() ?? '';
+    const usuario = await this.authService.login(
+      body,
+      reenviada || req.ip || 'desconocida',
+    );
     return {
-      message: 'Login exitoso',
+      // Con varias cuentas (varias empresas) no hay token: hay que elegir.
+      message: 'cuentas' in usuario ? 'Elija la empresa' : 'Login exitoso',
       data: usuario,
     };
   }

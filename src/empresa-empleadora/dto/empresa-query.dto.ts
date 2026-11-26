@@ -18,6 +18,22 @@ export const EMPRESA_SORT_FIELDS = [
 export type EmpresaSortField = (typeof EMPRESA_SORT_FIELDS)[number];
 
 export class EmpresaQueryDto {
+  /**
+   * Interno: lo pone el controlador para el equipo con empresas asignadas
+   * (su cartera). No lleva decoradores, así que el `whitelist` lo descarta si
+   * viene en la URL.
+   */
+  idsPermitidos?: number[];
+
+  /**
+   * `true`: lista las empresas archivadas en vez de las activas. Solo el
+   * dueño (lo comprueba el controlador).
+   */
+  @ApiPropertyOptional({ example: 'true' })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  archivadas?: 'true' | 'false';
+
   @ApiPropertyOptional({ example: 1 })
   @Type(() => Number)
   @IsInt()

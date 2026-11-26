@@ -1,6 +1,12 @@
-import { ApiProperty, ApiPropertyOptional, PartialType, OmitType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  PartialType,
+  OmitType,
+} from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  Matches,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -11,6 +17,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 /**
@@ -26,15 +33,24 @@ export class CrearCampanaDto {
 
   @ApiProperty({ example: 'Evaluación anual 2026' })
   @IsString()
-  @IsNotEmpty({ message: 'Ingresa el nombre de la campaña.' })
+  @IsNotEmpty({ message: 'Ingrese el nombre de la campaña.' })
+  // Solo espacios pasaba el IsNotEmpty y el servicio lo recortaba a "":
+  // quedaba una campaña sin nombre.
+  @Matches(/\S/, { message: 'Ingrese el nombre de la campaña.' })
   @MaxLength(120)
   nombre: string;
 
-  @ApiProperty({ example: '2026-01-01', description: 'Inicio del periodo evaluado' })
+  @ApiProperty({
+    example: '2026-01-01',
+    description: 'Inicio del periodo evaluado',
+  })
   @IsDateString()
   periodoDesde: string;
 
-  @ApiProperty({ example: '2026-12-31', description: 'Fin del periodo evaluado' })
+  @ApiProperty({
+    example: '2026-12-31',
+    description: 'Fin del periodo evaluado',
+  })
   @IsDateString()
   periodoHasta: string;
 
@@ -61,16 +77,36 @@ export class CrearCampanaDto {
   @IsIn(['90', '180'])
   modeloEmpresa?: string;
 
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
   porcentajeCompetecias?: number | null;
 
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
   porcentajeObjetivos?: number | null;
 
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
   porcentajeEvaluacionJefeCompetencia?: number | null;
 
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
   porcentajeEvaluacionSubordinadoCompetencia?: number | null;
 
   @ApiPropertyOptional({ enum: ['LIKERT', 'MANUAL'] })
@@ -78,7 +114,12 @@ export class CrearCampanaDto {
   @IsIn(['LIKERT', 'MANUAL'])
   tipoCalificacionCompetencia?: string;
 
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
   competenciaResultadoEsperado?: number | null;
 
   @ApiPropertyOptional({
@@ -100,8 +141,26 @@ export class CrearCampanaDto {
 
 /** En una campaña CERRADA solo se aceptan `nombre` y el periodo evaluado. */
 export class ActualizarCampanaDto extends PartialType(
-  OmitType(CrearCampanaDto, ['idEmpresaEmpleadora', 'cerrarActual', 'copiarObjetivos'] as const),
-) {}
+  OmitType(CrearCampanaDto, [
+    'idEmpresaEmpleadora',
+    'cerrarActual',
+    'copiarObjetivos',
+  ] as const),
+) {
+  /**
+   * Para cambiar modelo o escala en una campaña en curso que ya tiene
+   * calificaciones: solo el dueño de TeamWork y diciendo por qué. Queda en
+   * la bitácora con el cambio.
+   */
+  @ApiPropertyOptional({
+    example: 'Se abrió en 90° por error: el acuerdo con la empresa era 180°.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(10, { message: 'Explique el motivo en al menos 10 caracteres.' })
+  @MaxLength(500)
+  motivoCambioExcepcional?: string;
+}
 
 export class CampanaQueryDto {
   @ApiProperty({ example: 2 })

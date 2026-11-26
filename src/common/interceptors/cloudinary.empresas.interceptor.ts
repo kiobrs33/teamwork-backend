@@ -1,12 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
 import { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
-import cloudinary from '../../config/cloudinary';
+import cloudinary, { carpetaDe } from '../../config/cloudinary';
 
 export const empresasStorage = new CloudinaryStorage({
   cloudinary,
+  // Logos en la carpeta del módulo, bajo la raíz del entorno.
   params: async () => ({
-    folder: 'empresas',
+    folder: carpetaDe('empresas'),
   }),
 });
 

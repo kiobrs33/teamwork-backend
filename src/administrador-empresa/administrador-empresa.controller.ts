@@ -13,6 +13,7 @@ import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { AlcanceActual, Roles, RolesGuard } from 'src/autorizacion/roles.guard';
 import { AlcanceService } from 'src/autorizacion/alcance.service';
 import { ADMINISTRADORES, Alcance } from 'src/autorizacion/alcance';
+import { Rol } from 'src/empleado/types/empleadoTypes';
 import { AdministradorEmpresaService } from './administrador-empresa.service';
 import {
   ActualizarAdministradorDto,
@@ -89,6 +90,29 @@ export class AdministradorEmpresaController {
           dto,
         ),
       },
+    };
+  }
+}
+
+/**
+ * Todas las cuentas de empresa (pestaña "Empresas" de Usuarios, en la
+ * consola). Solo el superadministrador: cada empresa gestiona las suyas en
+ * su espacio (`…/administradores`).
+ */
+@ApiTags('Administradores de empresa')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Rol.ADMIN)
+@Controller('administradores-empresa')
+export class AdministradoresTodasController {
+  constructor(private readonly servicio: AdministradorEmpresaService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Todas las cuentas de empresa, con su nivel' })
+  async listar() {
+    return {
+      message: 'Cuentas de empresa.',
+      data: { administradores: await this.servicio.listarTodas() },
     };
   }
 }

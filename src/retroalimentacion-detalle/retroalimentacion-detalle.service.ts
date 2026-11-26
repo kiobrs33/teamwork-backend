@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 import { CreateRetroalimentacionDetalleDto } from './dto/create-retroalimentacion-detalle.dto';
@@ -9,6 +14,19 @@ import { AuthUser } from 'src/common/interfaces/auth-user.interface';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 import { CreateRetroalimentacionDetalleItemDto } from './dto/create-retroalimentacion-detalle-item.dto';
+
+/** Solo los campos de una acción del plan, recortados. */
+const camposDeAccion = (d: {
+  descripcionObjetivo?: string;
+  descripcionActividad?: string;
+  descripcionFecha?: string;
+  descripcionEstado?: string;
+}) => ({
+  descripcionObjetivo: d.descripcionObjetivo?.trim() ?? '',
+  descripcionActividad: d.descripcionActividad?.trim() || null,
+  descripcionFecha: d.descripcionFecha?.trim() || null,
+  descripcionEstado: d.descripcionEstado?.trim() || null,
+});
 
 @Injectable()
 export class RetroalimentacionDetalleService {
@@ -274,7 +292,7 @@ export class RetroalimentacionDetalleService {
   ) {
     try {
       const data = detalles.map((d) => ({
-        ...d,
+        ...camposDeAccion(d),
         idObjetivo,
         actualizadoPorId: user.idUsuario,
       }));
@@ -310,6 +328,15 @@ export class RetroalimentacionDetalleService {
         .filter((d) => d.idRetroalimentacionDetalle)
         .map((d) => d.idRetroalimentacionDetalle);
 
+      // Solo se editan acciones de esta ficha: antes cualquier id llegaba
+      // al `update` y se podía cambiar una acción de otro trabajador.
+      const ajenos = idsRecibidos.filter((id) => !idsExistentes.includes(id!));
+      if (ajenos.length) {
+        throw new BadRequestException(
+          'Una de las acciones no pertenece a este plan. Recargue la página.',
+        );
+      }
+
       const eliminar = idsExistentes.filter((id) => !idsRecibidos.includes(id));
 
       return await this.prisma.$transaction(async (tx) => {
@@ -334,7 +361,8 @@ export class RetroalimentacionDetalleService {
 
         for (const item of detalles) {
           if (item.idRetroalimentacionDetalle) {
-            const { idRetroalimentacionDetalle, ...data } = item;
+            const { idRetroalimentacionDetalle } = item;
+            const data = camposDeAccion(item);
 
             await tx.retroalimentacionDetalle.update({
               where: {
@@ -349,7 +377,7 @@ export class RetroalimentacionDetalleService {
           } else {
             await tx.retroalimentacionDetalle.create({
               data: {
-                ...item,
+                ...camposDeAccion(item),
                 idObjetivo,
                 actualizadoPorId: user.idUsuario,
               },

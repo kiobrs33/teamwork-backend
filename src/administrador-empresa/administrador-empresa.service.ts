@@ -19,6 +19,7 @@ import {
  * RR. HH. agrega a sus compañeros. La contraseña la pone quien crea la cuenta
  * y se entrega por fuera del sistema; cambiarla después es opcional.
  */
+import { problemaContrasena } from 'src/common/acceso/politica-contrasena';
 @Injectable()
 export class AdministradorEmpresaService {
   constructor(private readonly prisma: PrismaService) {}
@@ -30,6 +31,7 @@ export class AdministradorEmpresaService {
     codigoUsuario: string;
     nombreCompleto: string | null;
     estado: boolean;
+    soloLectura: boolean;
     fechaCreacion: Date;
   }) {
     return {
@@ -37,6 +39,7 @@ export class AdministradorEmpresaService {
       codigoUsuario: u.codigoUsuario,
       nombreCompleto: u.nombreCompleto,
       activo: u.estado,
+      soloLectura: u.soloLectura,
       creadoEl: u.fechaCreacion,
     };
   }
@@ -46,6 +49,7 @@ export class AdministradorEmpresaService {
     codigoUsuario: true,
     nombreCompleto: true,
     estado: true,
+    soloLectura: true,
     fechaCreacion: true,
   } as const;
 
@@ -56,6 +60,27 @@ export class AdministradorEmpresaService {
       select: this.campos,
     });
     return usuarios.map((u) => this.aRespuesta(u));
+  }
+
+  /**
+   * Todas las cuentas de empresa, con su empresa y su nivel: la pestaña
+   * "Empresas" de Usuarios en la consola (solo el dueño).
+   */
+  async listarTodas() {
+    const usuarios = await this.prisma.usuario.findMany({
+      where: { rol: Rol.ADMIN_EMPRESA },
+      orderBy: [{ estado: 'desc' }, { nombreCompleto: 'asc' }],
+      select: {
+        ...this.campos,
+        empresaEmpleadora: {
+          select: { idEmpresaEmpleadora: true, nombreEmpresa: true },
+        },
+      },
+    });
+    return usuarios.map((u) => ({
+      ...this.aRespuesta(u),
+      empresa: u.empresaEmpleadora,
+    }));
   }
 
   async crear(
@@ -70,21 +95,30 @@ export class AdministradorEmpresaService {
     if (!empresa) throw new NotFoundException('Empresa no encontrada');
 
     const codigo = dto.codigoUsuario.trim();
-    const existe = await this.prisma.usuario.findUnique({
-      where: { codigoUsuario: codigo },
+    // Cuenta del sistema: su usuario es único entre las cuentas del sistema
+    // (las de trabajadores son por empresa, `idEmpresaCuenta`).
+    const existe = await this.prisma.usuario.findFirst({
+      where: { codigoUsuario: codigo, idEmpresaCuenta: null },
       select: { idUsuario: true },
     });
     if (existe) {
       throw new ConflictException(
-        `El usuario "${codigo}" ya existe. Elige otro nombre de usuario.`,
+        `El usuario "${codigo}" ya existe. Elija otro nombre de usuario.`,
       );
     }
+
+    const debil = problemaContrasena(dto.contrasena, [
+      codigo,
+      dto.nombreCompleto,
+    ]);
+    if (debil) throw new BadRequestException(debil);
 
     const creado = await this.prisma.usuario.create({
       data: {
         codigoUsuario: codigo,
         contrasena: await hash(dto.contrasena, 10),
         rol: Rol.ADMIN_EMPRESA,
+        soloLectura: dto.soloLectura ?? false,
         nombreCompleto: dto.nombreCompleto.trim(),
         idEmpresaEmpleadora: idEmpresa,
         creadoPorId: idCreador,
@@ -113,9 +147,13 @@ export class AdministradorEmpresaService {
     // Nadie se desactiva a sí mismo: dejaría a la empresa sin acceso si era
     // el único, y siempre puede pedírselo a un compañero o a TeamWork.
     if (dto.activo === false && idUsuario === idEditor) {
-      throw new BadRequestException('No puedes desactivar tu propia cuenta.');
+      throw new BadRequestException('No puede desactivar su propia cuenta.');
     }
 
+    if (dto.contrasena !== undefined) {
+      const debil = problemaContrasena(dto.contrasena, [dto.nombreCompleto]);
+      if (debil) throw new BadRequestException(debil);
+    }
     const actualizado = await this.prisma.usuario.update({
       where: { idUsuario },
       data: {
@@ -126,6 +164,7 @@ export class AdministradorEmpresaService {
           contrasena: await hash(dto.contrasena, 10),
         }),
         ...(dto.activo !== undefined && { estado: dto.activo }),
+        ...(dto.soloLectura !== undefined && { soloLectura: dto.soloLectura }),
         actualizadoPorId: idEditor,
         fechaModificacion: new Date(),
       },

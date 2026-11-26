@@ -53,6 +53,25 @@ import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** El texto va escapado: es contenido de la empresa (su nombre). */
+const escaparHtml = (t: string) =>
+  t.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ]!,
+  );
+
+/**
+ * Pie de Chromium: se pinta fuera del documento, sin sus estilos, así que
+ * lleva los suyos en línea (y tamaño explícito: por defecto sale diminuto).
+ */
+const piePagina = (texto: string) =>
+  `<div style="width:100%;padding:0 14mm;font-family:Arial,Helvetica,sans-serif;font-size:7.5px;color:#8c8c8c;display:flex;justify-content:space-between;">` +
+  `<span>${escaparHtml(texto)}</span>` +
+  `<span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span></div>`;
+
 @Injectable()
 export class PdfRendererService implements OnModuleInit {
   onModuleInit() {
@@ -62,7 +81,16 @@ export class PdfRendererService implements OnModuleInit {
     });
   }
 
-  async render(templateName: string, data: any): Promise<Buffer> {
+  /**
+   * `piePagina`: texto a la izquierda del pie de cada hoja, con «Página N de
+   * M» a la derecha (Chromium lo numera). Sin él, el PDF sale como siempre:
+   * los informes que no lo piden no cambian.
+   */
+  async render(
+    templateName: string,
+    data: any,
+    opciones: { piePagina?: string } = {},
+  ): Promise<Buffer> {
     const templatePath = path.join(
       process.cwd(),
       'src/reporte/templates',
@@ -132,6 +160,12 @@ export class PdfRendererService implements OnModuleInit {
       const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
+        ...(opciones.piePagina !== undefined && {
+          displayHeaderFooter: true,
+          headerTemplate: '<span></span>',
+          footerTemplate: piePagina(opciones.piePagina),
+          margin: { top: '14mm', bottom: '18mm', left: '14mm', right: '14mm' },
+        }),
       });
 
       return Buffer.from(pdf);

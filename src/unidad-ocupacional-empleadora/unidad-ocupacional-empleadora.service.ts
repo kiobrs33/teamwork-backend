@@ -1,3 +1,4 @@
+import { aplicarCabecera } from 'src/common/excel/estilo-excel';
 import {
   BadRequestException,
   HttpException,
@@ -18,6 +19,14 @@ import { handlePrismaError } from 'src/prisma/helpers/prisma-error.handler';
 
 import * as ExcelJS from 'exceljs';
 
+import {
+  exigirNombreLibre,
+  exigirSinTrabajadoresParaEliminar,
+  exigirSinTrabajadoresParaMudar,
+  filtrarImportacion,
+  nombreLimpio,
+} from 'src/common/estructura/estructura';
+
 @Injectable()
 export class UnidadOcupacionalEmpleadoraService {
   private readonly logger = new Logger(UnidadOcupacionalEmpleadoraService.name);
@@ -26,9 +35,17 @@ export class UnidadOcupacionalEmpleadoraService {
 
   async create(user: AuthUser, dto: CreateUnidadOcupacionalEmpleadoraDto) {
     try {
+      const descripcion = nombreLimpio(dto.descripcion);
+      await exigirNombreLibre(
+        this.prisma,
+        'unidad',
+        Number(dto.idEmpresaEmpleadora),
+        descripcion,
+      );
       const unidad = await this.prisma.unidadOcupacionalEmpleadora.create({
         data: {
           ...dto,
+          descripcion,
           creadoPorId: user.idUsuario,
         },
         include: { empresaEmpleadora: true },
@@ -105,35 +122,48 @@ export class UnidadOcupacionalEmpleadoraService {
         }),
 
         ...(search && {
-          OR: [
-            {
-              descripcion: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: search,
-                  mode: 'insensitive',
+          // Un número busca por ID o en el nombre, no en el RUC de la empresa
+          // (el de SEAL tiene un 6 y coincidían todas).
+          OR: /^\d+$/.test(String(search).trim())
+            ? [
+                {
+                  idUnidadOcupacionalEmpleadora: Number(String(search).trim()),
                 },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                ruc: {
-                  contains: search,
-                  mode: 'insensitive',
+                { descripcion: { contains: String(search).trim() } },
+              ]
+            : [
+                {
+                  descripcion: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
                 },
-              },
-            },
-          ],
+                {
+                  empresaEmpleadora: {
+                    nombreEmpresa: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+                {
+                  empresaEmpleadora: {
+                    ruc: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
         }),
       };
 
       const include: Prisma.UnidadOcupacionalEmpleadoraInclude = {
         empresaEmpleadora: true,
+        // Trabajadores vigentes (no cesados): cuántos se verían afectados.
+        _count: {
+          select: { empleados: { where: { situacion: { not: 'CESADO' } } } },
+        },
       };
 
       if (Number(limit) === 0) {
@@ -192,7 +222,7 @@ export class UnidadOcupacionalEmpleadoraService {
       });
 
       if (!unidad) {
-        throw new NotFoundException('Unidad ocupacional no encontrada');
+        throw new NotFoundException('Grupo ocupacional no encontrado');
       }
 
       return unidad;
@@ -213,14 +243,34 @@ export class UnidadOcupacionalEmpleadoraService {
       });
 
       if (!unidad) {
-        throw new NotFoundException('Unidad ocupacional no encontrada');
+        throw new NotFoundException('Grupo ocupacional no encontrado');
       }
+
+      // Las reglas se miran sobre cómo queda el registro, no sobre lo que llega.
+      const idEmpresa =
+        dto.idEmpresaEmpleadora !== undefined
+          ? Number(dto.idEmpresaEmpleadora)
+          : unidad.idEmpresaEmpleadora;
+      if (idEmpresa !== unidad.idEmpresaEmpleadora)
+        await exigirSinTrabajadoresParaMudar(this.prisma, 'unidad', id);
+      const descripcion =
+        dto.descripcion !== undefined
+          ? nombreLimpio(dto.descripcion)
+          : unidad.descripcion;
+      await exigirNombreLibre(
+        this.prisma,
+        'unidad',
+        idEmpresa,
+        descripcion,
+        id,
+      );
 
       const updatedUnidad =
         await this.prisma.unidadOcupacionalEmpleadora.update({
           where: { idUnidadOcupacionalEmpleadora: id },
           data: {
             ...dto,
+            descripcion,
             fechaModificacion: new Date(),
             actualizadoPorId: user.idUsuario,
           },
@@ -240,8 +290,10 @@ export class UnidadOcupacionalEmpleadoraService {
       });
 
       if (!unidad) {
-        throw new NotFoundException('Unidad ocupacional no encontrada');
+        throw new NotFoundException('Grupo ocupacional no encontrado');
       }
+
+      await exigirSinTrabajadoresParaEliminar(this.prisma, 'unidad', id);
 
       const removedUnidad =
         await this.prisma.unidadOcupacionalEmpleadora.update({
@@ -304,17 +356,22 @@ export class UnidadOcupacionalEmpleadoraService {
     data: CreateUnidadOcupacionalEmpleadoraDto[],
   ) {
     try {
-      const registros = data.map((row) => ({
+      const { nuevas, omitidas } = await filtrarImportacion(
+        this.prisma,
+        'unidad',
+        data,
+      );
+      const registros = nuevas.map((row) => ({
         descripcion: row.descripcion,
         idEmpresaEmpleadora: row.idEmpresaEmpleadora,
         creadoPorId: user.idUsuario,
       }));
 
-      return await this.prisma.$transaction(async (tx) => {
-        return await tx.unidadOcupacionalEmpleadora.createMany({
+      const { count } =
+        await this.prisma.unidadOcupacionalEmpleadora.createMany({
           data: registros,
         });
-      });
+      return { count, omitidas };
     } catch (error) {
       console.error('Error al importar datos:', error);
       handlePrismaError(error, 'unidad ocupacional');
@@ -363,6 +420,428 @@ export class UnidadOcupacionalEmpleadoraService {
    * anulan para que no contaminen el resultado. Las CERRADAS no se tocan.
    */
   /**
+   * Coherencia de una asignación antes de calcular su impacto o guardarla:
+   * cada competencia una sola vez por grupo, de la MISMA empresa que el
+   * grupo y vigente, y su nivel tiene que ser de esa competencia y estar
+   * vigente. El alcance por empresa ya lo comprueba el controlador, pero no
+   * que grupo y competencia sean de la misma empresa (el superadministrador
+   * podía mezclarlas) ni que el nivel fuera de esa competencia.
+   */
+  private async validarAsignacion(data: UnidadCompetenciaAsignacionDto[]) {
+    const problemas: string[] = [];
+    const unidadesVistas = new Set<number>();
+    for (const { idUnidadOcupacionalEmpleadora, competencias } of data) {
+      if (unidadesVistas.has(idUnidadOcupacionalEmpleadora))
+        problemas.push(
+          `El grupo ocupacional ${idUnidadOcupacionalEmpleadora} viene repetido.`,
+        );
+      unidadesVistas.add(idUnidadOcupacionalEmpleadora);
+      const unidad = await this.prisma.unidadOcupacionalEmpleadora.findFirst({
+        where: { idUnidadOcupacionalEmpleadora, estado: true },
+        select: { descripcion: true, idEmpresaEmpleadora: true },
+      });
+      if (!unidad) {
+        problemas.push(
+          `El grupo ocupacional ${idUnidadOcupacionalEmpleadora} no existe.`,
+        );
+        continue;
+      }
+      const ids = competencias.map((c) => c.idCompetencia);
+      const repetidas = ids.filter((x, i) => ids.indexOf(x) !== i);
+      if (repetidas.length)
+        problemas.push(
+          `En «${unidad.descripcion}» una competencia viene dos veces.`,
+        );
+      if (!ids.length) continue;
+      const comps = await this.prisma.competencia.findMany({
+        where: { idCompetencia: { in: ids } },
+        select: {
+          idCompetencia: true,
+          titulo: true,
+          estado: true,
+          idEmpresaEmpleadora: true,
+          niveles: {
+            where: { estado: true },
+            select: { idCompetenciaNivel: true },
+          },
+        },
+      });
+      const porId = new Map(comps.map((c) => [c.idCompetencia, c]));
+      for (const c of competencias) {
+        const comp = porId.get(c.idCompetencia);
+        if (!comp || !comp.estado) {
+          problemas.push(
+            `La competencia ${c.idCompetencia} no existe o fue eliminada.`,
+          );
+          continue;
+        }
+        if (comp.idEmpresaEmpleadora !== unidad.idEmpresaEmpleadora) {
+          problemas.push(
+            `«${comp.titulo}» es de otra empresa que «${unidad.descripcion}».`,
+          );
+          continue;
+        }
+        if (
+          !comp.niveles.some(
+            (n) => n.idCompetenciaNivel === c.idCompetenciaNivel,
+          )
+        )
+          problemas.push(
+            `El nivel elegido para «${comp.titulo}» en «${unidad.descripcion}» no existe o ya no está vigente.`,
+          );
+      }
+    }
+    if (problemas.length) {
+      throw new BadRequestException({
+        message: 'Revise la asignación.',
+        errors: problemas,
+      });
+    }
+  }
+
+  /**
+   * Lo que hay que avisar antes de guardar una asignación (no escribe). El
+   * PDF que se descarga desde la confirmación es una **lista de aviso**: una
+   * fila por persona con qué debe calificar, porque eso es lo que RR. HH.
+   * hace con ella.
+   *
+   * - **Cambio de nivel:** la evaluación en curso se anula; quien la
+   *   calificaba (jefe, el propio trabajador o un subordinado) debe
+   *   calificar la competencia en el nivel nuevo.
+   * - **Competencia nueva en el grupo:** cada trabajador debe autoevaluarse y
+   *   su jefe calificarlo (no se anula nada).
+   * - **Se quita:** deja de evaluarse; sus calificaciones dejan de contar y
+   *   no hay que avisar a nadie. Va aparte, como información.
+   */
+  async detalleImpactoAsignacion(data: UnidadCompetenciaAsignacionDto[]) {
+    await this.validarAsignacion(data);
+    const plural = (n: number, uno: string, varios: string) =>
+      n === 1 ? `1 ${uno}` : `${n} ${varios}`;
+    const nombre = (e?: { nombres: string; apellidos: string } | null) =>
+      e ? `${e.nombres} ${e.apellidos}`.trim() : '—';
+    const datosPersona = {
+      idEmpleado: true,
+      nombres: true,
+      apellidos: true,
+      codigoEmpleado: true,
+      codigoEmpleadoJefe: true,
+      documento: true,
+      idEmpresaEmpleadora: true,
+      usuario: { select: { codigoUsuario: true } },
+      areaEmpleadora: { select: { descripcion: true } },
+      puestoEmpleadora: { select: { descripcion: true } },
+    } as const;
+    type Persona = {
+      idEmpleado: number;
+      nombres: string;
+      apellidos: string;
+      codigoEmpleado: string;
+      documento: string | null;
+      usuario: { codigoUsuario: string } | null;
+      areaEmpleadora: { descripcion: string } | null;
+      puestoEmpleadora: { descripcion: string } | null;
+    };
+
+    // Tareas por persona: competencia+nivel → a quién califica.
+    const avisos = new Map<
+      number,
+      {
+        persona: Persona;
+        auto: Set<string>;
+        califica: Map<string, Set<string>>;
+        jefe: Map<string, Set<string>>;
+        perdidas: number;
+      }
+    >();
+    const anotar = (
+      p: Persona,
+      tipo: 'auto' | 'califica' | 'jefe',
+      tarea: string,
+      aQuien?: string,
+      perdidas = 0,
+    ) => {
+      if (!avisos.has(p.idEmpleado))
+        avisos.set(p.idEmpleado, {
+          persona: p,
+          auto: new Set(),
+          califica: new Map(),
+          jefe: new Map(),
+          perdidas: 0,
+        });
+      const a = avisos.get(p.idEmpleado)!;
+      a.perdidas += perdidas;
+      if (tipo === 'auto') a.auto.add(tarea);
+      else {
+        const m = tipo === 'califica' ? a.califica : a.jefe;
+        if (!m.has(tarea)) m.set(tarea, new Set());
+        m.get(tarea)!.add(aQuien ?? '');
+      }
+    };
+
+    const grupos: {
+      grupo: string;
+      textoTrabajadores: string;
+      cambios: {
+        competencia: string;
+        codigo: string;
+        de: number;
+        a: number;
+        evaluaciones: number;
+        calificaciones: number;
+      }[];
+      nuevas: { competencia: string; codigo: string; nivel: number }[];
+    }[] = [];
+    const quitadas: {
+      grupo: string;
+      competencia: string;
+      codigo: string;
+      nivel: number;
+      calificaciones: number;
+    }[] = [];
+    let empresa = '';
+    let perdidasTotal = 0;
+
+    for (const { idUnidadOcupacionalEmpleadora, competencias } of data) {
+      const unidad = await this.prisma.unidadOcupacionalEmpleadora.findFirst({
+        where: { idUnidadOcupacionalEmpleadora, estado: true },
+        select: {
+          descripcion: true,
+          idEmpresaEmpleadora: true,
+          empresaEmpleadora: { select: { nombreEmpresa: true } },
+        },
+      });
+      if (!unidad) continue;
+      empresa = unidad.empresaEmpleadora.nombreEmpresa;
+      const actuales =
+        await this.prisma.unidadOcupacionalCompetenciaNivel.findMany({
+          where: { idUnidadOcupacionalEmpleadora },
+          include: {
+            competencia: { select: { titulo: true, codigo: true } },
+            competenciaNivel: { select: { nivel: true } },
+          },
+        });
+      const nivelPorCompetencia = new Map(
+        competencias.map((c) => [c.idCompetencia, c.idCompetenciaNivel]),
+      );
+      const numeroDeNivel = new Map(
+        (
+          await this.prisma.competenciaNivel.findMany({
+            where: {
+              idCompetenciaNivel: {
+                in: competencias.map((c) => c.idCompetenciaNivel),
+              },
+            },
+            select: { idCompetenciaNivel: true, nivel: true },
+          })
+        ).map((n) => [n.idCompetenciaNivel, n.nivel]),
+      );
+      const trabajadores = await this.prisma.empleado.findMany({
+        where: { idUnidadOcupacionalEmpleadora, estado: true },
+        select: datosPersona,
+      });
+      const ids = trabajadores.map((t) => t.idEmpleado);
+      const cambios: (typeof grupos)[number]['cambios'] = [];
+
+      for (const ab of actuales.filter(
+        (x) =>
+          nivelPorCompetencia.get(x.idCompetencia) !== x.idCompetenciaNivel,
+      )) {
+        const idNuevo = nivelPorCompetencia.get(ab.idCompetencia);
+        const a = idNuevo ? (numeroDeNivel.get(idNuevo) ?? null) : null;
+        const evaluaciones = ids.length
+          ? await this.prisma.evaluacionCompetencia.findMany({
+              where: {
+                idEvaluado: { in: ids },
+                estado: true,
+                estadoEvaluacion: 'PROCESO',
+                idCompetencia: ab.idCompetencia,
+                idCompetenciaNivel: ab.idCompetenciaNivel,
+              },
+              select: {
+                idEvaluado: true,
+                idEvaluador: true,
+                tipoEvaluador: true,
+                evaluado: { select: { nombres: true, apellidos: true } },
+                evaluador: { select: datosPersona },
+                _count: {
+                  select: {
+                    itemsEvaluados: {
+                      where: { estado: true, calificacion: { not: null } },
+                    },
+                  },
+                },
+              },
+            })
+          : [];
+        const perdidas = evaluaciones.reduce(
+          (t, e) => t + e._count.itemsEvaluados,
+          0,
+        );
+        perdidasTotal += perdidas;
+        if (a === null) {
+          quitadas.push({
+            grupo: unidad.descripcion,
+            competencia: ab.competencia.titulo,
+            codigo: ab.competencia.codigo,
+            nivel: ab.competenciaNivel.nivel,
+            calificaciones: perdidas,
+          });
+          continue;
+        }
+        cambios.push({
+          competencia: ab.competencia.titulo,
+          codigo: ab.competencia.codigo,
+          de: ab.competenciaNivel.nivel,
+          a,
+          evaluaciones: evaluaciones.length,
+          calificaciones: perdidas,
+        });
+        const tarea = `${ab.competencia.titulo} (nivel ${a})`;
+        for (const ev of evaluaciones) {
+          if (!ev.evaluador) continue;
+          const tipo =
+            ev.tipoEvaluador === 'AUTO' || ev.idEvaluador === ev.idEvaluado
+              ? 'auto'
+              : ev.tipoEvaluador === 'SUBORDINADO'
+                ? 'jefe'
+                : 'califica';
+          anotar(
+            ev.evaluador,
+            tipo,
+            tarea,
+            nombre(ev.evaluado),
+            ev._count.itemsEvaluados,
+          );
+        }
+      }
+
+      // Competencias nuevas: autoevaluación de cada trabajador y calificación
+      // de su jefe (por código, dentro de la misma empresa).
+      const nuevas: (typeof grupos)[number]['nuevas'] = [];
+      const nuevasIds = competencias.filter(
+        (c) => !actuales.some((x) => x.idCompetencia === c.idCompetencia),
+      );
+      if (nuevasIds.length) {
+        const comps = await this.prisma.competencia.findMany({
+          where: {
+            idCompetencia: { in: nuevasIds.map((c) => c.idCompetencia) },
+          },
+          select: { idCompetencia: true, titulo: true, codigo: true },
+        });
+        const codigosJefe = [
+          ...new Set(
+            trabajadores
+              .map((t) => t.codigoEmpleadoJefe)
+              .filter((c): c is string => !!c),
+          ),
+        ];
+        const jefes = codigosJefe.length
+          ? await this.prisma.empleado.findMany({
+              where: {
+                codigoEmpleado: { in: codigosJefe },
+                idEmpresaEmpleadora: unidad.idEmpresaEmpleadora,
+                estado: true,
+              },
+              select: datosPersona,
+            })
+          : [];
+        const jefePorCodigo = new Map(jefes.map((j) => [j.codigoEmpleado, j]));
+        for (const c of nuevasIds) {
+          const comp = comps.find((x) => x.idCompetencia === c.idCompetencia);
+          if (!comp) continue;
+          const nivel = numeroDeNivel.get(c.idCompetenciaNivel) ?? 0;
+          nuevas.push({ competencia: comp.titulo, codigo: comp.codigo, nivel });
+          const tarea = `${comp.titulo} (nivel ${nivel})`;
+          for (const t of trabajadores) {
+            anotar(t, 'auto', tarea);
+            const jefe = t.codigoEmpleadoJefe
+              ? jefePorCodigo.get(t.codigoEmpleadoJefe)
+              : undefined;
+            if (jefe) anotar(jefe, 'califica', tarea, nombre(t));
+          }
+        }
+      }
+
+      if (
+        cambios.length ||
+        nuevas.length ||
+        quitadas.some((q) => q.grupo === unidad.descripcion)
+      )
+        grupos.push({
+          grupo: unidad.descripcion,
+          textoTrabajadores: plural(
+            trabajadores.length,
+            'trabajador',
+            'trabajadores',
+          ),
+          cambios,
+          nuevas,
+        });
+    }
+
+    // Una fila por persona, con sus tareas en frases cortas.
+    const lista = (nombres: Set<string>) => {
+      const l = [...nombres].filter(Boolean).sort((x, y) => x.localeCompare(y));
+      return l.length <= 4
+        ? l.join(', ')
+        : `${l.slice(0, 4).join(', ')} y ${l.length - 4} más`;
+    };
+    const personas = [...avisos.values()]
+      .map(({ persona: p, auto, califica, jefe, perdidas }) => {
+        const tareas: string[] = [];
+        for (const t of auto) tareas.push(`Autoevaluarse en ${t}`);
+        for (const [t, a] of califica)
+          tareas.push(
+            a.size === 1
+              ? `Calificar a ${lista(a)} en ${t}`
+              : `Calificar a ${a.size} personas en ${t}: ${lista(a)}`,
+          );
+        for (const [t, a] of jefe)
+          tareas.push(`Calificar a su jefe ${lista(a)} en ${t}`);
+        const total =
+          auto.size +
+          [...califica.values()].reduce((n, a) => n + a.size, 0) +
+          [...jefe.values()].reduce((n, a) => n + a.size, 0);
+        return {
+          nombre: nombre(p),
+          codigo: p.codigoEmpleado,
+          documento: p.documento ?? '—',
+          usuario: p.usuario?.codigoUsuario ?? '—',
+          area: p.areaEmpleadora?.descripcion ?? '—',
+          puesto: p.puestoEmpleadora?.descripcion ?? '—',
+          tareas,
+          total,
+          perdidas,
+        };
+      })
+      .sort((x, y) => x.nombre.localeCompare(y.nombre))
+      .map((p, i) => ({ ...p, n: i + 1 }));
+    const evaluaciones = personas.reduce((t, p) => t + p.total, 0);
+
+    return {
+      empresa,
+      grupos,
+      quitadas,
+      personas,
+      totales: {
+        personas: personas.length,
+        textoPersonas:
+          personas.length === 1 ? 'persona a avisar' : 'personas a avisar',
+        evaluaciones,
+        textoEvaluaciones:
+          evaluaciones === 1
+            ? 'evaluación por registrar'
+            : 'evaluaciones por registrar',
+        calificaciones: perdidasTotal,
+        textoCalificaciones:
+          perdidasTotal === 1
+            ? 'calificación se pierde'
+            : 'calificaciones se pierden',
+      },
+    };
+  }
+
+  /**
    * Qué se perdería al guardar una asignación, ANTES de guardarla.
    *
    * Cambiar el nivel de una competencia o quitarla de la unidad anula las
@@ -373,8 +852,11 @@ export class UnidadOcupacionalEmpleadoraService {
    */
   async calcularImpactoAsignacion(data: UnidadCompetenciaAsignacionDto[]) {
     if (!Array.isArray(data) || data.length === 0) {
-      throw new BadRequestException('Debe enviar al menos una unidad.');
+      throw new BadRequestException(
+        'Debe enviar al menos un grupo ocupacional.',
+      );
     }
+    await this.validarAsignacion(data);
 
     const afectadas: {
       unidad: string;
@@ -404,7 +886,8 @@ export class UnidadOcupacionalEmpleadoraService {
 
       // El mismo criterio que usa `asignarCompetenciasInterno` para anular.
       const abandonados = actuales.filter(
-        (a) => nivelPorCompetencia.get(a.idCompetencia) !== a.idCompetenciaNivel,
+        (a) =>
+          nivelPorCompetencia.get(a.idCompetencia) !== a.idCompetenciaNivel,
       );
 
       if (abandonados.length === 0) continue;
@@ -469,8 +952,11 @@ export class UnidadOcupacionalEmpleadoraService {
     data: UnidadCompetenciaAsignacionDto[],
   ) {
     if (!Array.isArray(data) || data.length === 0) {
-      throw new BadRequestException('Debe enviar al menos una unidad.');
+      throw new BadRequestException(
+        'Debe enviar al menos un grupo ocupacional.',
+      );
     }
+    await this.validarAsignacion(data);
 
     await this.prisma.$transaction(async (tx) => {
       const fechaModificacion = new Date();
@@ -488,7 +974,7 @@ export class UnidadOcupacionalEmpleadoraService {
 
         if (!unidad) {
           throw new NotFoundException(
-            `La unidad ocupacional ${idUnidadOcupacionalEmpleadora} no existe.`,
+            `El grupo ocupacional ${idUnidadOcupacionalEmpleadora} no existe.`,
           );
         }
 
@@ -581,7 +1067,8 @@ export class UnidadOcupacionalEmpleadoraService {
       where: { idUnidadOcupacionalEmpleadora: idUnidad, estado: true },
     });
 
-    if (!unidad) throw new NotFoundException('Unidad no encontrada.');
+    if (!unidad)
+      throw new NotFoundException('Grupo ocupacional no encontrado.');
 
     // Cargar competencias de la empresa
     const competencias = await this.prisma.competencia.findMany({
@@ -650,7 +1137,11 @@ export class UnidadOcupacionalEmpleadoraService {
           idEmpresaEmpleadora: id,
           estado: true,
         },
-        orderBy: { fechaCreacion: 'desc' },
+        orderBy: { descripcion: 'asc' },
+        // Cuántos trabajadores (no cesados) se evalúan con lo que se asigne.
+        include: {
+          _count: { select: { empleados: { where: { estado: true } } } },
+        },
       });
 
       // 3. Competencias de la empresa (con niveles)
@@ -662,9 +1153,10 @@ export class UnidadOcupacionalEmpleadoraService {
         include: {
           niveles: {
             where: { estado: true },
+            orderBy: { nivel: 'asc' },
           },
         },
-        orderBy: { fechaCreacion: 'desc' },
+        orderBy: { codigo: 'asc' },
       });
 
       // ============================================
@@ -708,6 +1200,7 @@ export class UnidadOcupacionalEmpleadoraService {
           idUnidadOcupacionalEmpleadora: unidad.idUnidadOcupacionalEmpleadora,
           descripcion: unidad.descripcion,
           idEmpresaEmpleadora: unidad.idEmpresaEmpleadora,
+          trabajadores: unidad._count.empleados,
           competencias: competenciasFormateadas,
         });
       }
@@ -739,6 +1232,13 @@ export class UnidadOcupacionalEmpleadoraService {
       const where: Prisma.UnidadOcupacionalEmpleadoraWhereInput = {
         estado: true,
 
+        // El controlador ya resolvió la empresa (`empresaDelListado`); sin
+        // esta línea el Excel traía los registros de todas las empresas,
+        // también a RR. HH., aunque el listado en pantalla sí filtraba.
+        ...(query.idEmpresaEmpleadora && {
+          idEmpresaEmpleadora: Number(query.idEmpresaEmpleadora),
+        }),
+
         ...(query.idUnidadOcupacionalEmpleadora && {
           idUnidadOcupacionalEmpleadora: Number(
             query.idUnidadOcupacionalEmpleadora,
@@ -767,30 +1267,41 @@ export class UnidadOcupacionalEmpleadoraService {
         }),
 
         ...(query.search && {
-          OR: [
-            {
-              descripcion: {
-                contains: query.search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              empresaEmpleadora: {
-                nombreEmpresa: {
-                  contains: query.search,
-                  mode: 'insensitive',
+          // Un número busca por ID o en el nombre, no en el RUC de la empresa
+          // (el de SEAL tiene un 6 y coincidían todas).
+          OR: /^\d+$/.test(String(query.search).trim())
+            ? [
+                {
+                  idUnidadOcupacionalEmpleadora: Number(
+                    String(query.search).trim(),
+                  ),
                 },
-              },
-            },
-            {
-              empresaEmpleadora: {
-                ruc: {
-                  contains: query.search,
-                  mode: 'insensitive',
+                { descripcion: { contains: String(query.search).trim() } },
+              ]
+            : [
+                {
+                  descripcion: {
+                    contains: query.search,
+                    mode: 'insensitive',
+                  },
                 },
-              },
-            },
-          ],
+                {
+                  empresaEmpleadora: {
+                    nombreEmpresa: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+                {
+                  empresaEmpleadora: {
+                    ruc: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
         }),
       };
 
@@ -798,6 +1309,9 @@ export class UnidadOcupacionalEmpleadoraService {
         where,
         include: {
           empresaEmpleadora: true,
+          _count: {
+            select: { empleados: { where: { situacion: { not: 'CESADO' } } } },
+          },
         },
         orderBy: {
           fechaCreacion: 'desc',
@@ -805,48 +1319,47 @@ export class UnidadOcupacionalEmpleadoraService {
       });
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Unidades Ocupacionales');
+      const worksheet = workbook.addWorksheet('Grupos ocupacionales');
+
+      // Se exporta desde el espacio de una empresa (el front manda la activa):
+      // «Empresa» repetiría el mismo nombre en cada fila. Solo va si el archivo
+      // mezcla empresas.
+      const variasEmpresas =
+        !query.idEmpresaEmpleadora &&
+        new Set(unidades.map((x) => x.idEmpresaEmpleadora)).size > 1;
+      const columnasEmpresa = variasEmpresas
+        ? [
+            { header: 'ID empresa', key: 'idEmpresaEmpleadora', width: 14 },
+            { header: 'Empresa', key: 'empresa', width: 50 },
+          ]
+        : [];
 
       worksheet.columns = [
         {
-          header: 'ID Unidad Ocupacional',
+          header: 'ID grupo ocupacional',
           key: 'idUnidadOcupacionalEmpleadora',
           width: 20,
         },
         {
-          header: 'Descripción',
+          header: 'Nombre',
           key: 'descripcion',
           width: 40,
         },
-        {
-          header: 'ID Empresa',
-          key: 'idEmpresaEmpleadora',
-          width: 20,
-        },
-        {
-          header: 'Empresa',
-          key: 'empresa',
-          width: 50,
-        },
+        { header: 'Trabajadores', key: 'trabajadores', width: 14 },
+        ...columnasEmpresa,
       ];
 
       unidades.forEach((item) => {
         worksheet.addRow({
           idUnidadOcupacionalEmpleadora: item.idUnidadOcupacionalEmpleadora,
           descripcion: item.descripcion,
+          trabajadores: item._count.empleados,
           idEmpresaEmpleadora: item.idEmpresaEmpleadora,
           empresa: item.empresaEmpleadora.nombreEmpresa,
         });
       });
 
-      worksheet.getRow(1).font = {
-        bold: true,
-      };
-
-      worksheet.autoFilter = {
-        from: 'A1',
-        to: 'D1',
-      };
+      aplicarCabecera(worksheet);
 
       const buffer = await workbook.xlsx.writeBuffer();
 

@@ -10,7 +10,8 @@ export class ObjetivoExportQueryDto {
   idEmpresaEmpleadora?: number;
 
   @ApiPropertyOptional({
-    description: 'Trabajador (nombres, apellidos, código, documento) o descripción',
+    description:
+      'Trabajador (nombres, apellidos, código, documento) o descripción',
   })
   @IsString()
   @IsOptional()

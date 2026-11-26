@@ -19,4 +19,11 @@ export class CreateEvidenciaDto {
   @Type(() => Number)
   @IsInt()
   idObjetivo?: number;
+
+  /** La meta concreta que sustenta; su ficha se deduce. */
+  @ApiPropertyOptional({ example: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  idObjetivoDetalle?: number;
 }

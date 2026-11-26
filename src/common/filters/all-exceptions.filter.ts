@@ -74,10 +74,27 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
         // class-validator devuelve array de mensajes
         if (Array.isArray(message)) {
-          errors = message;
+          // Los objetos anidados llegan con su ruta delante
+          // ("niveles.0.items.1.Hay un enunciado vacío."): la ruta es para
+          // programadores; la persona lee solo el mensaje.
+          errors = message.map((m: unknown) =>
+            typeof m === 'string'
+              ? // La fila («[i] », de ParseArrayPipe) se conserva: el front
+                // devuelve el error a esa fila del Excel.
+                m.replace(
+                  /^(\[\d+\]\s*)?(?:[A-Za-z_]\w*\.(?:\d+\.)?)+(?=[A-ZÁÉÍÓÚÑ¿])/,
+                  '$1',
+                )
+              : m,
+          );
           message = 'Errores de validación';
         }
       }
+    }
+
+    // Multer responde en inglés: el límite de tamaño es el de las evidencias.
+    if (status === 413 || message === 'File too large') {
+      message = 'El archivo supera el tamaño máximo de 10 MB.';
     }
 
     // ===============================

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Personas a avisar</title>
+<style>
+  @page { size: A4; margin: 14mm 11mm 16mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #1f1f1f; line-height: 1.35; }
+  .cabecera { border-bottom: 2px solid #1f1f1f; padding-bottom: 8px; margin-bottom: 10px; }
+  h1 { font-size: 17px; }
+  .sub { color: #595959; margin-top: 2px; }
+  .aviso { border: 1px solid #ffe58f; background: #fffbe6; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; }
+  .aviso b { display: block; margin-bottom: 2px; font-size: 10.5px; }
+  .cifras { display: flex; gap: 8px; margin-bottom: 14px; }
+  .cifra { flex: 1; border: 1px solid #d9d9d9; border-radius: 4px; padding: 6px 8px; }
+  .cifra b { display: block; font-size: 16px; }
+  .cifra.roja b { color: #cf1322; }
+  h2 { font-size: 12px; margin: 14px 0 6px; }
+  .ayuda { color: #595959; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  td { overflow-wrap: anywhere; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th, td { border: 1px solid #e3e3e3; padding: 5px 6px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-size: 9.5px; }
+  .n { width: 22px; color: #8c8c8c; text-align: center; }
+  .persona b { display: block; font-size: 10.5px; }
+  .dato { color: #595959; font-size: 9px; display: block; }
+  .tareas { padding-left: 12px; }
+  .tareas li { margin-bottom: 2px; }
+  .check { width: 52px; text-align: center; }
+  .caja { display: inline-block; width: 12px; height: 12px; border: 1px solid #8c8c8c; border-radius: 2px; }
+  .perdidas { color: #cf1322; font-weight: bold; }
+  .cero { color: #8c8c8c; }
+  .quita { color: #cf1322; font-weight: bold; }
+  .nueva { color: #389e0d; font-weight: bold; }
+  .pie { margin-top: 14px; color: #8c8c8c; font-size: 8.5px; }
+</style>
+</head>
+<body>
+  <div class="cabecera">
+    <h1>Personas que deben volver a calificar</h1>
+    <p class="sub">{{empresa}} · Cambios en la asignación de competencias · Generado el {{fecha}} · Los cambios todavía no se guardaron.</p>
+  </div>
+
+  <div class="aviso">
+    <b>Qué hacer con esta lista</b>
+    Avise a cada persona que ingrese a la plataforma con su usuario y califique lo indicado en «Qué debe calificar».
+    Las calificaciones anteriores de esas competencias se pierden al guardar. Marque «Avisado» a medida que avise.
+  </div>
+
+  <div class="cifras">
+    <div class="cifra"><b>{{totales.personas}}</b>{{totales.textoPersonas}}</div>
+    <div class="cifra"><b>{{totales.evaluaciones}}</b>{{totales.textoEvaluaciones}}</div>
+    <div class="cifra roja"><b>{{totales.calificaciones}}</b>{{totales.textoCalificaciones}}</div>
+  </div>
+
+  <h2>1. Lista de aviso</h2>
+  {{#if personas.length}}
+  <table>
+    <thead>
+      <tr><th class="n">N.º</th><th style="width:27%">Persona</th><th style="width:21%">Área · Puesto</th><th>Qué debe calificar</th><th style="width:9%">Calif. perdidas</th><th class="check">Avisado</th></tr>
+    </thead>
+    <tbody>
+    {{#each personas}}
+      <tr>
+        <td class="n">{{n}}</td>
+        <td class="persona"><b>{{nombre}}</b><span class="dato">Cód. {{codigo}} · Doc. {{documento}}</span><span class="dato">Usuario: {{usuario}}</span></td>
+        <td>{{area}}<span class="dato">{{puesto}}</span></td>
+        <td><ul class="tareas">{{#each tareas}}<li>{{this}}</li>{{/each}}</ul></td>
+        <td>{{#if perdidas}}<span class="perdidas">{{perdidas}}</span>{{else}}<span class="cero">0</span>{{/if}}</td>
+        <td class="check"><span class="caja"></span></td>
+      </tr>
+    {{/each}}
+    </tbody>
+  </table>
+  {{else}}
+  <p>No hay que avisar a nadie: ningún cambio requiere volver a calificar.</p>
+  {{/if}}
+
+  <h2>2. Cambios por grupo ocupacional</h2>
+  <p class="ayuda">De dónde sale la lista anterior.</p>
+  <table>
+    <thead><tr><th>Grupo</th><th>Competencia</th><th>Cambio</th><th>Evaluaciones que se anulan</th><th>Calif. perdidas</th></tr></thead>
+    <tbody>
+    {{#each grupos}}
+      {{#each cambios}}
+        <tr><td>{{../grupo}} <span class="dato">{{../textoTrabajadores}}</span></td><td>{{competencia}} <span class="dato">Cód. {{codigo}}</span></td><td>Nivel {{de}} → nivel {{a}}</td><td>{{evaluaciones}}</td><td>{{calificaciones}}</td></tr>
+      {{/each}}
+      {{#each nuevas}}
+        <tr><td>{{../grupo}} <span class="dato">{{../textoTrabajadores}}</span></td><td>{{competencia}} <span class="dato">Cód. {{codigo}}</span></td><td><span class="nueva">Nueva</span> · nivel {{nivel}}</td><td>—</td><td>—</td></tr>
+      {{/each}}
+    {{/each}}
+    {{#each quitadas}}
+      <tr><td>{{grupo}}</td><td>{{competencia}} <span class="dato">Cód. {{codigo}}</span></td><td><span class="quita">Se quita</span> · era nivel {{nivel}}</td><td>—</td><td>{{calificaciones}}</td></tr>
+    {{/each}}
+    </tbody>
+  </table>
+
+  {{#if quitadas.length}}
+  <h2>3. Competencias que se quitan</h2>
+  <p class="ayuda">Dejan de evaluarse en ese grupo: sus calificaciones dejan de contar y no hay que avisar a nadie por ellas.</p>
+  {{/if}}
+
+  <p class="pie">TeamWork · Lista generada antes de guardar los cambios; si la asignación cambia otra vez, genere una nueva.</p>
+</body>
+</html>

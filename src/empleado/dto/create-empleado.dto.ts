@@ -1,27 +1,48 @@
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
+  Matches,
+  Min,
+  MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Rol, TiempoEmpresaUnidad } from '../types/empleadoTypes';
+import { TIPOS_DOCUMENTO } from '../types/situacion';
 
 export class CreateEmpleadoDto {
   // ==================== USUARIO ====================
 
-  @ApiProperty({ example: 'ABC123' })
+  /**
+   * Opcional: si no llega, el usuario es el número de documento (así está en
+   * todas las empresas) y lo pone el servicio.
+   */
+  @ApiPropertyOptional({ example: '45871236' })
+  @IsOptional()
   @IsString({ message: 'El código de usuario debe ser una cadena de texto.' })
-  @IsNotEmpty({ message: 'El código de usuario es obligatorio.' })
-  codigoUsuario: string;
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Matches(/^\S+$/, {
+    message: 'El código de usuario no puede tener espacios.',
+  })
+  @MaxLength(50, {
+    message: 'El código de usuario admite hasta 50 caracteres.',
+  })
+  codigoUsuario?: string;
 
-  @ApiProperty({ example: 'password123' })
+  /**
+   * Opcional: si no llega, el servicio genera una y la devuelve una sola vez
+   * (`acceso`). Si llega, al menos 8 caracteres.
+   */
+  @ApiPropertyOptional({ example: 'password123' })
+  @IsOptional()
   @IsString({ message: 'La contraseña debe ser una cadena de texto.' })
-  // @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
-  // @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
-  contrasena: string;
+  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+  contrasena?: string;
 
   @ApiProperty({
     example: Rol.EMPLEADO,
@@ -42,44 +63,62 @@ export class CreateEmpleadoDto {
   })
   @IsString({ message: 'El código del empleado debe ser una cadena de texto.' })
   @IsNotEmpty({ message: 'El código del empleado es obligatorio.' })
+  // `IsNotEmpty` deja pasar "   ".
+  @Matches(/\S/, { message: 'Ingrese el código del empleado.' })
+  @MaxLength(30, {
+    message: 'El código del empleado admite hasta 30 caracteres.',
+  })
   codigoEmpleado: string;
 
   @ApiProperty({ example: 'Juan Carlos' })
   @IsString({ message: 'El nombre debe ser una cadena de texto.' })
   @IsNotEmpty({ message: 'El nombre es obligatorio.' })
+  // `IsNotEmpty` deja pasar "   ".
+  @Matches(/\S/, { message: 'Ingrese los nombres.' })
+  @MaxLength(100, { message: 'Los nombres admiten hasta 100 caracteres.' })
   nombres: string;
 
   @ApiProperty({ example: 'Pérez López' })
   @IsString({ message: 'Los apellidos deben ser una cadena de texto.' })
   @IsNotEmpty({ message: 'Los apellidos son obligatorios.' })
+  // `IsNotEmpty` deja pasar "   ".
+  @Matches(/\S/, { message: 'Ingrese los apellidos.' })
+  @MaxLength(100, { message: 'Los apellidos admiten hasta 100 caracteres.' })
   apellidos: string;
 
-  @ApiPropertyOptional({ example: '12345678' })
+  @ApiPropertyOptional({ enum: TIPOS_DOCUMENTO, default: 'DNI' })
   @IsOptional()
+  @IsIn(TIPOS_DOCUMENTO, {
+    message: 'El tipo de documento debe ser DNI, CE o PASAPORTE.',
+  })
+  tipoDocumento?: (typeof TIPOS_DOCUMENTO)[number];
+
+  /**
+   * Obligatorio: identifica a la persona dentro de la empresa (con su tipo,
+   * no se repite). El formato por tipo se valida en el servicio.
+   */
+  @ApiProperty({ example: '12345678' })
   @IsString({ message: 'El documento debe ser una cadena de texto.' })
-  documento?: string | null;
+  @IsNotEmpty({ message: 'El documento es obligatorio.' })
+  documento: string;
 
   @ApiProperty({ example: 'Arequipa' })
   @IsOptional()
   @IsString({ message: 'La sede debe ser una cadena de texto.' })
+  @MaxLength(100, { message: 'La sede admite hasta 100 caracteres.' })
   sede?: string;
 
-  @ApiProperty({ example: 1 })
+  /**
+   * Fecha de ingreso (AAAA-MM-DD): la antigüedad se calcula con ella. Reemplaza
+   * a `tiempoEmpresaValor/Unidad`, que ya no se reciben (un "3 años" escrito
+   * una vez quedaba desactualizado). Que no sea futura lo valida el servicio.
+   */
+  @ApiPropertyOptional({ example: '2023-03-15' })
   @IsOptional()
-  @IsInt({ message: 'El tiempo empresa valor debe ser un número entero.' })
-  tiempoEmpresaValor?: number | null;
-
-  @ApiProperty({
-    example: TiempoEmpresaUnidad.DIAS,
-    enum: TiempoEmpresaUnidad,
-    description: 'Unidad del tiempo en la empresa',
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de ingreso debe tener el formato AAAA-MM-DD.',
   })
-  @IsEnum(TiempoEmpresaUnidad, {
-    message:
-      'La unidad del tiempo debe ser uno de los siguientes valores válidos: DIAS, MESES o AÑOS.',
-  })
-  @IsOptional()
-  tiempoEmpresaUnidad?: TiempoEmpresaUnidad;
+  fechaIngreso?: string | null;
 
   @ApiProperty({
     example: 1,
